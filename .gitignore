@@ -3,6 +3,13 @@ __pycache__/
 *.py[codz]
 *$py.class
 
+# ament_python / colcon build artefacts
+**/build/
+**/log/
+**/.colcon/
+**/*.egg-info/
+**/.eggs/
+
 # C extensions
 *.so
 

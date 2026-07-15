@@ -1,0 +1,6 @@
+include README.md
+include package.xml
+include setup.cfg
+recursive-include remote_control *.py
+recursive-include launch *.launch.py
+recursive-include resource *

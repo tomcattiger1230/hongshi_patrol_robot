@@ -1,0 +1,7 @@
+include README.md
+include package.xml
+include setup.cfg
+recursive-include mobile_platform *.py
+recursive-include launch *.launch.py
+recursive-include resource *
+recursive-include vendor *

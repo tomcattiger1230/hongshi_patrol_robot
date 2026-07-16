@@ -1,0 +1,24 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>robot320_localization_bringup</name>
+  <version>0.1.0</version>
+  <description>Robot320 NUC bringup for Livox MID-360s Cartographer localization.</description>
+  <maintainer email="hongshi-agent@example.com">Hongshi Agent Contributors</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>ament_python</buildtool_depend>
+
+  <exec_depend>mobile_platform</exec_depend>
+  <exec_depend>livox_ros_driver2</exec_depend>
+  <exec_depend>mid360_preprocess</exec_depend>
+  <exec_depend>cartographer_ros</exec_depend>
+  <exec_depend>tf2_ros</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>ament_index_python</exec_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

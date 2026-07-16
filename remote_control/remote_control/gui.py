@@ -86,10 +86,15 @@ class RemoteControlApp:
             telemetry = self.client.receive_telemetry(timeout_s=0.2)
             if telemetry:
                 chassis = telemetry.chassis
+                pose = telemetry.pose
+                pose_text = (
+                    f"  位姿:({pose.x_m:.2f}, {pose.y_m:.2f}, {pose.yaw_rad:.2f})"
+                    if pose else "  位姿:不可用"
+                )
                 self.telemetry_queue.put(
                     f"连接:{chassis.connected}  使能:{chassis.enabled}  "
                     f"速度:{chassis.speed_kmh} km/h  转速:{chassis.commanded_rpm} RPM  "
-                    f"转向:{chassis.steering_direction} {chassis.steering_angle_deg}°"
+                    f"转向:{chassis.steering_direction} {chassis.steering_angle_deg}°{pose_text}"
                 )
 
     def _poll_telemetry(self) -> None:

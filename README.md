@@ -2,10 +2,13 @@
 
 Robot320 移动底盘的 ROS 2 包，独立仓库。
 
-仓库内包含两个 ament_python 包：
+仓库现在包含一个上位机包和四个 NUC 端相关包：
 
 - `mobile_platform/` — 车载端 ROS 2 包（CAN + 安全门控 + 车载节点）
 - `remote_control/` — 上位机控制 ROS 2 包（CLI / GUI / ROS 2 客户端 / FastDDS 入口）
+- `livox_ros_driver2/` — ZIP 导入的 Livox MID-360s ROS 2 驱动
+- `mid360_preprocess/` — MID-360s 点云裁剪与降采样
+- `robot320_localization_bringup/` — NUC 端底盘、雷达与 Cartographer 统一启动
 
 ## 1. 仓库结构
 
@@ -35,7 +38,7 @@ hongshi_patrol_robot/
 │       ├── ros2_node.py
 │       ├── fastdds_node.py
 │       └── cli.py
-└── remote_control/               # 上位机 ROS 2 包
+├── remote_control/               # 上位机 ROS 2 包
     ├── package.xml
     ├── setup.py
     ├── setup.cfg
@@ -50,18 +53,27 @@ hongshi_patrol_robot/
         ├── fastdds_client.py
         ├── gui.py
         └── ros2_client.py
+├── livox_ros_driver2/            # Livox MID-360s 驱动（ament_cmake）
+├── mid360_preprocess/            # 点云滤波（ament_cmake）
+└── robot320_localization_bringup/ # NUC 统一启动（ament_python）
+    ├── launch/robot320_slam.launch.py
+    ├── config/mid360_2d.lua
+    ├── config/mid360_localization.lua
+    └── README.md
 ```
 
-每个包都使用 ament_python 标准嵌套布局：`setup.py` 与 `<package-name>/<package-name>/` 同级，`import` 路径不变。
+Python 包采用 ament_python 标准嵌套布局；Livox 驱动和点云预处理采用 ament_cmake。
 
 ## 2. 构建
 
-推荐放在 colcon 工作区 `hongshi_patrol_ws` 下，根 `build.sh` 已切换为只构建本仓库的这两个包：
+推荐把仓库放在 colcon 工作区中构建：
 
 ```bash
 cd /path/to/hongshi_patrol_ws
 source /opt/ros/<distro>/setup.bash      # 仓库当前在 /opt/ros/lyrical 下测试
-./build.sh --packages-select mobile_platform remote_control
+colcon build --symlink-install --packages-select \
+  livox_ros_driver2 mid360_preprocess mobile_platform \
+  robot320_localization_bringup remote_control
 source install/setup.bash
 ```
 
@@ -94,12 +106,15 @@ remote_control:
 
 ```bash
 ros2 launch mobile_platform robot320_ros2.launch.py
+ros2 launch robot320_localization_bringup robot320_slam.launch.py \
+  mode:=localization map_state_file:=/path/to/site.pbstream
 ros2 launch remote_control robot320_remote_watch.launch.py
 ```
 
 ## 4. 文档
 
 - [`mobile_platform/README.md`](./mobile_platform/README.md)：车载端完整说明
+- [`robot320_localization_bringup/README.md`](./robot320_localization_bringup/README.md)：MID-360s 建图与定位部署
 - [`remote_control/README.md`](./remote_control/README.md)：上位机完整说明
 - 跨仓库的协议参考（消息字段、FastDDS IDL、ROS 2 topic、安全策略）见原仓库 `hongshi_agent/docs/mobile-platform-architecture.md`
 

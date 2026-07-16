@@ -141,11 +141,11 @@ ros2 topic pub --once /robot320/cmd_vel geometry_msgs/msg/Twist \
 
 车载端 topic 完整列表见 [`../mobile_platform/README.md` §5](../mobile_platform/README.md#5-ros-2-topic-约定)。
 
-## 7. 计划接入的数据
+## 7. 数据范围
 
 - 控制：线速度、角速度、刹车、急停、导航 / 手动模式
 - 状态：底盘连接、使能、刹车、速度、转速、转向、急停状态
-- 定位：`Pose2D`
+- 定位：`Pose2D`（已由 NUC 端 `/tracked_pose` 写入遥测，CLI/GUI 可显示）
 - 导航：目标点、导航状态、进度、提示信息
 - 地图：先以 `map_revision` 占位，后续按 DDS topic 承载栅格地图或矢量地图
 

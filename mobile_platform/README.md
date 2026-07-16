@@ -5,7 +5,8 @@ Robot320 移动底盘的车载端 ROS 2 包。负责：
 - 封装周立功 ControlCAN 驱动（`libcontrolcan.so`，多架构 vendor）
 - 解析 Robot320 CAN 协议并维护底盘状态
 - 在 ROS 2、FastDDS、UDP JSON 三种传输间复用同一份 `ChassisCommand` / `RobotTelemetry` 语义
-- 提供 4 个 `ros2 run` console script 和 1 个 launch 文件，方便车载端一键启动
+- 提供 4 个 `ros2 run` console script 和底盘 launch，方便车载端启动
+- 集成 Livox MID-360s + Cartographer，并把 SLAM 位姿加入上位机遥测
 
 ## 1. 包信息
 
@@ -14,7 +15,7 @@ Robot320 移动底盘的车载端 ROS 2 包。负责：
 | ROS 构建类型 | `ament_python`（`format="3"`） |
 | 入口模块 | `mobile_platform`（对应 `mobile_platform/mobile_platform/__init__.py`） |
 | console scripts | `robot320_onboard` / `robot320_ros2_bridge` / `robot320_fastdds_bridge` / `robot320_cli` |
-| launch | `robot320_ros2.launch.py` |
+| launch | `robot320_ros2.launch.py`（SLAM 统一启动位于 `robot320_localization_bringup`） |
 | 运行时依赖 | `rclpy` `std_msgs` `geometry_msgs` `launch` `launch_ros` `ament_index_python` |
 
 ## 2. 目录结构
@@ -58,11 +59,9 @@ mobile_platform/
 ```bash
 cd /path/to/hongshi_patrol_ws
 source /opt/ros/<distro>/setup.bash    # 仓库当前在 /opt/ros/lyrical 下测试
-./build.sh --packages-select mobile_platform
+colcon build --symlink-install --packages-select mobile_platform
 source install/setup.bash
 ```
-
-`build.sh` 等价于 `colcon build --symlink-install`，在 setuptools 78 + colcon-core 0.x 环境下已稳定通过。
 
 ## 4. 运行
 
@@ -113,6 +112,20 @@ robot320_onboard --command-bind 0.0.0.0:15000 --telemetry-remote 192.168.1.20:15
 
 这条入口只需要 `mobile_platform` 自身，不要求 ROS 2，便于在没有 DDS 的笔记本上做联调。
 
+### 4.2.1 MID-360s SLAM 定位（NUC）
+
+```bash
+ros2 launch robot320_localization_bringup robot320_slam.launch.py \
+    mode:=localization \
+    map_state_file:=/var/lib/robot320/maps/site.pbstream \
+    host_ip:=192.168.1.50 \
+    lidar_ip:=192.168.1.107
+```
+
+统一 launch 会同时启动底盘、Livox 驱动、点云预处理、静态 TF、Cartographer 和
+栅格地图发布。建图、地图保存、雷达外参和依赖安装见
+[`robot320_localization_bringup/README.md`](../robot320_localization_bringup/README.md)。
+
 ### 4.3 CAN 命令行调试
 
 ```bash
@@ -141,6 +154,9 @@ robot320_fastdds_bridge --device-index 0 --can-index 0 --domain-id 0
 | `/robot320/telemetry` | `std_msgs/String` | 发布 | JSON `RobotTelemetry` |
 | `/robot320/chassis_status` | `std_msgs/String` | 发布 | JSON `ChassisStatus` |
 | `/robot320/speed_kmh` | `std_msgs/Float32` | 发布 | 底盘速度 km/h |
+
+`/tracked_pose`（`geometry_msgs/PoseStamped`）由 Cartographer 发布，车载节点订阅后
+写入 `/robot320/telemetry` 的 `pose` 字段；定位数据超过 1 秒未更新时不再回传旧位姿。
 
 可用 `--topic-prefix` / `topic_prefix:=` 修改命名空间，例如 `/robot320/front`。
 

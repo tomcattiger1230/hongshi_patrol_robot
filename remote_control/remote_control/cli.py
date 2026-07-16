@@ -61,10 +61,16 @@ def main(argv: list[str] | None = None) -> int:
                 telemetry = client.receive_telemetry(timeout_s=0.5)
                 if telemetry:
                     chassis = telemetry.chassis
+                    pose = telemetry.pose
+                    pose_text = (
+                        f" pose=({pose.x_m:.2f},{pose.y_m:.2f},{pose.yaw_rad:.2f})"
+                        if pose else " pose=unavailable"
+                    )
                     print(
                         f"connected={chassis.connected} enabled={chassis.enabled} "
                         f"speed={chassis.speed_kmh} rpm={chassis.commanded_rpm} "
                         f"steering={chassis.steering_direction}:{chassis.steering_angle_deg}"
+                        f"{pose_text}"
                     )
         return 0
     except KeyboardInterrupt:

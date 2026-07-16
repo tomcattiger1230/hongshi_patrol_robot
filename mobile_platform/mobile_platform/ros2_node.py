@@ -11,24 +11,25 @@ from __future__ import annotations
 
 import argparse
 import logging
+import math
 import sys
 import time
 
 from .controlcan import CANAdapterConfig
-from .messages import ChassisCommand, RobotTelemetry, to_json
+from .messages import ChassisCommand, Pose2D, RobotTelemetry, to_json
 from .onboard_node import OnboardNode
 from .robot320 import Robot320Platform
 from .safety import SafetyConfig, SafetyController
 
 try:
     import rclpy
-    from geometry_msgs.msg import Twist
+    from geometry_msgs.msg import PoseStamped, Twist
     from rclpy.node import Node
     from std_msgs.msg import Bool, Float32, String
 except ImportError as exc:  # pragma: no cover - exercised on ROS machines.
     rclpy = None
     Node = object
-    Twist = Bool = Float32 = String = None
+    PoseStamped = Twist = Bool = Float32 = String = None
     _ROS_IMPORT_ERROR = exc
 else:
     _ROS_IMPORT_ERROR = None
@@ -46,6 +47,8 @@ class Robot320RosNode(Node):
         steering_gain_deg_per_radps: float = 180.0,
         telemetry_period_s: float = 0.2,
         topic_prefix: str = "/robot320",
+        localization_pose_topic: str = "/tracked_pose",
+        localization_stale_timeout_s: float = 1.0,
     ):
         super().__init__("robot320_can_bridge")
         self.controller = OnboardNode(
@@ -58,6 +61,9 @@ class Robot320RosNode(Node):
         )
         self.topic_prefix = topic_prefix.rstrip("/")
         self._last_stop_due_timeout = False
+        self._latest_pose: Pose2D | None = None
+        self._last_pose_received = 0.0
+        self.localization_stale_timeout_s = localization_stale_timeout_s
 
         self.telemetry_pub = self.create_publisher(String, f"{self.topic_prefix}/telemetry", 10)
         self.chassis_status_pub = self.create_publisher(String, f"{self.topic_prefix}/chassis_status", 10)
@@ -67,6 +73,7 @@ class Robot320RosNode(Node):
         self.create_subscription(Bool, f"{self.topic_prefix}/brake", self.on_brake, 10)
         self.create_subscription(Bool, f"{self.topic_prefix}/emergency_stop", self.on_emergency_stop, 10)
         self.create_subscription(String, f"{self.topic_prefix}/mode", self.on_mode, 10)
+        self.create_subscription(PoseStamped, localization_pose_topic, self.on_localization_pose, 10)
 
         self.controller.robot.connect(start_receiver=True)
         self.timer = self.create_timer(telemetry_period_s, self.on_timer)
@@ -93,6 +100,23 @@ class Robot320RosNode(Node):
             return
         self._apply(ChassisCommand(mode=mode))
 
+    def on_localization_pose(self, msg: PoseStamped) -> None:
+        """Cache the latest Cartographer pose for remote telemetry."""
+        q = msg.pose.orientation
+        yaw = math.atan2(
+            2.0 * (q.w * q.z + q.x * q.y),
+            1.0 - 2.0 * (q.y * q.y + q.z * q.z),
+        )
+        stamp = float(msg.header.stamp.sec) + float(msg.header.stamp.nanosec) / 1_000_000_000.0
+        self._latest_pose = Pose2D(
+            x_m=float(msg.pose.position.x),
+            y_m=float(msg.pose.position.y),
+            yaw_rad=yaw,
+            frame_id=msg.header.frame_id or "map",
+            stamp=stamp or time.time(),
+        )
+        self._last_pose_received = time.monotonic()
+
     def on_timer(self) -> None:
         if self.controller.safety.timed_out() and not self._last_stop_due_timeout:
             self.get_logger().warning("Command timeout, stopping chassis")
@@ -100,6 +124,11 @@ class Robot320RosNode(Node):
             self._last_stop_due_timeout = True
 
         telemetry = self.controller.build_telemetry()
+        if (
+            self._latest_pose is not None
+            and time.monotonic() - self._last_pose_received <= self.localization_stale_timeout_s
+        ):
+            telemetry.pose = self._latest_pose
         self._publish_telemetry(telemetry)
 
     def destroy_node(self) -> bool:
@@ -141,6 +170,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--device-index", type=int, default=0)
     parser.add_argument("--can-index", type=int, default=0)
     parser.add_argument("--topic-prefix", default="/robot320")
+    parser.add_argument("--localization-pose-topic", default="/tracked_pose")
+    parser.add_argument("--localization-stale-timeout", type=float, default=1.0)
     parser.add_argument("--telemetry-period", type=float, default=0.2)
     parser.add_argument("--command-timeout", type=float, default=0.6)
     parser.add_argument("--max-linear-speed", type=float, default=0.8)
@@ -178,6 +209,8 @@ def main(argv: list[str] | None = None) -> int:
         steering_gain_deg_per_radps=args.steering_gain,
         telemetry_period_s=args.telemetry_period,
         topic_prefix=args.topic_prefix,
+        localization_pose_topic=args.localization_pose_topic,
+        localization_stale_timeout_s=args.localization_stale_timeout,
     )
 
     try:

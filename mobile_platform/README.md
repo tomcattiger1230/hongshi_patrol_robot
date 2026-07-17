@@ -59,8 +59,7 @@ mobile_platform/
 ```bash
 cd /path/to/hongshi_patrol_ws
 source /opt/ros/jazzy/setup.bash
-PYTHONPATH=/usr/lib/python3/dist-packages:$PYTHONPATH \
-  colcon build --symlink-install --packages-select mobile_platform
+./build.sh --packages-select mobile_platform
 source install/setup.bash
 ```
 

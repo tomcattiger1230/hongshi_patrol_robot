@@ -15,6 +15,7 @@ Robot320 移动底盘的 ROS 2 包，独立仓库。
 ```text
 hongshi_patrol_robot/
 ├── README.md                     # 本文档
+├── build.sh                      # 默认构建全部 ROS 2 包，可透传 colcon 参数
 ├── .gitignore
 ├── mobile_platform/              # 车载端 ROS 2 包
 │   ├── package.xml
@@ -96,20 +97,18 @@ export LD_LIBRARY_PATH=$HOME/.local/lib:$LD_LIBRARY_PATH
 ```bash
 cd /path/to/hongshi_patrol_ws
 source /opt/ros/jazzy/setup.bash
-PYTHONPATH=/usr/lib/python3/dist-packages:$PYTHONPATH \
-  colcon build --symlink-install
+./build.sh
 source install/setup.bash
 ```
 
-> **注意**：`PYTHONPATH` 是必须的——colcon 的 cmake 子进程需要访问系统的 `lark` 模块来生成 ROS 消息 IDL。如果不设置，`livox_ros_driver2` 会因 `ModuleNotFoundError: No module named 'lark'` 而失败。
->
-> 如果只需要构建部分包：
-> ```bash
-> PYTHONPATH=/usr/lib/python3/dist-packages:$PYTHONPATH \
->   colcon build --symlink-install --packages-select \
->     livox_ros_driver2 mid360_preprocess mobile_platform \
->     robot320_localization_bringup remote_control
-> ```
+默认构建仓库内全部 5 个包；也可以把 colcon 参数直接传给脚本：
+
+```bash
+./build.sh --packages-select mobile_platform remote_control
+```
+
+脚本会自动把 `/usr/lib/python3/dist-packages` 加入 `PYTHONPATH`，确保 colcon 的
+CMake 子进程能导入 Jazzy 生成 ROS 消息 IDL 所需的 `lark` 模块。
 
 如果单独构建某一个包（不通过工作区）：
 

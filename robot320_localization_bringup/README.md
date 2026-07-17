@@ -41,14 +41,14 @@ export LD_LIBRARY_PATH=$HOME/.local/lib:$LD_LIBRARY_PATH
 ```bash
 source /opt/ros/jazzy/setup.bash
 rosdep install --from-paths . --ignore-src -r -y
-PYTHONPATH=/usr/lib/python3/dist-packages:$PYTHONPATH \
-  colcon build --symlink-install --packages-select \
-    livox_ros_driver2 mid360_preprocess mobile_platform \
-    robot320_localization_bringup remote_control
+./build.sh --packages-select \
+  livox_ros_driver2 mid360_preprocess mobile_platform \
+  robot320_localization_bringup remote_control
 source install/setup.bash
 ```
 
-> `PYTHONPATH` 是必须的——colcon 的 cmake 子进程需要访问系统的 `lark` 模块生成 ROS IDL。
+`build.sh` 会自动加入系统 `dist-packages`，让 colcon 的 CMake 子进程能够访问生成
+ROS IDL 所需的 `lark` 模块。
 
 ## 2. 网络和安装外参
 

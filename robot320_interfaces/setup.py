@@ -20,7 +20,7 @@ setup(
     zip_safe=False,
     maintainer="Hongshi Agent Contributors",
     maintainer_email="hongshi-agent@example.com",
-    description="ROS-independent Robot320 semantic messages and Fast DDS wire contract",
+    description="Robot320 JSON messages and ROS 2 compatible Fast DDS wire contract",
     license="MIT",
     extras_require={"test": ["pytest"]},
 )

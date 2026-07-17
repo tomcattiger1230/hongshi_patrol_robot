@@ -65,6 +65,6 @@ env FASTDDS_PREFIX="${FASTDDS_PREFIX}" \
   PYTHON_BIN="${VENV_PATH}/bin/python" \
   "${REPOSITORY_ROOT}/robot320_interfaces/scripts/generate_fastdds_types.sh"
 
-PYTHONPATH="${REPOSITORY_ROOT}/robot320_interfaces/generated/Robot320Dds/build${PYTHONPATH:+:${PYTHONPATH}}" \
+PYTHONPATH="${REPOSITORY_ROOT}/robot320_interfaces/generated/Robot320String/build${PYTHONPATH:+:${PYTHONPATH}}" \
   "${VENV_PATH}/bin/python" -c \
-  'import Robot320Dds, fastdds; print("Fast DDS ready:", fastdds.__file__)'
+  'import Robot320String, fastdds; print("Fast DDS ready:", fastdds.__file__)'

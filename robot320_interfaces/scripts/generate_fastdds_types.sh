@@ -3,8 +3,8 @@
 set -euo pipefail
 
 readonly PACKAGE_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-readonly IDL_FILE="${PACKAGE_ROOT}/robot320_interfaces/dds/Robot320Dds.idl"
-readonly OUTPUT_DIR="${1:-${PACKAGE_ROOT}/generated/Robot320Dds}"
+readonly IDL_FILE="${PACKAGE_ROOT}/robot320_interfaces/dds/Robot320String.idl"
+readonly OUTPUT_DIR="${1:-${PACKAGE_ROOT}/generated/Robot320String}"
 readonly REPOSITORY_ROOT="$(cd -- "${PACKAGE_ROOT}/.." && pwd)"
 readonly FASTDDS_PREFIX="${FASTDDS_PREFIX:-${REPOSITORY_ROOT}/../Fast-DDS/install}"
 readonly PYTHON_BIN="${PYTHON_BIN:-${REPOSITORY_ROOT}/.venv/bin/python}"
@@ -53,7 +53,7 @@ cmake -S . -B build \
 cmake --build build --parallel
 
 if [[ "$(uname -s)" == "Darwin" ]]; then
-  module_path="$(find build -maxdepth 2 -name '_Robot320DdsWrapper.so' -print -quit)"
+  module_path="$(find build -maxdepth 2 -name '_Robot320StringWrapper.so' -print -quit)"
   if [[ -n "${module_path}" ]]; then
     for library_path in "${prefix_paths[@]}"; do
       install_name_tool -add_rpath "${library_path}/lib" "${module_path}" 2>/dev/null || true
@@ -61,5 +61,5 @@ if [[ "$(uname -s)" == "Darwin" ]]; then
   fi
 fi
 
-echo "Generated Robot320Dds Python bindings in ${OUTPUT_DIR}/build"
+echo "Generated ROS 2 String Python bindings in ${OUTPUT_DIR}/build"
 echo "Add that directory to PYTHONPATH on the target machine."

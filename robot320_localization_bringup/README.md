@@ -5,7 +5,7 @@ NUC 统一 launch 组成以下链路：
 ```text
 MID-360s -> /livox/lidar -> mid360_preprocess -> /filtered_points
          -> Cartographer -> /tracked_pose + map/base_link TF
-         -> chassis telemetry -> Fast DDS robot320/state
+         -> chassis telemetry -> ROS 2 /robot320/state
 ```
 
 ## 1. 依赖与构建
@@ -13,7 +13,7 @@ MID-360s -> /livox/lidar -> mid360_preprocess -> /filtered_points
 - Ubuntu 24.04、ROS 2 Jazzy
 - `ros-jazzy-cartographer-ros`、PCL、`pcl_conversions`、`tf2_ros`
 - Livox SDK2
-- NUC 系统镜像自带的 ROS 2/Fast DDS 通讯环境
+- NUC 系统镜像自带的 ROS 2 通讯环境
 
 ```bash
 rosdep install --from-paths . --ignore-src -r -y
@@ -68,7 +68,7 @@ mkdir -p /var/lib/robot320/maps
 定位模式要求 `.pbstream` 已存在。只调雷达时可传 `enable_chassis:=false`；排查通讯网关时
 可临时传 `enable_fastdds_gateway:=false`。
 
-该 launch 提供定位和 Fast DDS 到 Nav2 action 的网关，但不包含现场 Nav2 planner、
+该 launch 提供定位和 ROS 2 String 指令到 Nav2 action 的网关，但不包含现场 Nav2 planner、
 controller、costmap 参数。发送导航目标前必须另行启动 `/navigate_to_pose` action server；
 否则目标会收到 `rejected` reply。
 
@@ -96,8 +96,8 @@ controller、costmap 参数。发送导航目标前必须另行启动 `/navigate
 | `voxel_size` | `0.05` | 体素尺寸（米） |
 | `map_resolution` | `0.05` | 栅格分辨率（米） |
 | `enable_chassis` | `true` | 启动 CAN bridge |
-| `enable_fastdds_gateway` | `true` | 启动 Fast DDS ROS gateway |
-| `fastdds_domain_id` | `20` | NUC/上位机共同 domain |
+| `enable_fastdds_gateway` | `true` | 启动 ROS 2 通信网关（参数名为兼容旧配置保留） |
+| `fastdds_domain_id` | `20` | `ROS_DOMAIN_ID`（参数名为兼容旧配置保留） |
 | `nav_action` | `/navigate_to_pose` | Nav2 action |
 | `nav_cmd_vel_topic` | `/cmd_vel` | Nav2 速度输出 |
 

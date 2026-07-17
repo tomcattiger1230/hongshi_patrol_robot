@@ -25,7 +25,7 @@ setup(
     zip_safe=True,
     maintainer="Hongshi Agent Contributors",
     maintainer_email="hongshi-agent@example.com",
-    description="Robot320 remote side: ROS 2 / FastDDS / UDP-JSON control clients",
+    description="Robot320 remote side: automatic ROS 2 / Fast DDS Qt control client",
     license="MIT",
     extras_require={"gui": ["PySide6>=6.5"], "test": ["pytest"]},
     entry_points={

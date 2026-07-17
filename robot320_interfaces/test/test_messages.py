@@ -2,10 +2,12 @@ import math
 
 from robot320_interfaces.messages import (
     BatteryStatus,
+    Heartbeat,
     LiftStatus,
     Pose2D,
     RobotCommand,
     RobotTelemetry,
+    heartbeat_from_json,
     robot_command_from_json,
     telemetry_from_json,
     to_json,
@@ -53,3 +55,9 @@ def test_extended_telemetry_round_trip():
     assert restored.battery.percentage == 75.0
     assert restored.pose is not None and restored.pose.x_m == 2.0
     assert restored.faults == ["example_fault"]
+
+
+def test_heartbeat_round_trip():
+    heartbeat = Heartbeat("robot320", "robot", 12, 123456)
+
+    assert heartbeat_from_json(to_json(heartbeat)) == heartbeat

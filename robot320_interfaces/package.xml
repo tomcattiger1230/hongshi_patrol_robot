@@ -3,7 +3,7 @@
 <package format="3">
   <name>robot320_interfaces</name>
   <version>0.1.0</version>
-  <description>ROS-independent Robot320 semantic messages and Fast DDS wire contract.</description>
+  <description>Robot320 JSON messages and ROS 2 compatible Fast DDS wire contract.</description>
   <maintainer email="hongshi-agent@example.com">Hongshi Agent Contributors</maintainer>
   <license>MIT</license>
 

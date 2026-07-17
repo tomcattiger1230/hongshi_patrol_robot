@@ -152,6 +152,14 @@ class CommandReply:
     stamp: float = field(default_factory=time.time)
 
 
+@dataclass(frozen=True)
+class Heartbeat:
+    node_id: str
+    role: str
+    sequence: int
+    timestamp_ms: int
+
+
 def to_json(message: Any) -> str:
     return json.dumps(asdict(message), ensure_ascii=False, separators=(",", ":"))
 
@@ -169,6 +177,10 @@ def robot_command_from_json(payload: str | bytes) -> RobotCommand:
 
 def reply_from_json(payload: str | bytes) -> CommandReply:
     return CommandReply(**_json_object(payload))
+
+
+def heartbeat_from_json(payload: str | bytes) -> Heartbeat:
+    return Heartbeat(**_json_object(payload))
 
 
 def telemetry_from_json(payload: str | bytes) -> RobotTelemetry:

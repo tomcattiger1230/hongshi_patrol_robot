@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""PySide6 control panel using Fast DDS directly (ROS 2 is not required)."""
+"""PySide6 control panel using ROS 2 when available, otherwise Fast DDS."""
 
 from __future__ import annotations
 
@@ -38,7 +38,7 @@ except ImportError:  # pragma: no cover - depends on desktop environment.
 
 if QApplication is not None:
 
-    class FastDDSWorker(QObject):
+    class CommunicationWorker(QObject):
         telemetry_received = Signal(object)
         reply_received = Signal(object)
         command_sent = Signal(str, str)
@@ -49,11 +49,13 @@ if QApplication is not None:
             self,
             domain_id: int,
             client_id: str,
+            backend: str = "auto",
             client_factory: Callable[..., RobotRemoteFastDDSClient] = RobotRemoteFastDDSClient,
         ):
             super().__init__()
             self.domain_id = domain_id
             self.client_id = client_id
+            self.backend = backend
             self.client_factory = client_factory
             self.client: RobotRemoteFastDDSClient | None = None
             self.poll_timer: QTimer | None = None
@@ -64,16 +66,20 @@ if QApplication is not None:
                 self.client = self.client_factory(
                     domain_id=self.domain_id,
                     client_id=self.client_id,
+                    backend=self.backend,
                 )
             except Exception as exc:
                 self.connection_changed.emit(False, str(exc))
-                self.error.emit(f"Fast DDS 启动失败：{exc}")
+                self.error.emit(f"通信后端启动失败：{exc}")
                 return
             self.poll_timer = QTimer(self)
             self.poll_timer.setInterval(50)
             self.poll_timer.timeout.connect(self.poll)
             self.poll_timer.start()
-            self.connection_changed.emit(True, "DDS 已启动，等待机器人遥测")
+            backend_name = {"ros2": "ROS 2", "fastdds": "Fast DDS"}.get(
+                self.client.backend, self.client.backend
+            )
+            self.connection_changed.emit(True, f"{backend_name} 已启动，等待机器人遥测")
 
         @Slot()
         def poll(self) -> None:
@@ -89,11 +95,11 @@ if QApplication is not None:
                         break
                     self.reply_received.emit(reply)
             except Exception as exc:
-                self.error.emit(f"接收 Fast DDS 数据失败：{exc}")
+                self.error.emit(f"接收机器人数据失败：{exc}")
 
         def _send(self, description: str, function: Callable, *args) -> None:
             if self.client is None:
-                self.error.emit("Fast DDS 尚未启动")
+                self.error.emit("通信后端尚未启动")
                 return
             try:
                 command_id = function(*args)
@@ -111,7 +117,7 @@ if QApplication is not None:
                     angular,
                 )
             else:
-                self.error.emit("Fast DDS 尚未启动")
+                self.error.emit("通信后端尚未启动")
 
         @Slot()
         def stop_robot(self) -> None:
@@ -181,21 +187,22 @@ if QApplication is not None:
         cancel_navigation_requested = Signal()
         lift_requested = Signal(str, object)
 
-        def __init__(self, domain_id: int, client_id: str):
+        def __init__(self, domain_id: int, client_id: str, backend: str = "auto"):
             super().__init__()
             self.domain_id = domain_id
             self.client_id = client_id
+            self.backend = backend
             self._last_telemetry_at = 0.0
             self._motion: tuple[float, float] | None = None
             self._closing = False
 
-            self.setWindowTitle("Robot320 Fast DDS 控制台")
+            self.setWindowTitle("Robot320 远程控制台")
             self.resize(1120, 760)
             self._build_ui()
             self._apply_style()
 
             self.worker_thread = QThread(self)
-            self.worker = FastDDSWorker(domain_id, client_id)
+            self.worker = CommunicationWorker(domain_id, client_id, backend)
             self.worker.moveToThread(self.worker_thread)
             self.worker_thread.started.connect(self.worker.start)
             self.worker_thread.finished.connect(self.worker.deleteLater)
@@ -531,9 +538,10 @@ if QApplication is not None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Robot320 Qt Fast DDS control panel")
+    parser = argparse.ArgumentParser(description="Robot320 Qt control panel")
     parser.add_argument("--domain-id", type=int, default=20)
     parser.add_argument("--client-id", default="remote_control_gui")
+    parser.add_argument("--backend", choices=["auto", "ros2", "fastdds"], default="auto")
     return parser
 
 
@@ -547,7 +555,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     app = QApplication(sys.argv[:1])
     app.setApplicationName("Robot320 Remote Control")
-    window = RemoteControlWindow(args.domain_id, args.client_id)
+    window = RemoteControlWindow(args.domain_id, args.client_id, args.backend)
     window.show()
     return app.exec()
 

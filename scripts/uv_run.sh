@@ -39,14 +39,16 @@ if [[ ! -x "${venv_path}/bin/python" ]]; then
   exit 2
 fi
 
-if [[ "${PROFILE}" == "nuc" ]]; then
+if [[ "${PROFILE}" == "nuc" || "$(uname -s)" == "Linux" ]]; then
   ros_setup="${ROS_SETUP:-/opt/ros/jazzy/setup.bash}"
-  if [[ ! -f "${ros_setup}" ]]; then
+  if [[ "${PROFILE}" == "nuc" && ! -f "${ros_setup}" ]]; then
     echo "error: ROS 2 setup not found: ${ros_setup}" >&2
     exit 2
   fi
-  # shellcheck disable=SC1090
-  source "${ros_setup}"
+  if [[ -f "${ros_setup}" ]]; then
+    # shellcheck disable=SC1090
+    source "${ros_setup}"
+  fi
 fi
 
 if [[ -n "${FASTDDS_SETUP:-}" ]]; then
@@ -66,7 +68,7 @@ if [[ "${PROFILE}" == "nuc" ]]; then
   fi
 fi
 
-generated_types="${ROBOT320_DDS_TYPES:-${REPOSITORY_ROOT}/robot320_interfaces/generated/Robot320Dds/build}"
+generated_types="${ROBOT320_DDS_TYPES:-${REPOSITORY_ROOT}/robot320_interfaces/generated/Robot320String/build}"
 if [[ -d "${generated_types}" ]]; then
   export PYTHONPATH="${generated_types}${PYTHONPATH:+:${PYTHONPATH}}"
 fi

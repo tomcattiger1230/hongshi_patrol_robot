@@ -1,7 +1,16 @@
 import time
 
-from mobile_platform.fastdds_ros_gateway import Robot320FastDDSRosGateway
-from robot320_interfaces.messages import NavigationStatus, RobotCommand
+import mobile_platform.fastdds_ros_gateway as gateway_module
+from mobile_platform.fastdds_ros_gateway import (
+    Robot320FastDDSRosGateway,
+    Ros2RobotTransport,
+)
+from robot320_interfaces.messages import (
+    NavigationStatus,
+    RobotCommand,
+    RobotTelemetry,
+    to_json,
+)
 
 
 class _Publisher:
@@ -10,6 +19,26 @@ class _Publisher:
 
     def publish(self, message):
         self.messages.append(message)
+
+
+class _String:
+    def __init__(self):
+        self.data = ""
+
+
+class _Node:
+    def __init__(self):
+        self.publishers = {}
+        self.subscriptions = {}
+
+    def create_publisher(self, _message_type, topic, _qos):
+        publisher = _Publisher()
+        self.publishers[topic] = publisher
+        return publisher
+
+    def create_subscription(self, _message_type, topic, callback, _qos):
+        self.subscriptions[topic] = callback
+        return object()
 
 
 def _gateway_for_validation():
@@ -58,3 +87,21 @@ def test_nav_velocity_relay_is_closed_immediately_on_cancel():
     gateway._on_nav_cmd_vel(marker)
     assert gateway.cmd_vel_pub.messages == [marker]
     assert gateway._navigation.state == "canceling"
+
+
+def test_ros2_transport_uses_string_json_topics(monkeypatch):
+    monkeypatch.setattr(gateway_module, "String", _String)
+    node = _Node()
+    transport = Ros2RobotTransport(node, "/robot320", "robot-test")
+
+    command = RobotCommand(kind="stop", client_id="remote", sequence=4)
+    message = _String()
+    message.data = to_json(command)
+    node.subscriptions["/robot320/command"](message)
+
+    received = transport.receive_command(0.0)
+    assert received is not None and received.sequence == 4
+
+    transport.publish_state(RobotTelemetry(), 1)
+    state_message = node.publishers["/robot320/state"].messages[-1]
+    assert '"robot_id":"robot-test"' in state_message.data

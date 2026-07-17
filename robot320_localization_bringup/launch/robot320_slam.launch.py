@@ -111,9 +111,12 @@ def _launch_setup(context):
         actions.append(
             Node(
                 package="mobile_platform",
-                executable="robot320_fastdds_gateway",
-                name="robot320_fastdds_gateway",
+                executable="robot320_ros_gateway",
+                name="robot320_communication_gateway",
                 output="screen",
+                additional_env={
+                    "ROS_DOMAIN_ID": _value(context, "fastdds_domain_id"),
+                },
                 arguments=[
                     "--domain-id",
                     _value(context, "fastdds_domain_id"),

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""NUC gateway between external Fast DDS and internal Robot320 ROS 2 APIs."""
+"""NUC gateway using ROS 2 String topics for external Robot320 communication."""
 
 from __future__ import annotations
 
@@ -7,18 +7,23 @@ import argparse
 import json
 import logging
 import math
+import os
+import queue
 import sys
 import time
 from dataclasses import fields
 
-from robot320_interfaces.fastdds_transport import FastDDSUnavailable, FastDdsRobotTransport
 from robot320_interfaces.messages import (
     CommandReply,
+    Heartbeat,
     LiftStatus,
     NavigationStatus,
     RobotCommand,
     RobotTelemetry,
+    heartbeat_from_json,
+    robot_command_from_json,
     telemetry_from_json,
+    to_json,
 )
 
 try:
@@ -41,6 +46,72 @@ else:
 LOGGER = logging.getLogger(__name__)
 
 
+class Ros2RobotTransport:
+    """String/JSON transport whose ROS topics are exposed through the active RMW."""
+
+    backend = "ros2"
+
+    def __init__(self, node: Node, topic_prefix: str, robot_id: str):
+        self.robot_id = robot_id
+        prefix = topic_prefix.rstrip("/")
+        self._commands: queue.Queue[RobotCommand] = queue.Queue()
+        self._heartbeats: queue.Queue[Heartbeat] = queue.Queue()
+        self._state_pub = node.create_publisher(String, f"{prefix}/state", 10)
+        self._reply_pub = node.create_publisher(String, f"{prefix}/reply", 10)
+        self._heartbeat_pub = node.create_publisher(String, f"{prefix}/heartbeat", 10)
+        node.create_subscription(String, f"{prefix}/command", self._on_command, 10)
+        node.create_subscription(
+            String, f"{prefix}/heartbeat", self._on_heartbeat, 10
+        )
+
+    def receive_command(self, timeout_s: float = 0.1):
+        return _queue_get(self._commands, timeout_s)
+
+    def receive_heartbeat(self, timeout_s: float = 0.1):
+        return _queue_get(self._heartbeats, timeout_s)
+
+    def publish_state(self, telemetry: RobotTelemetry, sequence: int) -> None:
+        del sequence
+        telemetry.robot_id = self.robot_id
+        self._state_pub.publish(_string_message(to_json(telemetry)))
+
+    def publish_reply(self, reply: CommandReply) -> None:
+        self._reply_pub.publish(_string_message(to_json(reply)))
+
+    def publish_heartbeat(self, sequence: int) -> None:
+        heartbeat = Heartbeat(
+            node_id=self.robot_id,
+            role="robot",
+            sequence=sequence,
+            timestamp_ms=int(time.time() * 1000.0),
+        )
+        self._heartbeat_pub.publish(_string_message(to_json(heartbeat)))
+
+    def close(self) -> None:
+        pass
+
+    def _on_command(self, message: String) -> None:
+        self._commands.put(robot_command_from_json(message.data))
+
+    def _on_heartbeat(self, message: String) -> None:
+        heartbeat = heartbeat_from_json(message.data)
+        if heartbeat.role == "remote":
+            self._heartbeats.put(heartbeat)
+
+
+def _string_message(payload: str):
+    message = String()
+    message.data = payload
+    return message
+
+
+def _queue_get(items: queue.Queue, timeout_s: float):
+    try:
+        return items.get(timeout=max(0.0, timeout_s))
+    except queue.Empty:
+        return None
+
+
 class Robot320FastDDSRosGateway(Node):
     def __init__(
         self,
@@ -52,12 +123,12 @@ class Robot320FastDDSRosGateway(Node):
         telemetry_period_s: float = 0.2,
         heartbeat_period_s: float = 1.0,
         max_command_age_s: float = 2.0,
-        transport: FastDdsRobotTransport | None = None,
+        transport=None,
     ):
-        super().__init__("robot320_fastdds_gateway")
+        super().__init__("robot320_communication_gateway")
         self.robot_id = robot_id
         self.topic_prefix = topic_prefix.rstrip("/")
-        self.transport = transport or FastDdsRobotTransport(domain_id, robot_id)
+        self.transport = transport or Ros2RobotTransport(self, self.topic_prefix, robot_id)
         self.max_command_age_s = max_command_age_s
         self._last_sequences: dict[str, int] = {}
         self._state_sequence = 0
@@ -94,7 +165,7 @@ class Robot320FastDDSRosGateway(Node):
         self.create_timer(telemetry_period_s, self._publish_state)
         self.create_timer(heartbeat_period_s, self._publish_heartbeat)
         self.get_logger().info(
-            f"Fast DDS ROS gateway started: domain={domain_id}, robot={robot_id}"
+            f"ROS 2 communication gateway started: domain={domain_id}, robot={robot_id}"
         )
 
     def destroy_node(self) -> bool:
@@ -416,22 +487,18 @@ def main(argv: list[str] | None = None) -> int:
     if rclpy is None:
         raise RuntimeError("ROS 2 Python packages are unavailable") from _ROS_IMPORT_ERROR
     args, ros_args = build_parser().parse_known_args(argv)
+    os.environ["ROS_DOMAIN_ID"] = str(args.domain_id)
     rclpy.init(args=ros_args)
-    try:
-        node = Robot320FastDDSRosGateway(
-            domain_id=args.domain_id,
-            robot_id=args.robot_id,
-            topic_prefix=args.topic_prefix,
-            nav_action=args.nav_action,
-            nav_cmd_vel_topic=args.nav_cmd_vel_topic,
-            telemetry_period_s=args.telemetry_period,
-            heartbeat_period_s=args.heartbeat_period,
-            max_command_age_s=args.max_command_age,
-        )
-    except FastDDSUnavailable as exc:
-        print(f"Fast DDS unavailable: {exc}", file=sys.stderr)
-        rclpy.shutdown()
-        return 2
+    node = Robot320FastDDSRosGateway(
+        domain_id=args.domain_id,
+        robot_id=args.robot_id,
+        topic_prefix=args.topic_prefix,
+        nav_action=args.nav_action,
+        nav_cmd_vel_topic=args.nav_cmd_vel_topic,
+        telemetry_period_s=args.telemetry_period,
+        heartbeat_period_s=args.heartbeat_period,
+        max_command_age_s=args.max_command_age,
+    )
     try:
         rclpy.spin(node)
         return 0

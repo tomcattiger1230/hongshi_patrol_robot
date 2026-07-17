@@ -1,6 +1,7 @@
 import time
 
-from remote_control.fastdds_client import RobotRemoteFastDDSClient
+import remote_control.fastdds_client as client_module
+from remote_control.fastdds_client import RobotRemoteFastDDSClient, _create_transport
 
 
 class FakeRemoteTransport:
@@ -53,3 +54,11 @@ def test_remote_client_builds_high_level_commands():
     assert all(item.sequence > 0 for item in transport.commands)
     assert transport.heartbeats
     assert transport.closed is True
+
+
+def test_auto_backend_prefers_ros2_when_available(monkeypatch):
+    marker = object()
+    monkeypatch.setattr(client_module, "ros2_available", lambda: True)
+    monkeypatch.setattr(client_module, "Ros2RemoteTransport", lambda *_: marker)
+
+    assert _create_transport("auto", 20, "test") is marker

@@ -39,7 +39,7 @@ setup(
     zip_safe=True,
     maintainer="Hongshi Agent Contributors",
     maintainer_email="hongshi-agent@example.com",
-    description="Robot320 mobile platform onboard side: CAN + ROS 2 + FastDDS bridge",
+    description="Robot320 mobile platform onboard side: CAN + ROS 2 communication gateway",
     license="MIT",
     extras_require={"test": ["pytest"]},
     entry_points={
@@ -48,6 +48,7 @@ setup(
             "robot320_ros2_bridge = mobile_platform.ros2_node:main",
             "robot320_fastdds_bridge = mobile_platform.fastdds_node:main",
             "robot320_fastdds_gateway = mobile_platform.fastdds_ros_gateway:main",
+            "robot320_ros_gateway = mobile_platform.fastdds_ros_gateway:main",
             "robot320_cli = mobile_platform.cli:main",
         ],
     },

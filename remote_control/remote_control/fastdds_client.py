@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""ROS-independent Robot320 remote client using eProsima Fast DDS."""
+"""Robot320 remote client with automatic ROS 2 / Fast DDS transport selection."""
 
 from __future__ import annotations
 
@@ -20,6 +20,8 @@ from robot320_interfaces.messages import (
     RobotTelemetry,
 )
 
+from .ros2_transport import Ros2RemoteTransport, Ros2Unavailable, ros2_available
+
 
 class RobotRemoteFastDDSClient:
     def __init__(
@@ -28,10 +30,14 @@ class RobotRemoteFastDDSClient:
         client_id: str = "remote_control",
         heartbeat_period_s: float = 1.0,
         transport: FastDdsRemoteTransport | None = None,
+        backend: str = "auto",
     ):
         self.client_id = client_id
         self.latest_telemetry: Optional[RobotTelemetry] = None
-        self._transport = transport or FastDdsRemoteTransport(domain_id, client_id)
+        if backend not in {"auto", "ros2", "fastdds"}:
+            raise ValueError(f"unsupported transport backend: {backend}")
+        self._transport = transport or _create_transport(backend, domain_id, client_id)
+        self.backend = getattr(self._transport, "backend", "custom")
         self._sequence = 0
         self._heartbeat_period_s = heartbeat_period_s
         self._running = True
@@ -142,9 +148,10 @@ class RobotRemoteFastDDSClient:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Robot320 Fast DDS remote control")
+    parser = argparse.ArgumentParser(description="Robot320 remote control")
     parser.add_argument("--domain-id", type=int, default=20)
     parser.add_argument("--client-id", default="remote_control")
+    parser.add_argument("--backend", choices=["auto", "ros2", "fastdds"], default="auto")
     sub = parser.add_subparsers(dest="command", required=True)
 
     move = sub.add_parser("move")
@@ -175,9 +182,11 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
-        client = RobotRemoteFastDDSClient(args.domain_id, args.client_id)
-    except FastDDSUnavailable as exc:
-        print(f"Fast DDS unavailable: {exc}", file=sys.stderr)
+        client = RobotRemoteFastDDSClient(
+            args.domain_id, args.client_id, backend=args.backend
+        )
+    except (FastDDSUnavailable, Ros2Unavailable) as exc:
+        print(f"communication backend unavailable: {exc}", file=sys.stderr)
         return 2
     try:
         if args.command == "move":
@@ -228,6 +237,12 @@ def _telemetry_line(telemetry: RobotTelemetry) -> str:
         f"lift_available={lift.available} lift_height={lift.height_m} "
         f"navigation={telemetry.navigation.state} faults={telemetry.faults}"
     )
+
+
+def _create_transport(backend: str, domain_id: int, client_id: str):
+    if backend == "ros2" or (backend == "auto" and ros2_available()):
+        return Ros2RemoteTransport(domain_id, client_id)
+    return FastDdsRemoteTransport(domain_id, client_id)
 
 
 if __name__ == "__main__":

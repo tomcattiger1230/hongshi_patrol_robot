@@ -1,18 +1,18 @@
 # Robot320 NUC 车载端
 
-`mobile_platform` 在 Ubuntu NUC 上负责 ControlCAN 底盘、安全门控、ROS 2 内部接口和
-Fast DDS 对外网关。正式部署时由 `robot320_localization_bringup` 统一启动。
+`mobile_platform` 在 Ubuntu NUC 上负责 ControlCAN 底盘、安全门控和 ROS 2 通信网关。
+正式部署时由 `robot320_localization_bringup` 统一启动。
 
 ```text
-Fast DDS command
+ROS 2 / DDS String command
       |
-robot320_fastdds_gateway
+robot320_ros_gateway (rclpy)
       | ROS 2
 Nav2 / Cartographer / lift adapter
       |
 robot320_ros2_bridge -> ControlCAN -> chassis
       |
-Fast DDS state/reply/heartbeat
+ROS 2 String state/reply/heartbeat
 ```
 
 ## 1. 构建和启动
@@ -22,8 +22,8 @@ Fast DDS state/reply/heartbeat
 ./scripts/uv_run.sh nuc ./build.sh
 ```
 
-NUC 系统镜像默认已通过 ROS 2 安装并配置 Fast DDS，同时提供网关所需的 Python binding
-和 `Robot320Dds` 类型；车载端不执行仅面向 Windows/macOS 上位机的 Fast DDS 安装流程。
+NUC 网关只使用 `rclpy` 和 `std_msgs/String`，DDS 由 ROS 2 RMW 负责，不安装或导入
+Fast-DDS-python，也不生成 `Robot320String`。
 
 定位模式：
 
@@ -34,13 +34,13 @@ NUC 系统镜像默认已通过 ROS 2 安装并配置 Fast DDS，同时提供网
   map_state_file:=/var/lib/robot320/maps/site.pbstream
 ```
 
-该 launch 默认同时启动 CAN bridge 和 Fast DDS ROS gateway。不要再启动
+该 launch 默认同时启动 CAN bridge 和 ROS 2 communication gateway。不要再启动
 `robot320_fastdds_bridge`，否则两个进程会争用 CAN 设备。后者只保留作无 ROS 2 的底盘
 调试入口，不是正式部署组成。
 
-## 2. Fast DDS 到 ROS 2 的映射
+## 2. 外部指令到 ROS 2 的映射
 
-| Fast DDS 指令 | NUC 行为 |
+| JSON 指令 | NUC 行为 |
 |---|---|
 | `manual_motion` | 发布 `/robot320/cmd_vel`，取消正在执行的导航 |
 | `stop` / `brake` | 立即停止或刹车 |
@@ -51,8 +51,8 @@ NUC 系统镜像默认已通过 ROS 2 安装并配置 Fast DDS，同时提供网
 | `lift` | 发布 `/robot320/lift/command` JSON |
 
 网关把 `/robot320/telemetry`、导航状态和 `/robot320/lift/status` 合并为
-`RobotTelemetry`，发布到 `robot320/state`。外部上位机只需 Fast DDS，不应加入 ROS 2
-domain。
+`RobotTelemetry`，发布到 `/robot320/state`。Ubuntu 上位机可直接加入 ROS domain；
+Windows/macOS 则由 standalone Fast DDS 访问其底层 `rt/robot320/state` DDS Topic。
 
 ## 3. ROS 2 内部接口
 
@@ -69,7 +69,7 @@ domain。
 | `/robot320/lift/command` | `std_msgs/String` JSON | 到升降杆驱动 |
 | `/robot320/lift/status` | `std_msgs/String` JSON | 来自升降杆驱动 |
 
-导航目标只有在 Nav2 action server 已启动且现场参数正确时才能执行；否则 Fast DDS
+导航目标只有在 Nav2 action server 已启动且现场参数正确时才能执行；否则通信网关
 reply 会明确返回 `rejected`。
 
 ## 4. 安全行为
@@ -102,9 +102,9 @@ reply 会明确返回 `rejected`。
 |---|---|
 | CAN 未连接 | USB 权限、设备索引、CAN 通道、runtime 架构 |
 | 有定位无导航 | Nav2 action server、TF `map -> base_link`、costmap 参数 |
-| NUC 有状态而上位机收不到 | Fast DDS domain、网卡、防火墙、生成类型版本 |
+| NUC 有状态而上位机收不到 | ROS domain、网卡、防火墙；非 ROS 上位机再检查 String TypeSupport |
 | 升降杆始终 unavailable | 现场驱动是否实现 command/status 两个 topic |
-| `FastDDSUnavailable` | NUC uv Python 中能否导入 `fastdds` 和 `Robot320Dds` |
+| NUC 网关无法启动 | 是否 source ROS 2，`rclpy` 和 `std_msgs` 是否可导入 |
 
 共享消息和 Fast DDS topic 见
 [`robot320_interfaces/README.md`](../robot320_interfaces/README.md)，雷达定位见

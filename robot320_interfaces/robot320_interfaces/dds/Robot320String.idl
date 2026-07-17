@@ -1,0 +1,14 @@
+// ROS 2 compatible std_msgs/msg/String type for standalone Fast DDS clients.
+module std_msgs
+{
+    module msg
+    {
+        module dds_
+        {
+            struct String_
+            {
+                string data;
+            };
+        };
+    };
+};

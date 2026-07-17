@@ -1,5 +1,5 @@
-"""Fast DDS generated type module location.
+"""ROS 2 compatible Fast DDS generated type module location.
 
 Run ``robot320_interfaces/scripts/generate_fastdds_types.sh`` to build the
-``Robot320Dds`` module for the target Python and operating system.
+``Robot320String`` module for a non-ROS target Python and operating system.
 """

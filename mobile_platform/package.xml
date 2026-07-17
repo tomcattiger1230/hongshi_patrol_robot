@@ -7,8 +7,7 @@
   <version>0.1.0</version>
   <description>
     Robot320 mobile platform onboard side: CAN bus chassis control, safety
-    gating, semantic command/telemetry messaging, ROS 2 bridge and FastDDS
-    bridge skeleton.
+    gating, semantic command/telemetry messaging and ROS 2 communication gateway.
   </description>
 
   <maintainer email="hongshi-agent@example.com">Hongshi Agent Contributors</maintainer>

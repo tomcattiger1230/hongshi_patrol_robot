@@ -1,7 +1,7 @@
 # Robot320 上位机
 
-上位机正式入口是 PySide6 GUI。它通过 Fast DDS 与 NUC 通信，不导入 `rclpy`，可运行在
-Windows、macOS 或 Linux。
+上位机正式入口是 PySide6 GUI。Ubuntu 自动使用 `rclpy`；Windows/macOS 使用 standalone
+Fast DDS。两种后端都连接 NUC 的 ROS 2 `std_msgs/String` JSON Topic。
 
 GUI 支持：
 
@@ -19,19 +19,18 @@ GUI 支持：
 ./scripts/uv_setup.sh desktop --python 3.12
 ```
 
-这里的 Python 版本只是示例，必须与随后构建 Fast DDS Python binding 时使用的解释器
-完全一致。项目需要三个 native 层全部匹配：
-
-1. Fast DDS / Fast CDR C++ runtime
-2. 提供 `import fastdds` 的 Fast-DDS-python binding
-3. 由项目 IDL 生成的 `Robot320Dds` Python module
-
-Ubuntu 设备由项目部署环境统一安装 ROS 2、Fast DDS binding 和 `Robot320Dds` 类型，完成
-上述 uv 初始化后可直接运行 GUI，不执行后续 native 安装步骤：
+Ubuntu 上位机由 `uv_run.sh` 自动 source `/opt/ros/jazzy/setup.bash`，GUI 的默认
+`--backend auto` 会优先选择 ROS 2：
 
 ```bash
 ./scripts/uv_run.sh desktop robot320_remote_gui --domain-id 20
 ```
+
+Windows/macOS 才需要下面三个 native 层，并且 Python ABI 必须完全一致：
+
+1. Fast DDS / Fast CDR C++ runtime
+2. 提供 `import fastdds` 的 Fast-DDS-python binding
+3. 由项目 IDL 生成的 ROS 2 String `Robot320String` Python module
 
 Windows 和 macOS 没有项目预装的 Ubuntu/ROS 2 环境，才需要按下面章节额外准备三个
 native 层。Fast DDS 本身不是 PyPI 包，不能只靠 `uv sync` 安装。
@@ -83,9 +82,9 @@ call install\setup.bat
 保持上一步 `install\setup.bat` 已调用，然后从仓库根目录生成 IDL 类型：
 
 ```bat
-mkdir robot320_interfaces\generated\Robot320Dds
-cd robot320_interfaces\generated\Robot320Dds
-fastddsgen.bat -python -replace ..\..\robot320_interfaces\dds\Robot320Dds.idl
+mkdir robot320_interfaces\generated\Robot320String
+cd robot320_interfaces\generated\Robot320String
+fastddsgen.bat -python -replace ..\..\robot320_interfaces\dds\Robot320String.idl
 cmake -S . -B build -DPython3_EXECUTABLE="%CD%\..\..\..\.venv\Scripts\python.exe"
 cmake --build build --config Release
 set PYTHONPATH=%CD%;%CD%\build\Release;%CD%\build;%PYTHONPATH%
@@ -139,7 +138,7 @@ source install/setup.bash
 Linux 虚拟机，而不是复用其他操作系统生成的 `.so`/`.dylib`。
 
 构建完成后回到仓库。以下脚本会像参考项目一样，把 `fastdds` binding 与项目的
-`Robot320Dds` 类型直接安装/编译到当前 `.venv`，运行时不再依赖手工设置
+ROS 2 String TypeSupport 直接安装/编译到当前 `.venv`，运行时不再依赖手工设置
 `PYTHONPATH`：
 
 ```bash
@@ -155,15 +154,16 @@ FASTDDSGEN_SOURCE="$HOME/fastdds-python/src/fastddsgen" \
 
 ```bash
 ./scripts/uv_run.sh desktop robot320_remote_gui \
-  --domain-id 20 --client-id operator-laptop
+  --domain-id 20 --client-id operator-laptop --backend auto
 ```
 
 Windows 中先 `call install\setup.bat`，再直接执行对应的 `uv run --locked ...` 命令。
-NUC 与上位机的 domain ID 必须一致，默认均为 `20`。
+NUC 的 `ROS_DOMAIN_ID` 与上位机 domain ID 必须一致，默认均为 `20`。可用
+`--backend ros2` 或 `--backend fastdds` 强制选择，通常保留 `auto` 即可。
 
 ## 5. Python API
 
-GUI 和其他应用复用同一个 ROS-independent 客户端：
+GUI 和其他应用复用同一个自动后端客户端：
 
 ```python
 from remote_control.fastdds_client import RobotRemoteFastDDSClient
@@ -181,8 +181,9 @@ finally:
 
 | 现象 | 检查项 |
 |---|---|
-| `FastDDSUnavailable` | Windows/macOS 运行 native 安装流程；Ubuntu 检查项目预装环境。然后确认 `import fastdds, Robot320Dds` 在同一个 uv Python 中成功 |
-| GUI 启动但无遥测 | domain ID、同网段、防火墙、NUC gateway、多网卡路由 |
+| Ubuntu 启动后端失败 | `source /opt/ros/jazzy/setup.bash` 后能否导入 `rclpy`、`std_msgs` |
+| `FastDDSUnavailable` | Windows/macOS 确认 `import fastdds, Robot320String` 在同一个 uv Python 中成功 |
+| GUI 启动但无遥测 | `ROS_DOMAIN_ID`/domain ID、同网段、防火墙、NUC gateway、多网卡路由 |
 | Windows 找不到 DLL | 是否在同一终端调用 Fast DDS `setup.bat` |
 | macOS 找不到 dylib | Fast DDS prefix 是否已 source，架构是否与 Python 一致 |
 | 生成类型导入失败 | 重新用当前 uv Python 运行 Fast DDS-Gen 和 CMake |

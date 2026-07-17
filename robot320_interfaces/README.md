@@ -1,35 +1,40 @@
 # robot320_interfaces
 
-机器人 NUC 与 `remote_control` 共用的 ROS-independent 语义模型和 Fast DDS IDL。
-该包本身不导入 `rclpy`，由根目录 uv 项目在 NUC 和无 ROS 2 的上位机中统一安装。
+NUC 和上位机共用的 ROS-independent 消息与 Fast DDS wire contract。本包不导入
+`rclpy`，由根目录 uv 项目在两端以 editable 方式安装。
 
-正式 DDS topic：
+## Fast DDS topic
 
-| Topic | 类型 | 方向 |
+| Topic | 内容 | 方向 |
 |---|---|---|
-| `robot320/command` | `Robot320CommandEnvelope` | 上位机 → NUC |
-| `robot320/state` | `Robot320StateEnvelope` | NUC → 上位机 |
-| `robot320/reply` | `Robot320ReplyEnvelope` | NUC → 上位机 |
-| `robot320/heartbeat` | `Robot320HeartbeatEnvelope` | 双向 |
+| `robot320/command` | 手动、导航、安全和升降杆指令 | 上位机 → NUC |
+| `robot320/state` | 底盘、位姿、导航、升降杆、电池和故障 | NUC → 上位机 |
+| `robot320/reply` | accepted/completed/rejected/failed | NUC → 上位机 |
+| `robot320/heartbeat` | 节点身份、角色、序列号和时间戳 | 双向 |
 
-IDL envelope 保存身份、序列号和时间戳；具体业务字段使用版本兼容的 JSON 语义消息。
-这允许后续增加升降杆或电池字段，而不必每次破坏 DDS 二进制类型兼容性。
+IDL envelope 保存标识、序列号和时间戳；业务字段使用 JSON，使新增遥测字段时不必破坏
+DDS envelope 的二进制类型。
 
-生成目标平台的 Python 类型：
+## 生成 Python 类型
+
+先安装 Fast DDS C++ runtime、Fast-DDS-python 和 Fast DDS-Gen。Windows/macOS 具体路径
+见 [`remote_control/README.md`](../remote_control/README.md)。Linux/macOS：
 
 ```bash
-sudo apt install swig libpython3-dev
 FASTDDS_SETUP=/path/to/Fast-DDS-python/install/setup.bash \
-  ./scripts/uv_run.sh desktop ./robot320_interfaces/scripts/generate_fastdds_types.sh
+  ./scripts/uv_run.sh desktop \
+  ./robot320_interfaces/scripts/generate_fastdds_types.sh
 ```
 
-`uv_run.sh` 会自动把默认生成目录加入 `PYTHONPATH`；自定义输出目录时设置
-`ROBOT320_DDS_TYPES=/path/to/build`。NUC 上把 profile 从 `desktop` 改成 `nuc`。
+默认输出为 `robot320_interfaces/generated/Robot320Dds/build`，`uv_run.sh` 会自动加入
+`PYTHONPATH`。自定义目录时设置 `ROBOT320_DDS_TYPES=/path/to/build`。
 
-生成类型与 Fast DDS Python bindings 都必须针对运行电脑的操作系统和 Python 版本构建；
-`uv_setup.sh --python` 选择的解释器也必须使用相同 ABI。
+以下三者必须使用相同操作系统、CPU 架构和 Python ABI：
 
-实现依据：
+- `fastdds` Python binding
+- `Robot320Dds` 生成 module
+- uv 环境的 Python
 
-- [Fast DDS Python publisher/subscriber](https://fast-dds.docs.eprosima.com/en/stable/fastdds/getting_started/simple_python_app/simple_python_app.html)
-- [Fast DDS-Gen Python bindings](https://fast-dds.docs.eprosima.com/en/2.x/fastddsgen/python_bindings/python_bindings.html)
+IDL 位于 `robot320_interfaces/robot320_interfaces/dds/Robot320Dds.idl`。实现参考
+[Fast DDS Python 示例](https://fast-dds.docs.eprosima.com/en/stable/fastdds/getting_started/simple_python_app/simple_python_app.html)
+和 [Fast DDS-Gen](https://fast-dds.docs.eprosima.com/en/stable/fastddsgen/introduction/introduction.html)。

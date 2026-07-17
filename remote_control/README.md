@@ -1,231 +1,179 @@
-# remote_control
+# Robot320 上位机
 
-Robot320 移动底盘的上位机 ROS 2 控制包。它不直接发送 CAN 帧，只发送语义控制命令，并接收机器人遥测。
+上位机正式入口是 PySide6 GUI。它通过 Fast DDS 与 NUC 通信，不导入 `rclpy`，可运行在
+Windows、macOS 或 Linux。
 
-## 1. 包信息
+GUI 支持：
 
-| 项 | 值 |
-|---|---|
-| ROS 构建类型 | `ament_python`（`format="3"`） |
-| 入口模块 | `remote_control`（对应 `remote_control/remote_control/__init__.py`） |
-| console scripts | `robot320_remote_cli` / `robot320_remote_ros2` / `robot320_remote_fastdds` / `robot320_remote_gui` |
-| launch | `robot320_remote_watch.launch.py` |
-| 核心依赖 | `robot320_interfaces`；Fast DDS 模式不依赖 ROS 2 |
-| 可选 ROS 2 依赖 | `rclpy` / `geometry_msgs` / `std_msgs` / `launch` |
+- 按住持续发送的前进、后退和转向，松开立即停车
+- 停止、刹车、急停和解除急停
+- Nav2 目标发送、取消、状态和进度
+- 升降杆动作和目标高度
+- 底盘、SLAM 位姿、升降杆、电池、故障和指令应答
 
-## 2. 目录结构
+## 1. Python 环境
 
-```text
-remote_control/
-├── package.xml
-├── setup.py
-├── setup.cfg
-├── MANIFEST.in
-├── resource/remote_control           # ament index 标记
-├── launch/
-│   └── robot320_remote_watch.launch.py  # ros2 launch remote_control ...
-├── README.md
-└── remote_control/                   # Python 子包（import 路径）
-    ├── __init__.py
-    ├── cli.py                        # UDP JSON 远程 CLI
-    ├── dds_client.py                 # UDP JSON 调试客户端
-    ├── ros2_client.py                # ROS 2 上位机入口
-    ├── fastdds_client.py             # ROS-independent Fast DDS client/API
-    ├── gui.py                        # PySide6 Fast DDS 控制台
-    └── gui_model.py                  # 与 Qt 解耦的遥测显示模型
-```
-
-`import remote_control` 路径不变；源码现在位于 `remote_control/remote_control/` 子目录，这是 ament_python 标准嵌套布局。
-
-## 3. 构建
+仓库的 `desktop` profile 安装 `robot320_interfaces`、`remote_control` 和 PySide6：
 
 ```bash
-cd /path/to/hongshi_patrol_robot
-./scripts/uv_setup.sh desktop
+./scripts/uv_setup.sh desktop --python 3.12
 ```
 
-依赖由根目录 `pyproject.toml` 和 `uv.lock` 管理。上位机 profile 会以 editable 方式安装
-`robot320_interfaces`、`remote_control` 和锁定版本的 PySide6，不需要 ROS 2。
+这里的 Python 版本只是示例，必须与随后构建 Fast DDS Python binding 时使用的解释器
+完全一致。项目需要三个 native 层全部匹配：
 
-## 4. 运行
+1. Fast DDS / Fast CDR C++ runtime
+2. 提供 `import fastdds` 的 Fast-DDS-python binding
+3. 由项目 IDL 生成的 `Robot320Dds` Python module
 
-### 4.1 ROS 2 上位机（Ubuntu 首选）
+Fast DDS 本身不是 PyPI 包，不能只靠 `uv sync` 安装。
 
-```bash
-# 一键遥测监听（默认 1 小时，seconds:=30 控制时长）
-ros2 launch remote_control robot320_remote_watch.launch.py seconds:=30
+## 2. Windows 安装 Fast DDS
+
+### 2.1 前置条件
+
+- 64 位 Python（建议 3.12，并确认所选 Fast-DDS-python 版本支持）
+- Visual Studio，勾选 **Desktop development with C++**
+- CMake、Git、Java、SWIG 4.1 和 uv
+
+先在仓库中固定 Python：
+
+```bat
+cd /d C:\path\to\hongshi_patrol_robot
+uv venv --python 3.12 .venv
+uv sync --locked --extra desktop --no-default-groups
+set ROBOT320_PYTHON=%CD%\.venv\Scripts\python.exe
 ```
 
-可用参数：
+Fast DDS C++ runtime/Gen 有两条官方路径：
 
-| 参数 | 默认值 | 含义 |
-|---|---|---|
-| `topic_prefix` | `/robot320` | 订阅 `/robot320/telemetry` 等 topic 时使用 |
-| `seconds` | `3600` | 监听时长（秒） |
+- 使用 [eProsima Windows 二进制安装器](https://fast-dds.docs.eprosima.com/en/stable/installation/binaries/binaries_windows.html)，安装时选择匹配的 Visual Studio 和 x64 架构；
+- 按 [Windows 源码安装](https://fast-dds.docs.eprosima.com/en/stable/installation/sources/sources_windows.html) 编译 Fast DDS、Fast CDR 和 Fast DDS-Gen。
 
-```bash
-# 发送控制
-robot320_remote_ros2 move --linear 0.2 --angular 0.0 --duration 2
-robot320_remote_ros2 stop
-robot320_remote_ros2 brake
-robot320_remote_ros2 estop
-robot320_remote_ros2 reset               # mode=idle 解除急停
-robot320_remote_ros2 watch --seconds 30
+二进制安装器不等于 Python binding。GUI 仍需在 **Developer Command Prompt for VS**
+中构建 [Fast-DDS-python](https://github.com/eProsima/Fast-DDS-python)：
+
+```bat
+mkdir C:\fastdds-python
+cd /d C:\fastdds-python
+curl.exe -L https://raw.githubusercontent.com/eProsima/Fast-DDS-python/master/fastdds_python.repos -o fastdds_python.repos
+mkdir src
+uvx --from vcstool vcs import src --input fastdds_python.repos
+uvx --from colcon-common-extensions colcon build --packages-up-to fastdds_python --cmake-args -DPython3_EXECUTABLE="%ROBOT320_PYTHON%"
+cd src\fastddsgen
+gradlew.bat assemble
+set PATH=%CD%\scripts;%PATH%
+cd ..\..
+call install\setup.bat
 ```
 
-### 4.2 UDP JSON 远程 CLI
+如果已经用安装器装好了 C++ runtime，也可以按官方 Windows 源码文档的 CMake 路径只
+构建 Python binding，并通过 `CMAKE_PREFIX_PATH` 指向安装器目录。
 
-```bash
-robot320_remote_cli --robot 192.168.1.10:15000 move --linear 0.2 --duration 2
-robot320_remote_cli move --linear 0.2 --angular 0.4
-robot320_remote_cli stop
-robot320_remote_cli brake
-robot320_remote_cli estop
-robot320_remote_cli watch --seconds 30
+### 2.2 Windows 生成项目类型并运行
+
+保持上一步 `install\setup.bat` 已调用，然后从仓库根目录生成 IDL 类型：
+
+```bat
+mkdir robot320_interfaces\generated\Robot320Dds
+cd robot320_interfaces\generated\Robot320Dds
+fastddsgen.bat -python -replace ..\..\robot320_interfaces\dds\Robot320Dds.idl
+cmake -S . -B build -DPython3_EXECUTABLE="%CD%\..\..\..\.venv\Scripts\python.exe"
+cmake --build build --config Release
+set PYTHONPATH=%CD%;%CD%\build\Release;%CD%\build;%PYTHONPATH%
+cd /d ..\..\..
+uv run --locked --extra desktop --no-default-groups robot320_remote_gui --domain-id 20
 ```
 
-适合没有 ROS 2 / DDS 的笔记本做本地联调。
+若 Windows 防火墙弹出网络请求，应允许专用网络访问；否则 DDS discovery 可能无法找到
+NUC。官方文档也提示 Windows 可能需要单独的防火墙规则。
 
-### 4.3 Qt Fast DDS 控制台（推荐）
+## 3. macOS 安装 Fast DDS
+
+macOS 没有官方二进制安装器。Fast DDS C++ runtime 和 Fast DDS-Gen 应按
+[官方 macOS 源码安装](https://fast-dds.docs.eprosima.com/en/stable/installation/sources/sources_mac.html)
+构建，前置条件包括 Homebrew、Xcode Command Line Tools、CMake、Asio、TinyXML2、
+OpenSSL 和 Java。
 
 ```bash
-./scripts/uv_run.sh desktop robot320_remote_gui \
+xcode-select --install
+brew install cmake asio tinyxml2 openssl wget openjdk
+```
+
+Fast-DDS-python 要求 SWIG 低于 4.2（推荐 4.1）。Homebrew 当前默认版本可能更高，必须
+先用 `swig -version` 核对，并按 SWIG/Homebrew 的版本化安装方式准备 4.1。
+
+随后可使用 Fast-DDS-python 官方仓库的 colcon workspace 方式构建 binding：
+
+```bash
+export ROBOT320_REPO=/path/to/hongshi_patrol_robot
+cd "$ROBOT320_REPO"
+./scripts/uv_setup.sh desktop --python 3.12
+export ROBOT320_PYTHON="$ROBOT320_REPO/.venv/bin/python"
+
+mkdir -p ~/fastdds-python/src
+cd ~/fastdds-python
+curl -L https://raw.githubusercontent.com/eProsima/Fast-DDS-python/master/fastdds_python.repos \
+  -o fastdds_python.repos
+uvx --from vcstool vcs import src --input fastdds_python.repos
+uvx --from colcon-common-extensions colcon build --packages-up-to fastdds_python \
+  --cmake-args -DPython3_EXECUTABLE="$ROBOT320_PYTHON"
+cd src/fastddsgen
+./gradlew assemble
+export PATH="$PWD/scripts:$PATH"
+cd ../..
+source install/setup.bash
+```
+
+重要限制：Fast-DDS-python 上游当前公开 CI 只标明 Ubuntu 和 Windows，官方安装手册也
+没有单独的 macOS Python binding 章节。因此 macOS binding 属于源码构建路径，必须在
+目标 Mac 和目标 Python 上实际验证；若构建失败，正式可支持方案是 Windows 上位机或
+Linux 虚拟机，而不是复用其他操作系统生成的 `.so`/`.dylib`。
+
+构建完成后回到仓库：
+
+```bash
+cd "$ROBOT320_REPO"
+FASTDDS_SETUP=/path/to/fastdds-python/install/setup.bash \
+  ./scripts/uv_run.sh desktop \
+  ./robot320_interfaces/scripts/generate_fastdds_types.sh
+FASTDDS_SETUP=/path/to/fastdds-python/install/setup.bash \
+  ./scripts/uv_run.sh desktop robot320_remote_gui --domain-id 20
+```
+
+## 4. 使用 GUI
+
+```bash
+FASTDDS_SETUP=/path/to/Fast-DDS-python/install/setup.bash \
+  ./scripts/uv_run.sh desktop robot320_remote_gui \
   --domain-id 20 --client-id operator-laptop
 ```
 
-GUI 直接使用 Fast DDS，不导入 ROS 2。界面包括：
+Windows 中先 `call install\setup.bat`，再直接执行对应的 `uv run --locked ...` 命令。
+NUC 与上位机的 domain ID 必须一致，默认均为 `20`。
 
-- 底盘在线、速度、刹车、急停和故障状态
-- SLAM 位姿、Nav2 状态和进度
-- 升降杆、电池和机器人故障状态
-- 按住持续发送的前进/后退/转向控制，松开立即发送停止
-- 导航目标发送与取消、升降杆控制、刹车和急停
-- 指令 ID、接受/完成/拒绝/失败应答日志
+## 5. Python API
 
-PySide6 只存在于 uv 的 `desktop` extra，不会安装到无图形界面的 NUC。GUI 所在笔记本
-只需 uv 环境、Fast DDS Python native overlay 和生成的 `Robot320Dds` 模块，不需要
-ROS 2。
-
-### 4.4 Fast DDS 主通信入口（不需要 ROS 2）
-
-```bash
-./scripts/uv_run.sh desktop robot320_remote_fastdds --domain-id 20 move --linear 0.2 --duration 2
-./scripts/uv_run.sh desktop robot320_remote_fastdds --domain-id 20 goal --x 3.0 --y 1.5 --yaw 0.0
-./scripts/uv_run.sh desktop robot320_remote_fastdds --domain-id 20 lift move_to --height 1.2
-./scripts/uv_run.sh desktop robot320_remote_fastdds --domain-id 20 estop
-./scripts/uv_run.sh desktop robot320_remote_fastdds --domain-id 20 watch --seconds 30
-```
-
-这是上位机正式通信入口，只依赖 `robot320_interfaces`、Fast DDS Python bindings 和
-目标平台生成的 `Robot320Dds` 模块，不导入 `rclpy`。运行环境和 IDL 生成方式见
-[`robot320_interfaces/README.md`](../robot320_interfaces/README.md)。
-
-## 5. 启动顺序（ROS 2 联调）
-
-1. 机器人 Ubuntu 端启动车载节点：
-
-    ```bash
-    source /opt/ros/<distro>/setup.bash
-    export ROS_DOMAIN_ID=20
-    ros2 launch mobile_platform robot320_ros2.launch.py
-    ```
-
-2. 上位机 Ubuntu 端启动遥测监听：
-
-    ```bash
-    source /opt/ros/<distro>/setup.bash
-    export ROS_DOMAIN_ID=20
-    ros2 launch remote_control robot320_remote_watch.launch.py seconds:=30
-    ```
-
-3. 上位机发送控制：
-
-    ```bash
-    robot320_remote_ros2 move --linear 0.2 --angular 0.0 --duration 2
-    robot320_remote_ros2 stop
-    ```
-
-## 6. ROS 2 网络检查
-
-```bash
-ros2 node list
-ros2 topic list
-ros2 topic echo /robot320/telemetry
-ros2 topic pub --once /robot320/cmd_vel geometry_msgs/msg/Twist \
-  "{linear: {x: 0.1}, angular: {z: 0.0}}"
-```
-
-上位机看不到 topic 时，优先检查：
-
-- 两端 `ROS_DOMAIN_ID` 是否一致
-- 网络是否互通
-- 防火墙是否拦截 DDS 发现与 UDP 通讯
-- 是否有多网卡导致 DDS 选错网卡
-
-车载端 topic 完整列表见 [`../mobile_platform/README.md` §5](../mobile_platform/README.md#5-ros-2-topic-约定)。
-
-## 7. 数据范围
-
-- 控制：线速度、角速度、刹车、急停、导航 / 手动模式
-- 状态：底盘连接、使能、刹车、速度、转速、转向、急停状态
-- 定位：`Pose2D`（已由 NUC 端 `/tracked_pose` 写入遥测，CLI/GUI 可显示）
-- 导航：目标点、导航状态、进度、提示信息
-- 地图：先以 `map_revision` 占位，后续按 DDS topic 承载栅格地图或矢量地图
-
-## 8. Fast DDS
-
-Ubuntu、Windows 或 macOS 上位机均按目标系统构建 Fast DDS Python bindings 和 IDL 类型。
-正式契约位于 `robot320_interfaces/robot320_interfaces/dds/Robot320Dds.idl`：
-
-- `robot320/command`：目标点、手动运动、急停和升降指令
-- `robot320/state`：底盘、位置、导航、升降杆、电池和故障状态
-- `robot320/reply`：指令接受、完成、拒绝或失败应答
-- `robot320/heartbeat`：双端在线心跳
-
-## 9. Python API 速查
-
-笔记本正式程序直接使用 Fast DDS 客户端类，不需要启动 ROS 2，也不必通过命令行：
+GUI 和其他应用复用同一个 ROS-independent 客户端：
 
 ```python
 from remote_control.fastdds_client import RobotRemoteFastDDSClient
 
 client = RobotRemoteFastDDSClient(domain_id=20, client_id="operator-laptop")
 try:
-    client.send_manual_command(linear_speed_mps=0.2, angular_speed_radps=0.0)
     client.send_navigation_goal(x_m=3.0, y_m=1.5, yaw_rad=0.0)
-    state = client.receive_telemetry(timeout_s=1.0)
+    telemetry = client.receive_telemetry(timeout_s=1.0)
     reply = client.receive_reply(timeout_s=1.0)
-    client.cancel_navigation()
-    client.control_lift("move_to", target_height_m=1.2)
 finally:
     client.close()
 ```
 
-下面两个接口仅用于已有 ROS 2 或 UDP 调试场景：
+## 6. 排查
 
-```python
-from remote_control.ros2_client import RobotRemoteRosNode
-import rclpy
-rclpy.init()
-node = RobotRemoteRosNode(topic_prefix="/robot320")
-node.send_manual_command(linear_speed_mps=0.2, angular_speed_radps=0.0)
-node.stop()
-node.destroy_node()
-rclpy.shutdown()
-```
-
-```python
-from remote_control.cli import main as remote_cli_main
-remote_cli_main(["--robot", "192.168.1.10:15000", "move", "--linear", "0.2", "--duration", "2"])
-```
-
-## 10. 故障排查清单
-
-| 现象 | 优先检查 |
+| 现象 | 检查项 |
 |---|---|
-| `ros2 run remote_control robot320_remote_ros2 --help` 找不到 | 是否 `source install/setup.bash`？是否成功 `colcon build`？ |
-| launch 文件找不到 | 同上，且 `ros2 launch <pkg> <name>.launch.py` 中的 launch 文件名要与 `launch/` 下文件一致 |
-| 上位机无 topic | 第四节启动顺序是否走通；`ROS_DOMAIN_ID` 是否一致；`ros2 topic list` 是否能看到车载端 topic |
-| GUI 提示缺少 PySide6 | 确认执行过 `./scripts/uv_setup.sh desktop`，并通过 `uv_run.sh desktop` 启动 |
-| GUI 显示“DDS 已启动”但无遥测 | 检查 Fast DDS domain、同网段、防火墙以及 NUC 网关是否启动 |
-| Fast DDS 抛 `FastDDSUnavailable` | 未安装/source Fast-DDS-python，或未生成并加载 `Robot320Dds` 模块 |
+| `FastDDSUnavailable` | `import fastdds` 和 `import Robot320Dds` 是否在同一个 uv Python 中成功 |
+| GUI 启动但无遥测 | domain ID、同网段、防火墙、NUC gateway、多网卡路由 |
+| Windows 找不到 DLL | 是否在同一终端调用 Fast DDS `setup.bat` |
+| macOS 找不到 dylib | Fast DDS prefix 是否已 source，架构是否与 Python 一致 |
+| 生成类型导入失败 | 重新用当前 uv Python 运行 Fast DDS-Gen 和 CMake |

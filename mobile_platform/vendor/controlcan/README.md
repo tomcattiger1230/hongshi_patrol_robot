@@ -1,24 +1,18 @@
-# ControlCAN Linux Runtime Libraries
+# ControlCAN Linux runtime
 
-This directory contains the small runtime subset extracted from the Linux CAN
-driver package in `mobile_platform/driver/can_linux.rar`.
+此目录只保存 Robot320 运行所需的最小厂商 runtime 和头文件。完整安装包、工具和手册不
+进入 git。
 
-`ControlCANAdapter` selects the library automatically on Linux:
-
-| Directory | Target |
+| 目录 | 目标平台 |
 |---|---|
-| `linux-x86_64/` | x86_64 / amd64 Linux |
-| `linux-x86/` | 32-bit x86 Linux |
-| `linux-aarch64/` | 64-bit ARM Linux |
-| `linux-armv7/` | 32-bit ARM Linux |
-| `include/` | vendor `controlcan.h` |
+| `linux-x86_64` | x86_64 / amd64 Linux |
+| `linux-x86` | 32 位 x86 Linux |
+| `linux-aarch64` | 64 位 ARM Linux |
+| `linux-armv7` | 32 位 ARM Linux |
+| `include` | `controlcan.h` |
 
-Search order at runtime:
+`ControlCANAdapter` 的查找顺序：显式 `library_path`、`CONTROL_CAN_LIB`、当前目录的
+`libcontrolcan.so`、最后是与 `platform.machine()` 匹配的本目录 runtime。
 
-1. Explicit `--lib` / `CANAdapterConfig.library_path`
-2. `CONTROL_CAN_LIB`
-3. `./libcontrolcan.so`
-4. Bundled library matching `platform.machine()`
-
-The full vendor archive and manuals are intentionally kept under
-`mobile_platform/driver/`, which is ignored by git because it is large.
+这些库仅用于 Linux NUC，不用于 Windows/macOS 上位机。设备权限、固件和 CAN 波特率
+以厂商手册及现场硬件为准。

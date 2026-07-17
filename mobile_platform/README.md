@@ -1,313 +1,113 @@
-# mobile_platform
+# Robot320 NUC 车载端
 
-Robot320 移动底盘的车载端 ROS 2 包。负责：
-
-- 封装周立功 ControlCAN 驱动（`libcontrolcan.so`，多架构 vendor）
-- 解析 Robot320 CAN 协议并维护底盘状态
-- 复用 `robot320_interfaces` 中与 ROS 2 无关的命令、状态和 Fast DDS 契约
-- 提供车载 ROS 2、Fast DDS 网关和底盘 launch，方便车载端启动
-- 集成 Livox MID-360s + Cartographer，并把 SLAM 位姿加入上位机遥测
-
-## 1. 包信息
-
-| 项 | 值 |
-|---|---|
-| ROS 构建类型 | `ament_python`（`format="3"`） |
-| 入口模块 | `mobile_platform`（对应 `mobile_platform/mobile_platform/__init__.py`） |
-| console scripts | `robot320_onboard` / `robot320_ros2_bridge` / `robot320_fastdds_bridge` / `robot320_fastdds_gateway` / `robot320_cli` |
-| launch | `robot320_ros2.launch.py`（SLAM 统一启动位于 `robot320_localization_bringup`） |
-| 运行时依赖 | `robot320_interfaces` `rclpy` `std_msgs` `geometry_msgs` `launch` `launch_ros` `ament_index_python` |
-
-## 2. 目录结构
+`mobile_platform` 在 Ubuntu NUC 上负责 ControlCAN 底盘、安全门控、ROS 2 内部接口和
+Fast DDS 对外网关。正式部署时由 `robot320_localization_bringup` 统一启动。
 
 ```text
-mobile_platform/
-├── package.xml
-├── setup.py
-├── setup.cfg
-├── MANIFEST.in
-├── resource/mobile_platform           # ament index 标记
-├── launch/
-│   └── robot320_ros2.launch.py        # ros2 launch mobile_platform ...
-├── vendor/controlcan/                 # libcontrolcan.so 多架构
-│   ├── linux-x86_64/libcontrolcan.so
-│   ├── linux-x86/libcontrolcan.so
-│   ├── linux-aarch64/libcontrolcan.so
-│   ├── linux-armv7/libcontrolcan.so
-│   ├── include/controlcan.h
-│   └── README.md
-├── README.md                          # 本文档
-└── mobile_platform/                   # Python 子包（import 路径）
-    ├── __init__.py
-    ├── can_types.py                   # libcontrolcan.so ctypes 结构
-    ├── controlcan.py                  # ControlCAN 驱动封装
-    ├── protocol.py                    # Robot320 CAN 协议
-    ├── robot320.py                    # 高层底盘 API
-    ├── messages.py                    # ChassisCommand / RobotTelemetry
-    ├── transport.py                   # 通讯抽象 + UDP JSON 调试
-    ├── safety.py                      # 超时、限速、急停
-    ├── onboard_node.py                # 车载 UDP JSON 入口
-    ├── ros2_node.py                   # ROS 2 车载节点
-    ├── fastdds_node.py                # Fast DDS 直连 CAN（无 ROS 2）
-    ├── fastdds_ros_gateway.py         # Fast DDS ↔ ROS 2 / Nav2 网关
-    └── cli.py                         # 命令行调试入口
+Fast DDS command
+      |
+robot320_fastdds_gateway
+      | ROS 2
+Nav2 / Cartographer / lift adapter
+      |
+robot320_ros2_bridge -> ControlCAN -> chassis
+      |
+Fast DDS state/reply/heartbeat
 ```
 
-`import mobile_platform` 的路径不变；源码现在位于 `mobile_platform/mobile_platform/` 子目录，这是 ament_python 推荐的标准嵌套布局（参见 `BUILD_HISTORY.md`）。
-
-## 3. 构建
+## 1. 构建和启动
 
 ```bash
-cd /path/to/hongshi_patrol_ws
 ./scripts/uv_setup.sh nuc
-./scripts/uv_run.sh nuc ./build.sh --packages-up-to mobile_platform
+FASTDDS_SETUP=/path/to/Fast-DDS-python/install/setup.bash \
+  ./scripts/uv_run.sh nuc \
+  ./robot320_interfaces/scripts/generate_fastdds_types.sh
+FASTDDS_SETUP=/path/to/Fast-DDS-python/install/setup.bash \
+  ./scripts/uv_run.sh nuc ./build.sh
 ```
 
-NUC 的 uv profile 使用系统 Python 并允许读取 ROS 2 system site packages；运行命令时
-`uv_run.sh nuc` 会自动 source ROS 2、Fast DDS（设置了 `FASTDDS_SETUP` 时）和仓库的
-colcon overlay。Python/PyPI 依赖统一由根目录 `pyproject.toml` 与 `uv.lock` 管理。
-
-## 4. 运行
-
-### 4.1 ROS 2 车载节点（推荐）
+定位模式：
 
 ```bash
-./scripts/uv_run.sh nuc ros2 launch mobile_platform robot320_ros2.launch.py \
-    topic_prefix:=/robot320 \
-    command_timeout:=0.6 \
-    max_linear_speed:=0.8 \
-    max_angular_speed:=1.2 \
-    rpm_per_mps:=500 \
-    steering_gain:=180
+FASTDDS_SETUP=/path/to/Fast-DDS-python/install/setup.bash \
+  ./scripts/uv_run.sh nuc ros2 launch \
+  robot320_localization_bringup robot320_slam.launch.py \
+  mode:=localization \
+  map_state_file:=/var/lib/robot320/maps/site.pbstream
 ```
 
-可用参数（`launch` 文件中的 `DeclareLaunchArgument`）：
+该 launch 默认同时启动 CAN bridge 和 Fast DDS ROS gateway。不要再启动
+`robot320_fastdds_bridge`，否则两个进程会争用 CAN 设备。后者只保留作无 ROS 2 的底盘
+调试入口，不是正式部署组成。
 
-| 参数 | 默认值 | 含义 |
+## 2. Fast DDS 到 ROS 2 的映射
+
+| Fast DDS 指令 | NUC 行为 |
+|---|---|
+| `manual_motion` | 发布 `/robot320/cmd_vel`，取消正在执行的导航 |
+| `stop` / `brake` | 立即停止或刹车 |
+| `emergency_stop` | 取消导航并触发底盘急停 |
+| `reset_emergency_stop` | 进入 `idle` 并解除软件急停保持 |
+| `navigation_goal` | 调用 `/navigate_to_pose` |
+| `cancel_navigation` | 取消当前 Nav2 goal |
+| `lift` | 发布 `/robot320/lift/command` JSON |
+
+网关把 `/robot320/telemetry`、导航状态和 `/robot320/lift/status` 合并为
+`RobotTelemetry`，发布到 `robot320/state`。外部上位机只需 Fast DDS，不应加入 ROS 2
+domain。
+
+## 3. ROS 2 内部接口
+
+| Topic / Action | 类型 | 方向 |
 |---|---|---|
-| `lib` | （空） | 显式指定 `libcontrolcan.so` 绝对路径，覆盖自动探测 |
-| `device_index` | `0` | ControlCAN 设备索引 |
-| `can_index` | `0` | CAN 通道索引 |
-| `topic_prefix` | `/robot320` | ROS 2 topic 命名空间前缀 |
-| `telemetry_period` | `0.2` | 遥测发布周期（秒） |
-| `command_timeout` | `0.6` | 指令超时停车阈值（秒） |
-| `max_linear_speed` | `0.8` | 线速度限幅（m/s） |
-| `max_angular_speed` | `1.2` | 角速度限幅（rad/s） |
-| `rpm_per_mps` | `500` | m/s → RPM 比例 |
-| `steering_gain` | `180` | 角速度 → 转向角增益（deg / rad/s） |
+| `/robot320/cmd_vel` | `geometry_msgs/Twist` | 到底盘 |
+| `/robot320/brake` | `std_msgs/Bool` | 到底盘 |
+| `/robot320/emergency_stop` | `std_msgs/Bool` | 到底盘 |
+| `/robot320/mode` | `std_msgs/String` | 到底盘 |
+| `/robot320/telemetry` | `std_msgs/String` JSON | 底盘状态 |
+| `/tracked_pose` | `geometry_msgs/PoseStamped` | Cartographer 位姿 |
+| `/navigate_to_pose` | `nav2_msgs/NavigateToPose` | 导航 action |
+| `/cmd_vel` | `geometry_msgs/Twist` | Nav2 输出，网关转发到底盘 |
+| `/robot320/lift/command` | `std_msgs/String` JSON | 到升降杆驱动 |
+| `/robot320/lift/status` | `std_msgs/String` JSON | 来自升降杆驱动 |
 
-也可以绕过 launch 直接用 Python 模块：
+导航目标只有在 Nav2 action server 已启动且现场参数正确时才能执行；否则 Fast DDS
+reply 会明确返回 `rejected`。
 
-```bash
-./scripts/uv_run.sh nuc python -m mobile_platform.ros2_node \
-    --topic-prefix /robot320 \
-    --command-timeout 0.6 \
-    --max-linear-speed 0.8 \
-    --max-angular-speed 1.2 \
-    --rpm-per-mps 500 \
-    --steering-gain 180
-```
+## 4. 安全行为
 
-### 4.2 UDP JSON 调试入口（无 ROS 2 环境）
+- 指令线速度默认限制为 `0.8 m/s`
+- 角速度默认限制为 `1.2 rad/s`
+- 手动运动超过 `0.6 s` 未续发时停车
+- 手动接管、停止、刹车和急停会关闭 Nav2 速度转发
+- 急停保持，直到收到 `reset_emergency_stop`
 
-```bash
-robot320_onboard --command-bind 0.0.0.0:15000 --telemetry-remote 192.168.1.20:15001
-```
+软件门控不能替代物理急停、驱动器保护和现场避障。真机运行前必须验证 CAN 故障、
+定位丢失、低电量和网络中断时的停车行为。
 
-这条入口只需要 `mobile_platform` 自身，不要求 ROS 2，便于在没有 DDS 的笔记本上做联调。
+## 5. ControlCAN
 
-### 4.2.1 MID-360s SLAM 定位（NUC）
-
-```bash
-./scripts/uv_run.sh nuc ros2 launch robot320_localization_bringup robot320_slam.launch.py \
-    mode:=localization \
-    map_state_file:=/var/lib/robot320/maps/site.pbstream \
-    host_ip:=192.168.1.50 \
-    lidar_ip:=192.168.1.107
-```
-
-统一 launch 会同时启动底盘、Fast DDS 网关、Livox 驱动、点云预处理、静态 TF、
-Cartographer 和栅格地图发布。建图、地图保存、雷达外参和依赖安装见
-[`robot320_localization_bringup/README.md`](../robot320_localization_bringup/README.md)。
-
-### 4.3 CAN 命令行调试
-
-```bash
-robot320_cli watch --seconds 30
-robot320_cli --lib /path/to/libcontrolcan.so watch --seconds 30
-```
-
-### 4.4 Fast DDS 车载入口
-
-```bash
-./scripts/uv_run.sh nuc robot320_fastdds_bridge \
-  --device-index 0 --can-index 0 --domain-id 20
-```
-
-该入口订阅 `robot320/command`，经过序列号、时间戳和 `SafetyController` 校验后控制
-CAN 底盘，并发布 `robot320/state`、`robot320/reply` 和 `robot320/heartbeat`。手动运动
-必须持续发送，默认超过 `0.6s` 没有新运动指令停车。
-
-IDL、Python 类型生成及运行环境见
-[`robot320_interfaces/README.md`](../robot320_interfaces/README.md)。导航目标需要 ROS 2
-导航网关；未配置升降杆硬件适配器时，升降指令会收到明确的 rejected 应答。
-
-NUC 正常运行 ROS 2 时使用统一 SLAM launch 自动启动的
-`robot320_fastdds_gateway`，不要同时启动上面的 `robot320_fastdds_bridge`，否则两个
-进程会争用 CAN 设备。网关把 Fast DDS 手动运动、停止、刹车、急停、导航目标和升降
-指令映射到 ROS 2，并将底盘、SLAM 位姿、导航和升降状态合并回传。
-
-导航目标通过 `/navigate_to_pose` 交给 Nav2；Nav2 的 `/cmd_vel` 由网关转发到
-`/robot320/cmd_vel`。本仓库目前不代替现场 Nav2 参数配置，若 action server 未启动，
-目标会收到明确的 `rejected` 应答。升降杆驱动使用两个 JSON topic 适配：
-`/robot320/lift/command` 和 `/robot320/lift/status`。
-
-## 5. ROS 2 Topic 约定
-
-默认 topic 前缀 `/robot320`：
-
-| Topic | 类型 | 方向 | 用途 |
-|---|---|---|---|
-| `/robot320/cmd_vel` | `geometry_msgs/Twist` | 订阅 | `linear.x` 线速度，`angular.z` 角速度 |
-| `/robot320/brake` | `std_msgs/Bool` | 订阅 | 刹车 |
-| `/robot320/emergency_stop` | `std_msgs/Bool` | 订阅 | 急停 |
-| `/robot320/mode` | `std_msgs/String` | 订阅 | `idle` / `manual` / `navigation` |
-| `/robot320/telemetry` | `std_msgs/String` | 发布 | JSON `RobotTelemetry` |
-| `/robot320/chassis_status` | `std_msgs/String` | 发布 | JSON `ChassisStatus` |
-| `/robot320/speed_kmh` | `std_msgs/Float32` | 发布 | 底盘速度 km/h |
-| `/robot320/lift/command` | `std_msgs/String` | 发布 | 升降动作 JSON，供硬件驱动订阅 |
-| `/robot320/lift/status` | `std_msgs/String` | 订阅 | 升降状态 JSON，由硬件驱动发布 |
-
-`/tracked_pose`（`geometry_msgs/PoseStamped`）由 Cartographer 发布，车载节点订阅后
-写入 `/robot320/telemetry` 的 `pose` 字段；定位数据超过 1 秒未更新时不再回传旧位姿。
-
-可用 `--topic-prefix` / `topic_prefix:=` 修改命名空间，例如 `/robot320/front`。
-
-## 6. 安全门控
-
-`mobile_platform/safety.py` 的 `SafetyController` 当前提供：
-
-- 指令超时停车，默认 `0.6s`（`--command-timeout`）
-- 线速度限幅，默认 `0.8 m/s`
-- 角速度限幅，默认 `1.2 rad/s`
-- 急停保持，收到 `mode=idle` 后解除
-
-真实联调前建议进一步增加：
-
-- 硬件急停输入
-- 底盘故障码解析
-- 心跳 topic
-- 导航 / 手动模式互锁
-- 低电量 / 定位丢失时降级停车
-
-## 7. ControlCAN vendor
-
-`mobile_platform/vendor/controlcan/` 已整理出 Linux 常用架构的 `libcontrolcan.so`，车载 Linux 端会按 CPU 架构自动选择：
+驱动按 `platform.machine()` 从 `vendor/controlcan` 自动选择 Linux runtime：
 
 - `linux-x86_64`
 - `linux-x86`
 - `linux-aarch64`
 - `linux-armv7`
 
-也可以通过以下方式覆盖：
+可用 launch 参数 `lib:=/absolute/path/libcontrolcan.so` 或环境变量
+`CONTROL_CAN_LIB` 覆盖。厂商文件说明见
+[`vendor/controlcan/README.md`](./vendor/controlcan/README.md)。
 
-- CLI：`--lib /path/to/libcontrolcan.so`
-- ROS 2 launch：`lib:=/path/to/libcontrolcan.so`
-- 环境变量：`CONTROL_CAN_LIB=/path/to/libcontrolcan.so`
+## 6. 排查
 
-厂商资料包可放在 `mobile_platform/driver/`，该目录只用于本地解包和查阅，不纳入 git。
+| 现象 | 检查项 |
+|---|---|
+| CAN 未连接 | USB 权限、设备索引、CAN 通道、runtime 架构 |
+| 有定位无导航 | Nav2 action server、TF `map -> base_link`、costmap 参数 |
+| NUC 有状态而上位机收不到 | Fast DDS domain、网卡、防火墙、生成类型版本 |
+| 升降杆始终 unavailable | 现场驱动是否实现 command/status 两个 topic |
+| `FastDDSUnavailable` | NUC uv Python 中能否导入 `fastdds` 和 `Robot320Dds` |
 
-## 8. CAN 协议速查
-
-| 功能 | CAN ID | 帧类型 | 数据 |
-|---|---:|---|---|
-| 电机使能 | `0x03011008` | 扩展帧 | `0A 00` |
-| 电机关闭/停车 | `0x03011008` | 扩展帧 | `01 00` |
-| 转速 | `0x030110BA` | 扩展帧 | 有符号 int16，小端 |
-| 速度请求 | `0x020101B9` | 扩展帧 | `00 00` |
-| 刹车/释放 | `0x000007B9` | 标准帧 | `06 00 xx xx 00 00 00 00` |
-| 转向 | `0x00000169` | 标准帧 | `02 xx xx 00 00 00 00 00` |
-
-速度反馈兼容 `0x000110B9` 与 `0x020101B9` 扩展帧，按原程序逻辑从 `data[2:4]` 解析，单位为 `raw / 100 km/h`。
-
-## 9. Python API 速查
-
-```python
-from mobile_platform import Robot320Platform
-from mobile_platform.protocol import Direction
-
-robot = Robot320Platform()
-try:
-    robot.connect()
-    robot.set_motor_speed(Direction.FORWARD, 200)
-    robot.turn(330, Direction.LEFT)
-    state = robot.snapshot()
-    print(state.speed_kmh)
-finally:
-    robot.disconnect()
-```
-
-## 10. 手工测试
-
-```bash
-source /opt/ros/<distro>/setup.bash
-export ROS_DOMAIN_ID=20
-ros2 launch mobile_platform robot320_ros2.launch.py
-```
-
-另一个终端：
-
-```bash
-source /opt/ros/<distro>/setup.bash
-export ROS_DOMAIN_ID=20
-
-# 前进 0.2 m/s
-ros2 topic pub --once /robot320/cmd_vel geometry_msgs/msg/Twist \
-  "{linear: {x: 0.2}, angular: {z: 0.0}}"
-
-# 左转
-ros2 topic pub --once /robot320/cmd_vel geometry_msgs/msg/Twist \
-  "{linear: {x: 0.1}, angular: {z: 0.4}}"
-
-# 停车 / 刹车 / 急停 / 解除急停
-ros2 topic pub --once /robot320/cmd_vel geometry_msgs/msg/Twist \
-  "{linear: {x: 0.0}, angular: {z: 0.0}}"
-ros2 topic pub --once /robot320/brake std_msgs/msg/Bool "{data: true}"
-ros2 topic pub --once /robot320/emergency_stop std_msgs/msg/Bool "{data: true}"
-ros2 topic pub --once /robot320/mode std_msgs/msg/String "{data: idle}"
-
-# 查看遥测
-ros2 topic echo /robot320/telemetry
-ros2 topic echo /robot320/chassis_status
-ros2 topic echo /robot320/speed_kmh
-```
-
-## 11. 联机排查
-
-```bash
-ros2 node list
-ros2 node info /robot320_onboard
-ros2 topic list
-ros2 topic info /robot320/cmd_vel
-ros2 topic hz /robot320/telemetry
-```
-
-如果上位机看不到机器人 topic，优先检查：
-
-- 两端是否在同一网络
-- 两端 `ROS_DOMAIN_ID` 是否一致
-- 防火墙是否拦截 DDS 发现和 UDP 通讯
-- 是否有多网卡导致 DDS 选错网卡
-- 容器环境是否启用了 host network
-
-## 12. 设备权限
-
-```bash
-lsusb                                  # 应看到 Microchip Technology, Inc. (04d8:0053)
-sudo ros2 launch mobile_platform ...   # 临时 sudo
-# 或写 udev 规则（参考厂商文档）
-```
-
-## 13. 与 `remote_control` 配合
-
-上位机侧的发布/订阅与本包对称，详见 `src/hongshi_agent/remote_control/README.md`。
+共享消息和 Fast DDS topic 见
+[`robot320_interfaces/README.md`](../robot320_interfaces/README.md)，雷达定位见
+[`robot320_localization_bringup/README.md`](../robot320_localization_bringup/README.md)。

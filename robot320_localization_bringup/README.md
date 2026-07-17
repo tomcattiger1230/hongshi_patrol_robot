@@ -1,145 +1,110 @@
-# Robot320 MID-360s SLAM 定位
+# MID-360s 建图与定位
 
-NUC 端统一 launch 将以下节点组成一条定位链路：
+NUC 统一 launch 组成以下链路：
 
 ```text
-Livox MID-360s
-  -> /livox/lidar
-  -> mid360_preprocess
-  -> /filtered_points
-  -> Cartographer
-  -> /tracked_pose + map -> base_link TF
-  -> mobile_platform
-  -> RobotTelemetry.pose
-  -> Fast DDS robot320/state
+MID-360s -> /livox/lidar -> mid360_preprocess -> /filtered_points
+         -> Cartographer -> /tracked_pose + map/base_link TF
+         -> chassis telemetry -> Fast DDS robot320/state
 ```
 
-## 1. NUC 依赖
+## 1. 依赖与构建
 
-- Ubuntu 24.04 + ROS 2 **Jazzy**
-- Cartographer ROS：`sudo apt install ros-jazzy-cartographer-ros`
-- Fast DDS Python 运行时和本机生成的 `Robot320Dds` 模块
-- PCL、`pcl_conversions`、`tf2_ros`（通过 rosdep 安装）
-- NUC 网口与雷达位于同一网段
-
-### 1.1 Livox SDK2
-
-MID-360s 雷达驱动需要 Livox SDK2，如未安装：
-
-```bash
-git clone https://github.com/Livox-SDK/Livox-SDK2.git /tmp/Livox-SDK2
-cd /tmp/Livox-SDK2 && mkdir build && cd build
-cmake .. -DCMAKE_INSTALL_PREFIX=$HOME/.local \
-         -DCMAKE_CXX_FLAGS="-include cstdint -Wno-error"
-make -j$(nproc) && make install
-export LD_LIBRARY_PATH=$HOME/.local/lib:$LD_LIBRARY_PATH
-```
-
-> 若安装到 `/usr/local`（需要 sudo），则不需要修改 `livox_ros_driver2/CMakeLists.txt`。
-> 本项目 CMakeLists.txt 已同时搜索 `$HOME/.local/lib` 和 `/usr/local/lib`。
-
-### 1.2 编译
+- Ubuntu 24.04、ROS 2 Jazzy
+- `ros-jazzy-cartographer-ros`、PCL、`pcl_conversions`、`tf2_ros`
+- Livox SDK2
+- Fast DDS C++ runtime、Fast-DDS-python、Fast DDS-Gen
 
 ```bash
 rosdep install --from-paths . --ignore-src -r -y
 ./scripts/uv_setup.sh nuc
-./scripts/uv_run.sh nuc ./build.sh --packages-select \
-  robot320_interfaces livox_ros_driver2 mid360_preprocess mobile_platform \
-  robot320_localization_bringup remote_control
+FASTDDS_SETUP=/path/to/Fast-DDS-python/install/setup.bash \
+  ./scripts/uv_run.sh nuc \
+  ./robot320_interfaces/scripts/generate_fastdds_types.sh
+FASTDDS_SETUP=/path/to/Fast-DDS-python/install/setup.bash \
+  ./scripts/uv_run.sh nuc ./build.sh
 ```
 
-NUC profile 使用 `/usr/bin/python3` 并创建允许 system site packages 的 `.venv`，因此 uv
-管理的仓库 Python 包可以与 apt 安装的 `rclpy`、ROS 消息包共同工作。`uv_run.sh nuc`
-自动 source ROS 2 和已构建的仓库 overlay；`build.sh` 仍会加入系统 `dist-packages`，让
-colcon 的 CMake 子进程访问 ROS IDL 所需的 `lark` 模块。
+NUC uv profile 使用 `/usr/bin/python3` 和 system site packages，以读取 apt 安装的 ROS 2
+模块。Livox SDK2 安装见 [`livox_ros_driver2/README.md`](../livox_ros_driver2/README.md)。
 
-## 2. 网络和安装外参
+## 2. 网络与雷达外参
 
-原 ZIP 中实际配置使用雷达 `192.168.1.107`、主机 `192.168.1.50`；另一个旧 launch
-写的是 `192.168.1.111`。启动时必须传入现场真实地址：
+默认示例地址：
 
-```bash
-ping 192.168.1.107
-```
+- NUC 雷达网口：`192.168.1.50`
+- MID-360s：`192.168.1.107`
 
-`lidar_x/y/z` 单位为米，`lidar_roll/pitch/yaw` 单位为弧度，表示
-`base_link -> livox_frame` 的固定变换。默认全部为零只适合台架验证，装车后必须测量。
+启动前确认能从 NUC ping 雷达。`lidar_x/y/z` 单位为米，
+`lidar_roll/pitch/yaw` 单位为弧度，表示 `base_link -> livox_frame`。默认全零只适合台架；
+装车后必须测量，否则地图、定位和导航都会产生系统误差。
 
 ## 3. 建图
 
 ```bash
-export ROS_DOMAIN_ID=20
-./scripts/uv_run.sh nuc ros2 launch robot320_localization_bringup robot320_slam.launch.py \
+FASTDDS_SETUP=/path/to/Fast-DDS-python/install/setup.bash \
+  ./scripts/uv_run.sh nuc ros2 launch \
+  robot320_localization_bringup robot320_slam.launch.py \
   mode:=mapping \
-  host_ip:=192.168.1.50 \
-  lidar_ip:=192.168.1.107 \
+  host_ip:=192.168.1.50 lidar_ip:=192.168.1.107 \
   lidar_x:=0.0 lidar_y:=0.0 lidar_z:=0.0 \
   lidar_roll:=0.0 lidar_pitch:=0.0 lidar_yaw:=0.0
 ```
 
-移动机器人完成建图后保存 Cartographer 状态：
+完成后保存 Cartographer 状态：
 
 ```bash
 mkdir -p /var/lib/robot320/maps
-ros2 service call /write_state cartographer_ros_msgs/srv/WriteState \
+./scripts/uv_run.sh nuc ros2 service call \
+  /write_state cartographer_ros_msgs/srv/WriteState \
   "{filename: '/var/lib/robot320/maps/site.pbstream'}"
 ```
 
 ## 4. 定位
 
-定位时机器人应尽量从建图时已知位置启动：
-
 ```bash
-export ROS_DOMAIN_ID=20
-./scripts/uv_run.sh nuc ros2 launch robot320_localization_bringup robot320_slam.launch.py \
+FASTDDS_SETUP=/path/to/Fast-DDS-python/install/setup.bash \
+  ./scripts/uv_run.sh nuc ros2 launch \
+  robot320_localization_bringup robot320_slam.launch.py \
   mode:=localization \
   map_state_file:=/var/lib/robot320/maps/site.pbstream \
-  host_ip:=192.168.1.50 \
-  lidar_ip:=192.168.1.107 \
-  lidar_x:=0.0 lidar_y:=0.0 lidar_z:=0.0 \
-  lidar_roll:=0.0 lidar_pitch:=0.0 lidar_yaw:=0.0
+  host_ip:=192.168.1.50 lidar_ip:=192.168.1.107
 ```
 
-只调试雷达和定位、不连接 CAN 时增加 `enable_chassis:=false`。如果本机尚未安装 Fast
-DDS Python 运行时，再增加 `enable_fastdds_gateway:=false`。
+定位模式要求 `.pbstream` 已存在。只调雷达时可传 `enable_chassis:=false`；未安装 Fast DDS
+binding 时可临时传 `enable_fastdds_gateway:=false`。
+
+该 launch 提供定位和 Fast DDS 到 Nav2 action 的网关，但不包含现场 Nav2 planner、
+controller、costmap 参数。发送导航目标前必须另行启动 `/navigate_to_pose` action server；
+否则目标会收到 `rejected` reply。
 
 ## 5. 验证
 
 ```bash
-ros2 topic hz /livox/lidar
-ros2 topic hz /filtered_points
-ros2 topic echo /tracked_pose
-ros2 run tf2_ros tf2_echo map base_link
-ros2 topic echo /robot320/telemetry
+./scripts/uv_run.sh nuc ros2 topic hz /livox/lidar
+./scripts/uv_run.sh nuc ros2 topic hz /filtered_points
+./scripts/uv_run.sh nuc ros2 topic echo /tracked_pose
+./scripts/uv_run.sh nuc ros2 run tf2_ros tf2_echo map base_link
+./scripts/uv_run.sh nuc ros2 topic echo /robot320/telemetry
 ```
 
-笔记本无需 ROS 2。安装 Fast DDS Python 运行时及生成类型后，使用与 NUC 相同的
-Fast DDS domain（默认 `20`）即可接收状态或发送命令。`remote_control` 的 Python API
-提供手动运动、停止/急停、导航目标/取消以及升降控制；现有调试入口可用于验证：
+位姿超过 1 秒未更新时不会继续作为有效遥测回传。
 
-```bash
-robot320_remote_fastdds --domain-id 20 watch --seconds 30
-```
-
-输出中的 `pose=(x,y,yaw)` 即 NUC 回传的 SLAM 位姿。超过 1 秒没有收到新的
-`/tracked_pose` 时，遥测会把 pose 标记为不可用，避免上位机误用旧定位。
-
-## 6. 常用参数
+## 6. 主要参数
 
 | 参数 | 默认值 | 含义 |
 |---|---:|---|
 | `mode` | `localization` | `mapping` 或 `localization` |
-| `map_state_file` | 空 | 定位模式必需的 `.pbstream` |
-| `host_ip` | `192.168.1.50` | NUC 雷达网口地址 |
+| `map_state_file` | 空 | 定位使用的 `.pbstream` |
+| `host_ip` | `192.168.1.50` | NUC 雷达网口 |
 | `lidar_ip` | `192.168.1.107` | MID-360s 地址 |
-| `min_z` / `max_z` | `-0.2` / `2.5` | 点云高度裁剪范围 |
-| `voxel_size` | `0.05` | 体素降采样尺寸（米） |
-| `map_resolution` | `0.05` | 栅格地图分辨率（米） |
-| `enable_chassis` | `true` | 是否同时启动 Robot320 CAN 桥 |
-| `enable_fastdds_gateway` | `true` | 是否启动笔记本通信网关 |
-| `fastdds_domain_id` | `20` | NUC 与笔记本共同使用的 Fast DDS domain |
-| `robot_id` | `robot320` | Fast DDS 中的机器人标识 |
-| `nav_action` | `/navigate_to_pose` | Nav2 目标 action 名称 |
-| `nav_cmd_vel_topic` | `/cmd_vel` | Nav2 速度输出，网关转发到底盘 |
+| `min_z` / `max_z` | `-0.2` / `2.5` | 点云高度范围（米） |
+| `voxel_size` | `0.05` | 体素尺寸（米） |
+| `map_resolution` | `0.05` | 栅格分辨率（米） |
+| `enable_chassis` | `true` | 启动 CAN bridge |
+| `enable_fastdds_gateway` | `true` | 启动 Fast DDS ROS gateway |
+| `fastdds_domain_id` | `20` | NUC/上位机共同 domain |
+| `nav_action` | `/navigate_to_pose` | Nav2 action |
+| `nav_cmd_vel_topic` | `/cmd_vel` | Nav2 速度输出 |
 
-定位质量首先取决于准确的雷达外参、稳定的时间戳、足够的环境几何特征和匹配的地图。
+定位质量主要取决于雷达外参、时间戳、环境几何特征和地图一致性。

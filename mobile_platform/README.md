@@ -58,8 +58,9 @@ mobile_platform/
 
 ```bash
 cd /path/to/hongshi_patrol_ws
-source /opt/ros/<distro>/setup.bash    # 仓库当前在 /opt/ros/lyrical 下测试
-colcon build --symlink-install --packages-select mobile_platform
+source /opt/ros/jazzy/setup.bash
+PYTHONPATH=/usr/lib/python3/dist-packages:$PYTHONPATH \
+  colcon build --symlink-install --packages-select mobile_platform
 source install/setup.bash
 ```
 

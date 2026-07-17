@@ -58,11 +58,14 @@ rosidl_generate_interfaces(${LIVOX_INTERFACES}
 )
 
 ## make sure the livox_lidar_sdk_shared library is installed
-find_library(LIVOX_LIDAR_SDK_LIBRARY liblivox_lidar_sdk_shared.so /usr/local/lib REQUIRED)
+find_library(LIVOX_LIDAR_SDK_LIBRARY liblivox_lidar_sdk_shared.so
+  HINTS /usr/local/lib $ENV{HOME}/.local/lib
+  REQUIRED)
 
 ##
 find_path(LIVOX_LIDAR_SDK_INCLUDE_DIR
   NAMES "livox_lidar_api.h" "livox_lidar_def.h"
+  HINTS $ENV{HOME}/.local/include /usr/local/include
   REQUIRED)
 
 ## PCL library

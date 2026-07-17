@@ -15,21 +15,40 @@ Livox MID-360s
 
 ## 1. NUC 依赖
 
-- Ubuntu + ROS 2
-- Livox SDK2，且 `/usr/local/lib/liblivox_lidar_sdk_shared.so` 可用
-- Cartographer ROS、PCL、`pcl_conversions`、`tf2_ros`
+- Ubuntu 24.04 + ROS 2 **Jazzy**
+- Cartographer ROS：`sudo apt install ros-jazzy-cartographer-ros`
+- PCL、`pcl_conversions`、`tf2_ros`（通过 rosdep 安装）
 - NUC 网口与雷达位于同一网段
 
-ZIP 中的 `livox-sdk_20240719-1_arm64.deb` 只适用于 ARM64，不能安装到常见的
-x86_64 Intel NUC。NUC 上应安装对应架构的 Livox SDK2，再执行：
+### 1.1 Livox SDK2
+
+MID-360s 雷达驱动需要 Livox SDK2，如未安装：
 
 ```bash
+git clone https://github.com/Livox-SDK/Livox-SDK2.git /tmp/Livox-SDK2
+cd /tmp/Livox-SDK2 && mkdir build && cd build
+cmake .. -DCMAKE_INSTALL_PREFIX=$HOME/.local \
+         -DCMAKE_CXX_FLAGS="-include cstdint -Wno-error"
+make -j$(nproc) && make install
+export LD_LIBRARY_PATH=$HOME/.local/lib:$LD_LIBRARY_PATH
+```
+
+> 若安装到 `/usr/local`（需要 sudo），则不需要修改 `livox_ros_driver2/CMakeLists.txt`。
+> 本项目 CMakeLists.txt 已同时搜索 `$HOME/.local/lib` 和 `/usr/local/lib`。
+
+### 1.2 编译
+
+```bash
+source /opt/ros/jazzy/setup.bash
 rosdep install --from-paths . --ignore-src -r -y
-colcon build --symlink-install --packages-select \
-  livox_ros_driver2 mid360_preprocess mobile_platform \
-  robot320_localization_bringup remote_control
+PYTHONPATH=/usr/lib/python3/dist-packages:$PYTHONPATH \
+  colcon build --symlink-install --packages-select \
+    livox_ros_driver2 mid360_preprocess mobile_platform \
+    robot320_localization_bringup remote_control
 source install/setup.bash
 ```
+
+> `PYTHONPATH` 是必须的——colcon 的 cmake 子进程需要访问系统的 `lark` 模块生成 ROS IDL。
 
 ## 2. 网络和安装外参
 

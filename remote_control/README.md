@@ -39,8 +39,10 @@ remote_control/
 
 ```bash
 cd /path/to/hongshi_patrol_ws
-source /opt/ros/<distro>/setup.bash    # 仓库当前在 /opt/ros/lyrical 下测试
-./build.sh --packages-select remote_control
+source /opt/ros/jazzy/setup.bash
+PYTHONPATH=/usr/lib/python3/dist-packages:$PYTHONPATH \
+  colcon build --symlink-install --packages-select remote_control
+# 或: ./build.sh --packages-select remote_control
 source install/setup.bash
 ```
 

@@ -21,6 +21,7 @@
   <exec_depend>rclpy</exec_depend>
   <exec_depend>std_msgs</exec_depend>
   <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>robot320_interfaces</exec_depend>
 
   <!-- Launch system for robot320_ros2.launch.py -->
   <exec_depend>launch</exec_depend>

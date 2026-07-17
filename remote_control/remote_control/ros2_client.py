@@ -12,7 +12,7 @@ import sys
 import time
 from typing import Optional
 
-from mobile_platform.messages import RobotTelemetry, telemetry_from_json
+from robot320_interfaces.messages import RobotTelemetry, telemetry_from_json
 
 try:
     import rclpy

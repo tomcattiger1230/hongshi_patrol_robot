@@ -4,7 +4,7 @@ Robot320 移动底盘的车载端 ROS 2 包。负责：
 
 - 封装周立功 ControlCAN 驱动（`libcontrolcan.so`，多架构 vendor）
 - 解析 Robot320 CAN 协议并维护底盘状态
-- 在 ROS 2、FastDDS、UDP JSON 三种传输间复用同一份 `ChassisCommand` / `RobotTelemetry` 语义
+- 复用 `robot320_interfaces` 中与 ROS 2 无关的命令、状态和 Fast DDS 契约
 - 提供 4 个 `ros2 run` console script 和底盘 launch，方便车载端启动
 - 集成 Livox MID-360s + Cartographer，并把 SLAM 位姿加入上位机遥测
 
@@ -16,7 +16,7 @@ Robot320 移动底盘的车载端 ROS 2 包。负责：
 | 入口模块 | `mobile_platform`（对应 `mobile_platform/mobile_platform/__init__.py`） |
 | console scripts | `robot320_onboard` / `robot320_ros2_bridge` / `robot320_fastdds_bridge` / `robot320_cli` |
 | launch | `robot320_ros2.launch.py`（SLAM 统一启动位于 `robot320_localization_bringup`） |
-| 运行时依赖 | `rclpy` `std_msgs` `geometry_msgs` `launch` `launch_ros` `ament_index_python` |
+| 运行时依赖 | `robot320_interfaces` `rclpy` `std_msgs` `geometry_msgs` `launch` `launch_ros` `ament_index_python` |
 
 ## 2. 目录结构
 

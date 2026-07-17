@@ -42,7 +42,7 @@ export LD_LIBRARY_PATH=$HOME/.local/lib:$LD_LIBRARY_PATH
 source /opt/ros/jazzy/setup.bash
 rosdep install --from-paths . --ignore-src -r -y
 ./build.sh --packages-select \
-  livox_ros_driver2 mid360_preprocess mobile_platform \
+  robot320_interfaces livox_ros_driver2 mid360_preprocess mobile_platform \
   robot320_localization_bringup remote_control
 source install/setup.bash
 ```

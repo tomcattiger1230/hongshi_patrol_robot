@@ -8,8 +8,8 @@ from __future__ import annotations
 
 from typing import Optional
 
-from mobile_platform.messages import ChassisCommand, RobotTelemetry
-from mobile_platform.transport import (
+from robot320_interfaces.messages import ChassisCommand, RobotTelemetry
+from robot320_interfaces.transport import (
     UdpEndpoint,
     UdpJsonCommandPublisher,
     UdpJsonTelemetrySubscriber,

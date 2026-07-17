@@ -9,7 +9,7 @@ import threading
 import tkinter as tk
 from tkinter import ttk
 
-from mobile_platform.transport import UdpEndpoint
+from robot320_interfaces.transport import UdpEndpoint
 
 from .dds_client import RobotRemoteClient
 

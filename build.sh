@@ -5,6 +5,7 @@ set -euo pipefail
 readonly REPOSITORY_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 readonly ROS_SYSTEM_PYTHON_PATH="/usr/lib/python3/dist-packages"
 readonly DEFAULT_PACKAGES=(
+  robot320_interfaces
   livox_ros_driver2
   mid360_preprocess
   mobile_platform

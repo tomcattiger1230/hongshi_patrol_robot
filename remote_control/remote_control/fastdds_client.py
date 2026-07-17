@@ -11,7 +11,7 @@ import argparse
 import sys
 from typing import Optional
 
-from mobile_platform.messages import ChassisCommand, RobotTelemetry
+from robot320_interfaces.messages import ChassisCommand, RobotTelemetry
 
 
 class FastDDSUnavailable(RuntimeError):

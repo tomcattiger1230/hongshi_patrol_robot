@@ -1,0 +1,37 @@
+// Wire-level envelopes for ROS-independent Robot320 Fast DDS communication.
+// Keep this file namespace-free: Fast DDS Python generated bindings do not
+// support IDL namespaces.
+
+struct Robot320CommandEnvelope
+{
+    string command_id;
+    string client_id;
+    unsigned long long sequence;
+    long long timestamp_ms;
+    string command_json;
+};
+
+struct Robot320StateEnvelope
+{
+    string robot_id;
+    unsigned long long sequence;
+    long long timestamp_ms;
+    string state_json;
+};
+
+struct Robot320ReplyEnvelope
+{
+    string command_id;
+    string robot_id;
+    unsigned long long sequence;
+    long long timestamp_ms;
+    string reply_json;
+};
+
+struct Robot320HeartbeatEnvelope
+{
+    string node_id;
+    string role;
+    unsigned long long sequence;
+    long long timestamp_ms;
+};

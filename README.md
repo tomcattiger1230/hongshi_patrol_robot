@@ -2,13 +2,14 @@
 
 Robot320 移动底盘的 ROS 2 包，独立仓库。
 
-仓库现在包含一个上位机包和四个 NUC 端相关包：
+仓库现在包含一个共享接口包、一个上位机包和四个 NUC 端相关包：
 
 - `mobile_platform/` — 车载端 ROS 2 包（CAN + 安全门控 + 车载节点）
 - `remote_control/` — 上位机控制 ROS 2 包（CLI / GUI / ROS 2 客户端 / FastDDS 入口）
 - `livox_ros_driver2/` — ZIP 导入的 Livox MID-360s ROS 2 驱动
 - `mid360_preprocess/` — MID-360s 点云裁剪与降采样
 - `robot320_localization_bringup/` — NUC 端底盘、雷达与 Cartographer 统一启动
+- `robot320_interfaces/` — 不依赖 ROS 2 的共享语义消息与 Fast DDS IDL
 
 ## 1. 仓库结构
 
@@ -17,6 +18,7 @@ hongshi_patrol_robot/
 ├── README.md                     # 本文档
 ├── build.sh                      # 默认构建全部 ROS 2 包，可透传 colcon 参数
 ├── .gitignore
+├── robot320_interfaces/          # ROS-independent 消息与 DDS 契约
 ├── mobile_platform/              # 车载端 ROS 2 包
 │   ├── package.xml
 │   ├── setup.py
@@ -101,7 +103,7 @@ source /opt/ros/jazzy/setup.bash
 source install/setup.bash
 ```
 
-默认构建仓库内全部 5 个包；也可以把 colcon 参数直接传给脚本：
+默认构建仓库内全部 6 个包；也可以把 colcon 参数直接传给脚本：
 
 ```bash
 ./build.sh --packages-select mobile_platform remote_control

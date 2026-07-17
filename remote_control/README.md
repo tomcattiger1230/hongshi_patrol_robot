@@ -130,22 +130,23 @@ source install/setup.bash
 目标 Mac 和目标 Python 上实际验证；若构建失败，正式可支持方案是 Windows 上位机或
 Linux 虚拟机，而不是复用其他操作系统生成的 `.so`/`.dylib`。
 
-构建完成后回到仓库：
+构建完成后回到仓库。以下脚本会像参考项目一样，把 `fastdds` binding 与项目的
+`Robot320Dds` 类型直接安装/编译到当前 `.venv`，运行时不再依赖手工设置
+`PYTHONPATH`：
 
 ```bash
 cd "$ROBOT320_REPO"
-FASTDDS_SETUP=/path/to/fastdds-python/install/setup.bash \
-  ./scripts/uv_run.sh desktop \
-  ./robot320_interfaces/scripts/generate_fastdds_types.sh
-FASTDDS_SETUP=/path/to/fastdds-python/install/setup.bash \
-  ./scripts/uv_run.sh desktop robot320_remote_gui --domain-id 20
+FASTDDS_PREFIX="$HOME/fastdds-python/install" \
+FASTDDS_PYTHON_SOURCE="$HOME/fastdds-python/src/fastdds_python" \
+FASTDDSGEN_SOURCE="$HOME/fastdds-python/src/fastddsgen" \
+  ./scripts/setup_fastdds.sh
+./scripts/uv_run.sh desktop robot320_remote_gui --domain-id 20
 ```
 
 ## 4. 使用 GUI
 
 ```bash
-FASTDDS_SETUP=/path/to/Fast-DDS-python/install/setup.bash \
-  ./scripts/uv_run.sh desktop robot320_remote_gui \
+./scripts/uv_run.sh desktop robot320_remote_gui \
   --domain-id 20 --client-id operator-laptop
 ```
 
@@ -172,7 +173,7 @@ finally:
 
 | 现象 | 检查项 |
 |---|---|
-| `FastDDSUnavailable` | `import fastdds` 和 `import Robot320Dds` 是否在同一个 uv Python 中成功 |
+| `FastDDSUnavailable` | 运行 `./scripts/setup_fastdds.sh`，再确认 `import fastdds, Robot320Dds` 在同一个 uv Python 中成功 |
 | GUI 启动但无遥测 | domain ID、同网段、防火墙、NUC gateway、多网卡路由 |
 | Windows 找不到 DLL | 是否在同一终端调用 Fast DDS `setup.bat` |
 | macOS 找不到 dylib | Fast DDS prefix 是否已 source，架构是否与 Python 一致 |

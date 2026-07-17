@@ -6,7 +6,7 @@ readonly REPOSITORY_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 readonly PROFILE="${1:-}"
 
 usage() {
-  echo "usage: $0 <desktop|nuc> [--python PATH] [--dev]" >&2
+  echo "usage: $0 <desktop|nuc> [--python PATH] [--dev] [--fastdds]" >&2
 }
 
 if [[ "${PROFILE}" != "desktop" && "${PROFILE}" != "nuc" ]]; then
@@ -22,6 +22,7 @@ shift
 python="${UV_PYTHON:-}"
 venv_path="${UV_PROJECT_ENVIRONMENT:-.venv}"
 with_dev=false
+with_fastdds=false
 while (($#)); do
   case "$1" in
     --python)
@@ -34,6 +35,10 @@ while (($#)); do
       ;;
     --dev)
       with_dev=true
+      shift
+      ;;
+    --fastdds)
+      with_fastdds=true
       shift
       ;;
     *)
@@ -59,6 +64,10 @@ if [[ "${with_dev}" == true ]]; then
   sync_args+=(--group dev)
 fi
 uv sync "${sync_args[@]}"
+
+if [[ "${with_fastdds}" == true ]]; then
+  "${REPOSITORY_ROOT}/scripts/setup_fastdds.sh"
+fi
 
 echo
 echo "Environment ready. Run commands with:"

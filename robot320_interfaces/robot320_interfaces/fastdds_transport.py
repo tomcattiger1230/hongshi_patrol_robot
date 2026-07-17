@@ -58,6 +58,7 @@ class FastDdsParticipant:
         self.participant.get_default_subscriber_qos(subscriber_qos)
         self.subscriber = self.participant.create_subscriber(subscriber_qos)
         self._registered_types: dict[str, tuple[Any, Any]] = {}
+        self._topics: dict[str, tuple[str, Any]] = {}
         self._listeners: list[Any] = []
         self._closed = False
 
@@ -110,6 +111,14 @@ class FastDdsParticipant:
         self.factory.delete_participant(self.participant)
 
     def _topic(self, topic_name: str, type_name: str):
+        existing = self._topics.get(topic_name)
+        if existing is not None:
+            existing_type, topic = existing
+            if existing_type != type_name:
+                raise FastDDSUnavailable(
+                    f"topic {topic_name} already uses {existing_type}, not {type_name}"
+                )
+            return topic
         type_support, topic_type = self._register_type(type_name)
         del type_support  # Kept alive in _registered_types.
         topic_qos = self.fastdds.TopicQos()
@@ -117,6 +126,7 @@ class FastDdsParticipant:
         topic = self.participant.create_topic(topic_name, _get_type_name(topic_type), topic_qos)
         if topic is None:
             raise FastDDSUnavailable(f"failed to create topic {topic_name}")
+        self._topics[topic_name] = (type_name, topic)
         return topic
 
     def _register_type(self, type_name: str):
@@ -160,7 +170,7 @@ class FastDdsRemoteTransport:
         data = self.runtime.types.Robot320CommandEnvelope()
         data.command_id(command.command_id)
         data.client_id(command.client_id)
-        data.sequence(command.sequence)
+        data.sequence_number(command.sequence)
         data.timestamp_ms(_milliseconds(command.stamp))
         data.command_json(to_json(command))
         self._command_writer.write(data)
@@ -169,7 +179,7 @@ class FastDdsRemoteTransport:
         data = self.runtime.types.Robot320HeartbeatEnvelope()
         data.node_id(self.client_id)
         data.role("remote")
-        data.sequence(sequence)
+        data.sequence_number(sequence)
         data.timestamp_ms(_milliseconds(time.time()))
         self._heartbeat_writer.write(data)
 
@@ -225,7 +235,7 @@ class FastDdsRobotTransport:
         telemetry.robot_id = self.robot_id
         data = self.runtime.types.Robot320StateEnvelope()
         data.robot_id(self.robot_id)
-        data.sequence(sequence)
+        data.sequence_number(sequence)
         data.timestamp_ms(_milliseconds(telemetry.stamp))
         data.state_json(to_json(telemetry))
         self._state_writer.write(data)
@@ -234,7 +244,7 @@ class FastDdsRobotTransport:
         data = self.runtime.types.Robot320ReplyEnvelope()
         data.command_id(reply.command_id)
         data.robot_id(self.robot_id)
-        data.sequence(reply.sequence)
+        data.sequence_number(reply.sequence)
         data.timestamp_ms(_milliseconds(reply.stamp))
         data.reply_json(to_json(reply))
         self._reply_writer.write(data)
@@ -243,7 +253,7 @@ class FastDdsRobotTransport:
         data = self.runtime.types.Robot320HeartbeatEnvelope()
         data.node_id(self.robot_id)
         data.role("robot")
-        data.sequence(sequence)
+        data.sequence_number(sequence)
         data.timestamp_ms(_milliseconds(time.time()))
         self._heartbeat_writer.write(data)
 
@@ -266,7 +276,9 @@ def _load_fastdds_modules() -> tuple[ModuleType, ModuleType]:
         fastdds = importlib.import_module("fastdds")
     except ImportError as exc:
         raise FastDDSUnavailable(
-            "Fast DDS Python bindings are unavailable. Install/source Fast-DDS-python."
+            "Fast DDS Python bindings are unavailable. Run "
+            "'./scripts/setup_fastdds.sh' or source an existing Fast-DDS-python "
+            "installation."
         ) from exc
     try:
         generated = importlib.import_module("Robot320Dds")
@@ -304,7 +316,7 @@ def _heartbeat_from_dds(data) -> Heartbeat:
     return Heartbeat(
         node_id=data.node_id(),
         role=data.role(),
-        sequence=data.sequence(),
+        sequence=data.sequence_number(),
         timestamp_ms=data.timestamp_ms(),
     )
 

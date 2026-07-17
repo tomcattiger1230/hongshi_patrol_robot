@@ -31,9 +31,15 @@ Python 环境由根目录 `pyproject.toml`、`uv.lock` 和 `scripts/uv_*.sh` 管
 
 ```bash
 ./scripts/uv_setup.sh desktop
-FASTDDS_SETUP=/path/to/Fast-DDS-python/install/setup.bash \
-  ./scripts/uv_run.sh desktop robot320_remote_gui --domain-id 20
+FASTDDS_PREFIX=/path/to/Fast-DDS/install \
+FASTDDS_PYTHON_SOURCE=/path/to/Fast-DDS-python/fastdds_python \
+FASTDDSGEN_SOURCE=/path/to/Fast-DDS/src/fastddsgen \
+  ./scripts/setup_fastdds.sh
+./scripts/uv_run.sh desktop robot320_remote_gui --domain-id 20
 ```
+
+如果三个源码/安装目录按 `Fast-DDS`、`Fast-DDS-python` 与本仓库并列放置，也可直接执行
+`./scripts/uv_setup.sh desktop --fastdds` 一次完成 Python 环境和 native binding 初始化。
 
 Windows 使用相同的 `uv.lock`，但需要先调用 Fast DDS 的 `setup.bat`，再执行
 `uv run --locked --extra desktop --no-default-groups robot320_remote_gui --domain-id 20`。

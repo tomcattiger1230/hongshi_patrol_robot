@@ -1,11 +1,11 @@
 # Hongshi Patrol Robot
 
 Robot320 巡检机器人项目。NUC 运行 Ubuntu 24.04、ROS 2 Jazzy、底盘驱动、MID-360s
-定位并对接 Nav2；同网段上位机运行 PySide6 GUI，通过 Fast DDS 直接收发命令与状态，
-上位机不需要 ROS 2。
+定位并对接 Nav2；同网段上位机运行 PySide6 GUI，通过 Fast DDS 直接收发命令与状态。
+GUI 自身不依赖 ROS 2，因此也可运行在 Windows 和 macOS。
 
 ```text
-Windows / macOS 上位机                    Ubuntu NUC
+Windows / macOS / Ubuntu 上位机           Ubuntu NUC
 Qt GUI -> Fast DDS command/state  <----> Fast DDS ROS gateway
                                              |
                          ROS 2 / Nav2 / Cartographer / CAN / lift adapter
@@ -27,27 +27,20 @@ Python 环境由根目录 `pyproject.toml`、`uv.lock` 和 `scripts/uv_*.sh` 管
 
 ## 上位机快速开始
 
-安装 [uv](https://docs.astral.sh/uv/getting-started/installation/) 后：
+Ubuntu 上位机默认和 NUC 一样，已统一安装 ROS 2、Fast DDS binding 和项目类型。安装
+[uv](https://docs.astral.sh/uv/getting-started/installation/) 后直接运行：
 
 ```bash
 ./scripts/uv_setup.sh desktop
-FASTDDS_PREFIX=/path/to/Fast-DDS/install \
-FASTDDS_PYTHON_SOURCE=/path/to/Fast-DDS-python/fastdds_python \
-FASTDDSGEN_SOURCE=/path/to/Fast-DDS/src/fastddsgen \
-  ./scripts/setup_fastdds.sh
 ./scripts/uv_run.sh desktop robot320_remote_gui --domain-id 20
 ```
 
-如果三个源码/安装目录按 `Fast-DDS`、`Fast-DDS-python` 与本仓库并列放置，也可直接执行
-`./scripts/uv_setup.sh desktop --fastdds` 一次完成 Python 环境和 native binding 初始化。
-
-Windows 使用相同的 `uv.lock`，但需要先调用 Fast DDS 的 `setup.bat`，再执行
-`uv run --locked --extra desktop --no-default-groups robot320_remote_gui --domain-id 20`。
-Windows、macOS 的 Fast DDS 安装和生成类型步骤见
+只有 Windows、macOS 等非 Ubuntu 上位机需要额外安装 Fast DDS Python binding 和生成
+项目类型。具体步骤见
 [`remote_control/README.md`](./remote_control/README.md)。
 
-Fast DDS Python 是 native 扩展。uv 环境、`fastdds` Python binding 和生成的
-`Robot320Dds` 必须使用相同操作系统、CPU 架构和 Python ABI。
+非 Ubuntu 系统上的 Fast DDS Python 是 native 扩展。uv 环境、`fastdds` Python
+binding 和生成的 `Robot320Dds` 必须使用相同操作系统、CPU 架构和 Python ABI。
 
 ## NUC 快速开始
 

@@ -17,9 +17,10 @@ DDS envelope 的二进制类型。
 
 ## 生成 Python 类型
 
-上位机需要安装 Fast DDS C++ runtime、Fast-DDS-python 和 Fast DDS-Gen，Windows/macOS
-具体路径见 [`remote_control/README.md`](../remote_control/README.md)。NUC 镜像默认随
-ROS 2 提供完整通讯环境，不执行本节安装步骤。上位机生成命令：
+只有 Windows/macOS 等非 Ubuntu 上位机需要额外安装 Fast DDS C++ runtime、
+Fast-DDS-python 和 Fast DDS-Gen，具体路径见
+[`remote_control/README.md`](../remote_control/README.md)。所有 Ubuntu 设备默认随 ROS 2
+提供完整通讯环境，不执行本节安装步骤。非 Ubuntu 上位机生成命令：
 
 ```bash
 ./scripts/setup_fastdds.sh

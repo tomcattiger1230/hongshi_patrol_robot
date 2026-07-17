@@ -23,7 +23,7 @@ Fast DDS state/reply/heartbeat
 ```
 
 NUC 系统镜像默认已通过 ROS 2 安装并配置 Fast DDS，同时提供网关所需的 Python binding
-和 `Robot320Dds` 类型；车载端不重复执行上位机的 Fast DDS 安装流程。
+和 `Robot320Dds` 类型；车载端不执行仅面向 Windows/macOS 上位机的 Fast DDS 安装流程。
 
 定位模式：
 

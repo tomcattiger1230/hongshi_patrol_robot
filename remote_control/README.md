@@ -26,7 +26,15 @@ GUI 支持：
 2. 提供 `import fastdds` 的 Fast-DDS-python binding
 3. 由项目 IDL 生成的 `Robot320Dds` Python module
 
-Fast DDS 本身不是 PyPI 包，不能只靠 `uv sync` 安装。
+Ubuntu 设备由项目部署环境统一安装 ROS 2、Fast DDS binding 和 `Robot320Dds` 类型，完成
+上述 uv 初始化后可直接运行 GUI，不执行后续 native 安装步骤：
+
+```bash
+./scripts/uv_run.sh desktop robot320_remote_gui --domain-id 20
+```
+
+Windows 和 macOS 没有项目预装的 Ubuntu/ROS 2 环境，才需要按下面章节额外准备三个
+native 层。Fast DDS 本身不是 PyPI 包，不能只靠 `uv sync` 安装。
 
 ## 2. Windows 安装 Fast DDS
 
@@ -173,7 +181,7 @@ finally:
 
 | 现象 | 检查项 |
 |---|---|
-| `FastDDSUnavailable` | 运行 `./scripts/setup_fastdds.sh`，再确认 `import fastdds, Robot320Dds` 在同一个 uv Python 中成功 |
+| `FastDDSUnavailable` | Windows/macOS 运行 native 安装流程；Ubuntu 检查项目预装环境。然后确认 `import fastdds, Robot320Dds` 在同一个 uv Python 中成功 |
 | GUI 启动但无遥测 | domain ID、同网段、防火墙、NUC gateway、多网卡路由 |
 | Windows 找不到 DLL | 是否在同一终端调用 Fast DDS `setup.bat` |
 | macOS 找不到 dylib | Fast DDS prefix 是否已 source，架构是否与 Python 一致 |

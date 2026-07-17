@@ -59,7 +59,7 @@ mobile_platform/
 ```bash
 cd /path/to/hongshi_patrol_ws
 source /opt/ros/jazzy/setup.bash
-./build.sh --packages-select mobile_platform
+./build.sh --packages-up-to mobile_platform
 source install/setup.bash
 ```
 
@@ -133,13 +133,19 @@ robot320_cli watch --seconds 30
 robot320_cli --lib /path/to/libcontrolcan.so watch --seconds 30
 ```
 
-### 4.4 FastDDS 入口
+### 4.4 Fast DDS 车载入口
 
 ```bash
-robot320_fastdds_bridge --device-index 0 --can-index 0 --domain-id 0
+robot320_fastdds_bridge --device-index 0 --can-index 0 --domain-id 20
 ```
 
-当前实现仍是骨架：`Robot320FastDDSBridge.__init__` 会主动抛出 `FastDDSUnavailable`。等确认 FastDDS Python 绑定生成方式（IDL 位于 `docs/robot320_fastdds.idl`）后，把订阅回调接到 `OnboardNode.apply_command()`、把 `OnboardNode.build_telemetry()` 发布到 DDS topic 即可。
+该入口订阅 `robot320/command`，经过序列号、时间戳和 `SafetyController` 校验后控制
+CAN 底盘，并发布 `robot320/state`、`robot320/reply` 和 `robot320/heartbeat`。手动运动
+必须持续发送，默认超过 `0.6s` 没有新运动指令停车。
+
+IDL、Python 类型生成及运行环境见
+[`robot320_interfaces/README.md`](../robot320_interfaces/README.md)。导航目标需要 ROS 2
+导航网关；未配置升降杆硬件适配器时，升降指令会收到明确的 rejected 应答。
 
 ## 5. ROS 2 Topic 约定
 

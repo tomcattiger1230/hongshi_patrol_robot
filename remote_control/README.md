@@ -41,9 +41,7 @@ remote_control/
 ```bash
 cd /path/to/hongshi_patrol_ws
 source /opt/ros/jazzy/setup.bash
-PYTHONPATH=/usr/lib/python3/dist-packages:$PYTHONPATH \
-  colcon build --symlink-install --packages-select remote_control
-# 或: ./build.sh --packages-select remote_control
+./build.sh --packages-up-to remote_control
 source install/setup.bash
 ```
 
@@ -92,13 +90,19 @@ robot320_remote_cli watch --seconds 30
 robot320_remote_gui --robot 192.168.1.10:15000 --telemetry-bind 0.0.0.0:15001
 ```
 
-### 4.4 FastDDS 入口
+### 4.4 Fast DDS 主通信入口（不需要 ROS 2）
 
 ```bash
-robot320_remote_fastdds --domain-id 0
+robot320_remote_fastdds --domain-id 20 move --linear 0.2 --duration 2
+robot320_remote_fastdds --domain-id 20 goal --x 3.0 --y 1.5 --yaw 0.0
+robot320_remote_fastdds --domain-id 20 lift move_to --height 1.2
+robot320_remote_fastdds --domain-id 20 estop
+robot320_remote_fastdds --domain-id 20 watch --seconds 30
 ```
 
-当前实现仍是骨架：`RobotRemoteFastDDSClient.__init__` 会主动抛出 `FastDDSUnavailable`，等确认 FastDDS Python 绑定生成方式（IDL 位于 `docs/robot320_fastdds.idl`）后，把 `FastDDSUnavailable` 替换为真实的 participant / publisher / subscriber 即可。
+这是上位机正式通信入口，只依赖 `robot320_interfaces`、Fast DDS Python bindings 和
+目标平台生成的 `Robot320Dds` 模块，不导入 `rclpy`。运行环境和 IDL 生成方式见
+[`robot320_interfaces/README.md`](../robot320_interfaces/README.md)。
 
 ## 5. 启动顺序（ROS 2 联调）
 
@@ -152,13 +156,15 @@ ros2 topic pub --once /robot320/cmd_vel geometry_msgs/msg/Twist \
 - 导航：目标点、导航状态、进度、提示信息
 - 地图：先以 `map_revision` 占位，后续按 DDS topic 承载栅格地图或矢量地图
 
-## 8. FastDDS
+## 8. Fast DDS
 
-macOS / Windows 上位机可以走 FastDDS。当前 IDL 契约在 `docs/robot320_fastdds.idl`。生成 FastDDS Python 绑定后：
+Ubuntu、Windows 或 macOS 上位机均按目标系统构建 Fast DDS Python bindings 和 IDL 类型。
+正式契约位于 `robot320_interfaces/robot320_interfaces/dds/Robot320Dds.idl`：
 
-- 车载端接入点：`mobile_platform/fastdds_node.py`
-- 上位机接入点：`remote_control/fastdds_client.py`
-- 消息语义不变，仍是 `ChassisCommand` / `RobotTelemetry`
+- `robot320/command`：目标点、手动运动、急停和升降指令
+- `robot320/state`：底盘、位置、导航、升降杆、电池和故障状态
+- `robot320/reply`：指令接受、完成、拒绝或失败应答
+- `robot320/heartbeat`：双端在线心跳
 
 ## 9. Python API 速查
 
@@ -186,4 +192,4 @@ remote_cli_main(["--robot", "192.168.1.10:15000", "move", "--linear", "0.2", "--
 | launch 文件找不到 | 同上，且 `ros2 launch <pkg> <name>.launch.py` 中的 launch 文件名要与 `launch/` 下文件一致 |
 | 上位机无 topic | 第四节启动顺序是否走通；`ROS_DOMAIN_ID` 是否一致；`ros2 topic list` 是否能看到车载端 topic |
 | GUI 启动失败 | 系统中是否安装 `python3-tk` |
-| FastDDS 抛 `FastDDSUnavailable` | 预期行为，绑定尚未生成；先走 ROS 2 路径联调 |
+| Fast DDS 抛 `FastDDSUnavailable` | 未安装/source Fast-DDS-python，或未生成并加载 `Robot320Dds` 模块 |

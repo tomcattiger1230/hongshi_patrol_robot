@@ -127,13 +127,13 @@ python3 -m pip install --user --no-deps .
 mobile_platform:
   robot320_onboard           UDP JSON 调试入口（无需 ROS 2）
   robot320_ros2_bridge       ROS 2 车载 CAN 桥
-  robot320_fastdds_bridge    FastDDS 入口骨架
+  robot320_fastdds_bridge    Fast DDS → CAN 车载桥
   robot320_cli               CAN 命令行调试
 
 remote_control:
   robot320_remote_cli        UDP JSON 远程 CLI
   robot320_remote_ros2       ROS 2 上位机入口
-  robot320_remote_fastdds    FastDDS 入口骨架
+  robot320_remote_fastdds    不依赖 ROS 2 的 Fast DDS 上位机
   robot320_remote_gui        Tkinter GUI 原型
 ```
 

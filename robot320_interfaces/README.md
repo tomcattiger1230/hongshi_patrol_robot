@@ -24,3 +24,8 @@ export PYTHONPATH="$PWD/robot320_interfaces/generated/Robot320Dds/build:$PYTHONP
 ```
 
 生成类型与 Fast DDS Python bindings 都必须针对运行电脑的操作系统和 Python 版本构建。
+
+实现依据：
+
+- [Fast DDS Python publisher/subscriber](https://fast-dds.docs.eprosima.com/en/stable/fastdds/getting_started/simple_python_app/simple_python_app.html)
+- [Fast DDS-Gen Python bindings](https://fast-dds.docs.eprosima.com/en/2.x/fastddsgen/python_bindings/python_bindings.html)

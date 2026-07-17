@@ -47,6 +47,7 @@ setup(
             "robot320_onboard = mobile_platform.onboard_node:main",
             "robot320_ros2_bridge = mobile_platform.ros2_node:main",
             "robot320_fastdds_bridge = mobile_platform.fastdds_node:main",
+            "robot320_fastdds_gateway = mobile_platform.fastdds_ros_gateway:main",
             "robot320_cli = mobile_platform.cli:main",
         ],
     },

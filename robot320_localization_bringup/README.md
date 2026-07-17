@@ -11,12 +11,14 @@ Livox MID-360s
   -> /tracked_pose + map -> base_link TF
   -> mobile_platform
   -> RobotTelemetry.pose
+  -> Fast DDS robot320/state
 ```
 
 ## 1. NUC 依赖
 
 - Ubuntu 24.04 + ROS 2 **Jazzy**
 - Cartographer ROS：`sudo apt install ros-jazzy-cartographer-ros`
+- Fast DDS Python 运行时和本机生成的 `Robot320Dds` 模块
 - PCL、`pcl_conversions`、`tf2_ros`（通过 rosdep 安装）
 - NUC 网口与雷达位于同一网段
 
@@ -97,7 +99,8 @@ ros2 launch robot320_localization_bringup robot320_slam.launch.py \
   lidar_roll:=0.0 lidar_pitch:=0.0 lidar_yaw:=0.0
 ```
 
-只调试雷达和定位、不连接 CAN 时增加 `enable_chassis:=false`。
+只调试雷达和定位、不连接 CAN 时增加 `enable_chassis:=false`。如果本机尚未安装 Fast
+DDS Python 运行时，再增加 `enable_fastdds_gateway:=false`。
 
 ## 5. 验证
 
@@ -109,10 +112,12 @@ ros2 run tf2_ros tf2_echo map base_link
 ros2 topic echo /robot320/telemetry
 ```
 
-笔记本与 NUC 使用相同 `ROS_DOMAIN_ID` 后，执行：
+笔记本无需 ROS 2。安装 Fast DDS Python 运行时及生成类型后，使用与 NUC 相同的
+Fast DDS domain（默认 `20`）即可接收状态或发送命令。`remote_control` 的 Python API
+提供手动运动、停止/急停、导航目标/取消以及升降控制；现有调试入口可用于验证：
 
 ```bash
-robot320_remote_ros2 watch --seconds 30
+robot320_remote_fastdds --domain-id 20 watch --seconds 30
 ```
 
 输出中的 `pose=(x,y,yaw)` 即 NUC 回传的 SLAM 位姿。超过 1 秒没有收到新的
@@ -130,5 +135,10 @@ robot320_remote_ros2 watch --seconds 30
 | `voxel_size` | `0.05` | 体素降采样尺寸（米） |
 | `map_resolution` | `0.05` | 栅格地图分辨率（米） |
 | `enable_chassis` | `true` | 是否同时启动 Robot320 CAN 桥 |
+| `enable_fastdds_gateway` | `true` | 是否启动笔记本通信网关 |
+| `fastdds_domain_id` | `20` | NUC 与笔记本共同使用的 Fast DDS domain |
+| `robot_id` | `robot320` | Fast DDS 中的机器人标识 |
+| `nav_action` | `/navigate_to_pose` | Nav2 目标 action 名称 |
+| `nav_cmd_vel_topic` | `/cmd_vel` | Nav2 速度输出，网关转发到底盘 |
 
 定位质量首先取决于准确的雷达外参、稳定的时间戳、足够的环境几何特征和匹配的地图。

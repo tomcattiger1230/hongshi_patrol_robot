@@ -30,7 +30,7 @@ remote_control/
     ├── cli.py                        # UDP JSON 远程 CLI
     ├── dds_client.py                 # UDP JSON 调试客户端
     ├── ros2_client.py                # ROS 2 上位机入口
-    ├── fastdds_client.py             # FastDDS 入口骨架
+    ├── fastdds_client.py             # ROS-independent Fast DDS client/API
     └── gui.py                        # Tkinter GUI 原型
 ```
 
@@ -167,6 +167,25 @@ Ubuntu、Windows 或 macOS 上位机均按目标系统构建 Fast DDS Python bin
 - `robot320/heartbeat`：双端在线心跳
 
 ## 9. Python API 速查
+
+笔记本正式程序直接使用 Fast DDS 客户端类，不需要启动 ROS 2，也不必通过命令行：
+
+```python
+from remote_control.fastdds_client import RobotRemoteFastDDSClient
+
+client = RobotRemoteFastDDSClient(domain_id=20, client_id="operator-laptop")
+try:
+    client.send_manual_command(linear_speed_mps=0.2, angular_speed_radps=0.0)
+    client.send_navigation_goal(x_m=3.0, y_m=1.5, yaw_rad=0.0)
+    state = client.receive_telemetry(timeout_s=1.0)
+    reply = client.receive_reply(timeout_s=1.0)
+    client.cancel_navigation()
+    client.control_lift("move_to", target_height_m=1.2)
+finally:
+    client.close()
+```
+
+下面两个接口仅用于已有 ROS 2 或 UDP 调试场景：
 
 ```python
 from remote_control.ros2_client import RobotRemoteRosNode

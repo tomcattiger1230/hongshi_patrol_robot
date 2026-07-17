@@ -5,7 +5,7 @@ Robot320 移动底盘的车载端 ROS 2 包。负责：
 - 封装周立功 ControlCAN 驱动（`libcontrolcan.so`，多架构 vendor）
 - 解析 Robot320 CAN 协议并维护底盘状态
 - 复用 `robot320_interfaces` 中与 ROS 2 无关的命令、状态和 Fast DDS 契约
-- 提供 4 个 `ros2 run` console script 和底盘 launch，方便车载端启动
+- 提供车载 ROS 2、Fast DDS 网关和底盘 launch，方便车载端启动
 - 集成 Livox MID-360s + Cartographer，并把 SLAM 位姿加入上位机遥测
 
 ## 1. 包信息
@@ -14,7 +14,7 @@ Robot320 移动底盘的车载端 ROS 2 包。负责：
 |---|---|
 | ROS 构建类型 | `ament_python`（`format="3"`） |
 | 入口模块 | `mobile_platform`（对应 `mobile_platform/mobile_platform/__init__.py`） |
-| console scripts | `robot320_onboard` / `robot320_ros2_bridge` / `robot320_fastdds_bridge` / `robot320_cli` |
+| console scripts | `robot320_onboard` / `robot320_ros2_bridge` / `robot320_fastdds_bridge` / `robot320_fastdds_gateway` / `robot320_cli` |
 | launch | `robot320_ros2.launch.py`（SLAM 统一启动位于 `robot320_localization_bringup`） |
 | 运行时依赖 | `robot320_interfaces` `rclpy` `std_msgs` `geometry_msgs` `launch` `launch_ros` `ament_index_python` |
 
@@ -48,7 +48,8 @@ mobile_platform/
     ├── safety.py                      # 超时、限速、急停
     ├── onboard_node.py                # 车载 UDP JSON 入口
     ├── ros2_node.py                   # ROS 2 车载节点
-    ├── fastdds_node.py                # FastDDS 入口骨架
+    ├── fastdds_node.py                # Fast DDS 直连 CAN（无 ROS 2）
+    ├── fastdds_ros_gateway.py         # Fast DDS ↔ ROS 2 / Nav2 网关
     └── cli.py                         # 命令行调试入口
 ```
 
@@ -122,8 +123,8 @@ ros2 launch robot320_localization_bringup robot320_slam.launch.py \
     lidar_ip:=192.168.1.107
 ```
 
-统一 launch 会同时启动底盘、Livox 驱动、点云预处理、静态 TF、Cartographer 和
-栅格地图发布。建图、地图保存、雷达外参和依赖安装见
+统一 launch 会同时启动底盘、Fast DDS 网关、Livox 驱动、点云预处理、静态 TF、
+Cartographer 和栅格地图发布。建图、地图保存、雷达外参和依赖安装见
 [`robot320_localization_bringup/README.md`](../robot320_localization_bringup/README.md)。
 
 ### 4.3 CAN 命令行调试
@@ -147,6 +148,16 @@ IDL、Python 类型生成及运行环境见
 [`robot320_interfaces/README.md`](../robot320_interfaces/README.md)。导航目标需要 ROS 2
 导航网关；未配置升降杆硬件适配器时，升降指令会收到明确的 rejected 应答。
 
+NUC 正常运行 ROS 2 时使用统一 SLAM launch 自动启动的
+`robot320_fastdds_gateway`，不要同时启动上面的 `robot320_fastdds_bridge`，否则两个
+进程会争用 CAN 设备。网关把 Fast DDS 手动运动、停止、刹车、急停、导航目标和升降
+指令映射到 ROS 2，并将底盘、SLAM 位姿、导航和升降状态合并回传。
+
+导航目标通过 `/navigate_to_pose` 交给 Nav2；Nav2 的 `/cmd_vel` 由网关转发到
+`/robot320/cmd_vel`。本仓库目前不代替现场 Nav2 参数配置，若 action server 未启动，
+目标会收到明确的 `rejected` 应答。升降杆驱动使用两个 JSON topic 适配：
+`/robot320/lift/command` 和 `/robot320/lift/status`。
+
 ## 5. ROS 2 Topic 约定
 
 默认 topic 前缀 `/robot320`：
@@ -160,6 +171,8 @@ IDL、Python 类型生成及运行环境见
 | `/robot320/telemetry` | `std_msgs/String` | 发布 | JSON `RobotTelemetry` |
 | `/robot320/chassis_status` | `std_msgs/String` | 发布 | JSON `ChassisStatus` |
 | `/robot320/speed_kmh` | `std_msgs/Float32` | 发布 | 底盘速度 km/h |
+| `/robot320/lift/command` | `std_msgs/String` | 发布 | 升降动作 JSON，供硬件驱动订阅 |
+| `/robot320/lift/status` | `std_msgs/String` | 订阅 | 升降状态 JSON，由硬件驱动发布 |
 
 `/tracked_pose`（`geometry_msgs/PoseStamped`）由 Cartographer 发布，车载节点订阅后
 写入 `/robot320/telemetry` 的 `pose` 字段；定位数据超过 1 秒未更新时不再回传旧位姿。

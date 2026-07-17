@@ -107,6 +107,28 @@ def _launch_setup(context):
             )
         )
 
+    if _enabled(_value(context, "enable_fastdds_gateway")):
+        actions.append(
+            Node(
+                package="mobile_platform",
+                executable="robot320_fastdds_gateway",
+                name="robot320_fastdds_gateway",
+                output="screen",
+                arguments=[
+                    "--domain-id",
+                    _value(context, "fastdds_domain_id"),
+                    "--robot-id",
+                    _value(context, "robot_id"),
+                    "--topic-prefix",
+                    _value(context, "topic_prefix"),
+                    "--nav-action",
+                    _value(context, "nav_action"),
+                    "--nav-cmd-vel-topic",
+                    _value(context, "nav_cmd_vel_topic"),
+                ],
+            )
+        )
+
     actions.extend(
         [
             Node(
@@ -200,6 +222,11 @@ def generate_launch_description() -> LaunchDescription:
         DeclareLaunchArgument("mode", default_value="localization"),
         DeclareLaunchArgument("map_state_file", default_value=""),
         DeclareLaunchArgument("enable_chassis", default_value="true"),
+        DeclareLaunchArgument("enable_fastdds_gateway", default_value="true"),
+        DeclareLaunchArgument("fastdds_domain_id", default_value="20"),
+        DeclareLaunchArgument("robot_id", default_value="robot320"),
+        DeclareLaunchArgument("nav_action", default_value="/navigate_to_pose"),
+        DeclareLaunchArgument("nav_cmd_vel_topic", default_value="/cmd_vel"),
         DeclareLaunchArgument("lib", default_value=""),
         DeclareLaunchArgument("device_index", default_value="0"),
         DeclareLaunchArgument("can_index", default_value="0"),

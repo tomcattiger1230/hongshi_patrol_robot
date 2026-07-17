@@ -35,6 +35,7 @@ def test_remote_client_builds_high_level_commands():
     try:
         client.send_manual_command(0.3, -0.2)
         client.send_navigation_goal(1.0, 2.0, 0.5)
+        client.cancel_navigation()
         client.control_lift("move_to", 1.4)
         time.sleep(0.02)
     finally:
@@ -43,11 +44,12 @@ def test_remote_client_builds_high_level_commands():
     assert [item.kind for item in transport.commands] == [
         "manual_motion",
         "navigation_goal",
+        "cancel_navigation",
         "lift",
     ]
     assert transport.commands[0].linear_speed_mps == 0.3
     assert transport.commands[1].goal.x_m == 1.0
-    assert transport.commands[2].lift_target_height_m == 1.4
+    assert transport.commands[3].lift_target_height_m == 1.4
     assert all(item.sequence > 0 for item in transport.commands)
     assert transport.heartbeats
     assert transport.closed is True

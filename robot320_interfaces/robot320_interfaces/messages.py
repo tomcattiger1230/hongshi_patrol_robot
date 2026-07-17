@@ -13,6 +13,7 @@ ControlMode = Literal["idle", "manual", "navigation"]
 CommandKind = Literal[
     "manual_motion",
     "navigation_goal",
+    "cancel_navigation",
     "stop",
     "brake",
     "emergency_stop",

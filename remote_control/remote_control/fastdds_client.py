@@ -69,6 +69,11 @@ class RobotRemoteFastDDSClient:
     def stop(self) -> str:
         return self._send(RobotCommand(kind="stop", client_id=self.client_id))
 
+    def cancel_navigation(self) -> str:
+        return self._send(
+            RobotCommand(kind="cancel_navigation", client_id=self.client_id)
+        )
+
     def brake(self) -> str:
         return self._send(RobotCommand(kind="brake", client_id=self.client_id))
 
@@ -156,6 +161,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("brake")
     sub.add_parser("estop")
     sub.add_parser("reset")
+    sub.add_parser("cancel")
 
     lift = sub.add_parser("lift")
     lift.add_argument("action", choices=["stop", "raise", "lower", "move_to"])
@@ -192,6 +198,8 @@ def main(argv: list[str] | None = None) -> int:
             client.emergency_stop()
         elif args.command == "reset":
             client.reset_idle()
+        elif args.command == "cancel":
+            client.cancel_navigation()
         elif args.command == "lift":
             client.control_lift(args.action, args.height)
         elif args.command == "watch":

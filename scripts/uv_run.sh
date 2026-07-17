@@ -5,6 +5,14 @@ set -euo pipefail
 readonly REPOSITORY_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 readonly PROFILE="${1:-}"
 
+source_overlay() {
+  # ROS 2/ament setup files are not nounset-safe and may probe optional vars.
+  set +u
+  # shellcheck disable=SC1090
+  source "$1"
+  set -u
+}
+
 usage() {
   echo "usage: $0 <desktop|nuc> [--dev] [--] <command> [args...]" >&2
 }
@@ -46,8 +54,7 @@ if [[ "${PROFILE}" == "nuc" || "$(uname -s)" == "Linux" ]]; then
     exit 2
   fi
   if [[ -f "${ros_setup}" ]]; then
-    # shellcheck disable=SC1090
-    source "${ros_setup}"
+    source_overlay "${ros_setup}"
   fi
 fi
 
@@ -56,15 +63,13 @@ if [[ -n "${FASTDDS_SETUP:-}" ]]; then
     echo "error: FASTDDS_SETUP does not exist: ${FASTDDS_SETUP}" >&2
     exit 2
   fi
-  # shellcheck disable=SC1090
-  source "${FASTDDS_SETUP}"
+  source_overlay "${FASTDDS_SETUP}"
 fi
 
 if [[ "${PROFILE}" == "nuc" ]]; then
   robot_setup="${ROBOT320_SETUP:-${REPOSITORY_ROOT}/install/setup.bash}"
   if [[ -f "${robot_setup}" ]]; then
-    # shellcheck disable=SC1090
-    source "${robot_setup}"
+    source_overlay "${robot_setup}"
   fi
 fi
 

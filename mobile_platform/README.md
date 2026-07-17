@@ -59,17 +59,20 @@ mobile_platform/
 
 ```bash
 cd /path/to/hongshi_patrol_ws
-source /opt/ros/jazzy/setup.bash
-./build.sh --packages-up-to mobile_platform
-source install/setup.bash
+./scripts/uv_setup.sh nuc
+./scripts/uv_run.sh nuc ./build.sh --packages-up-to mobile_platform
 ```
+
+NUC 的 uv profile 使用系统 Python 并允许读取 ROS 2 system site packages；运行命令时
+`uv_run.sh nuc` 会自动 source ROS 2、Fast DDS（设置了 `FASTDDS_SETUP` 时）和仓库的
+colcon overlay。Python/PyPI 依赖统一由根目录 `pyproject.toml` 与 `uv.lock` 管理。
 
 ## 4. 运行
 
 ### 4.1 ROS 2 车载节点（推荐）
 
 ```bash
-ros2 launch mobile_platform robot320_ros2.launch.py \
+./scripts/uv_run.sh nuc ros2 launch mobile_platform robot320_ros2.launch.py \
     topic_prefix:=/robot320 \
     command_timeout:=0.6 \
     max_linear_speed:=0.8 \
@@ -96,7 +99,7 @@ ros2 launch mobile_platform robot320_ros2.launch.py \
 也可以绕过 launch 直接用 Python 模块：
 
 ```bash
-python3 -m mobile_platform.ros2_node \
+./scripts/uv_run.sh nuc python -m mobile_platform.ros2_node \
     --topic-prefix /robot320 \
     --command-timeout 0.6 \
     --max-linear-speed 0.8 \
@@ -116,7 +119,7 @@ robot320_onboard --command-bind 0.0.0.0:15000 --telemetry-remote 192.168.1.20:15
 ### 4.2.1 MID-360s SLAM 定位（NUC）
 
 ```bash
-ros2 launch robot320_localization_bringup robot320_slam.launch.py \
+./scripts/uv_run.sh nuc ros2 launch robot320_localization_bringup robot320_slam.launch.py \
     mode:=localization \
     map_state_file:=/var/lib/robot320/maps/site.pbstream \
     host_ip:=192.168.1.50 \
@@ -137,7 +140,8 @@ robot320_cli --lib /path/to/libcontrolcan.so watch --seconds 30
 ### 4.4 Fast DDS 车载入口
 
 ```bash
-robot320_fastdds_bridge --device-index 0 --can-index 0 --domain-id 20
+./scripts/uv_run.sh nuc robot320_fastdds_bridge \
+  --device-index 0 --can-index 0 --domain-id 20
 ```
 
 该入口订阅 `robot320/command`，经过序列号、时间戳和 `SafetyController` 校验后控制

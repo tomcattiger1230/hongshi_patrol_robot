@@ -41,16 +41,17 @@ export LD_LIBRARY_PATH=$HOME/.local/lib:$LD_LIBRARY_PATH
 ### 1.2 编译
 
 ```bash
-source /opt/ros/jazzy/setup.bash
 rosdep install --from-paths . --ignore-src -r -y
-./build.sh --packages-select \
+./scripts/uv_setup.sh nuc
+./scripts/uv_run.sh nuc ./build.sh --packages-select \
   robot320_interfaces livox_ros_driver2 mid360_preprocess mobile_platform \
   robot320_localization_bringup remote_control
-source install/setup.bash
 ```
 
-`build.sh` 会自动加入系统 `dist-packages`，让 colcon 的 CMake 子进程能够访问生成
-ROS IDL 所需的 `lark` 模块。
+NUC profile 使用 `/usr/bin/python3` 并创建允许 system site packages 的 `.venv`，因此 uv
+管理的仓库 Python 包可以与 apt 安装的 `rclpy`、ROS 消息包共同工作。`uv_run.sh nuc`
+自动 source ROS 2 和已构建的仓库 overlay；`build.sh` 仍会加入系统 `dist-packages`，让
+colcon 的 CMake 子进程访问 ROS IDL 所需的 `lark` 模块。
 
 ## 2. 网络和安装外参
 
@@ -68,7 +69,7 @@ ping 192.168.1.107
 
 ```bash
 export ROS_DOMAIN_ID=20
-ros2 launch robot320_localization_bringup robot320_slam.launch.py \
+./scripts/uv_run.sh nuc ros2 launch robot320_localization_bringup robot320_slam.launch.py \
   mode:=mapping \
   host_ip:=192.168.1.50 \
   lidar_ip:=192.168.1.107 \
@@ -90,7 +91,7 @@ ros2 service call /write_state cartographer_ros_msgs/srv/WriteState \
 
 ```bash
 export ROS_DOMAIN_ID=20
-ros2 launch robot320_localization_bringup robot320_slam.launch.py \
+./scripts/uv_run.sh nuc ros2 launch robot320_localization_bringup robot320_slam.launch.py \
   mode:=localization \
   map_state_file:=/var/lib/robot320/maps/site.pbstream \
   host_ip:=192.168.1.50 \

@@ -40,11 +40,12 @@ remote_control/
 ## 3. 构建
 
 ```bash
-cd /path/to/hongshi_patrol_ws
-source /opt/ros/jazzy/setup.bash
-./build.sh --packages-up-to remote_control
-source install/setup.bash
+cd /path/to/hongshi_patrol_robot
+./scripts/uv_setup.sh desktop
 ```
+
+依赖由根目录 `pyproject.toml` 和 `uv.lock` 管理。上位机 profile 会以 editable 方式安装
+`robot320_interfaces`、`remote_control` 和锁定版本的 PySide6，不需要 ROS 2。
 
 ## 4. 运行
 
@@ -88,8 +89,8 @@ robot320_remote_cli watch --seconds 30
 ### 4.3 Qt Fast DDS 控制台（推荐）
 
 ```bash
-python3 -m pip install PySide6
-robot320_remote_gui --domain-id 20 --client-id operator-laptop
+./scripts/uv_run.sh desktop robot320_remote_gui \
+  --domain-id 20 --client-id operator-laptop
 ```
 
 GUI 直接使用 Fast DDS，不导入 ROS 2。界面包括：
@@ -101,18 +102,18 @@ GUI 直接使用 Fast DDS，不导入 ROS 2。界面包括：
 - 导航目标发送与取消、升降杆控制、刹车和急停
 - 指令 ID、接受/完成/拒绝/失败应答日志
 
-PySide6 作为桌面可选依赖，不会强制安装到无图形界面的 NUC。也可以从源码目录执行
-`python3 -m pip install -e './remote_control[gui]'`。GUI 所在笔记本只需 Fast DDS Python
-bindings、生成的 `Robot320Dds` 模块和 PySide6，不需要 ROS 2。
+PySide6 只存在于 uv 的 `desktop` extra，不会安装到无图形界面的 NUC。GUI 所在笔记本
+只需 uv 环境、Fast DDS Python native overlay 和生成的 `Robot320Dds` 模块，不需要
+ROS 2。
 
 ### 4.4 Fast DDS 主通信入口（不需要 ROS 2）
 
 ```bash
-robot320_remote_fastdds --domain-id 20 move --linear 0.2 --duration 2
-robot320_remote_fastdds --domain-id 20 goal --x 3.0 --y 1.5 --yaw 0.0
-robot320_remote_fastdds --domain-id 20 lift move_to --height 1.2
-robot320_remote_fastdds --domain-id 20 estop
-robot320_remote_fastdds --domain-id 20 watch --seconds 30
+./scripts/uv_run.sh desktop robot320_remote_fastdds --domain-id 20 move --linear 0.2 --duration 2
+./scripts/uv_run.sh desktop robot320_remote_fastdds --domain-id 20 goal --x 3.0 --y 1.5 --yaw 0.0
+./scripts/uv_run.sh desktop robot320_remote_fastdds --domain-id 20 lift move_to --height 1.2
+./scripts/uv_run.sh desktop robot320_remote_fastdds --domain-id 20 estop
+./scripts/uv_run.sh desktop robot320_remote_fastdds --domain-id 20 watch --seconds 30
 ```
 
 这是上位机正式通信入口，只依赖 `robot320_interfaces`、Fast DDS Python bindings 和
@@ -225,6 +226,6 @@ remote_cli_main(["--robot", "192.168.1.10:15000", "move", "--linear", "0.2", "--
 | `ros2 run remote_control robot320_remote_ros2 --help` 找不到 | 是否 `source install/setup.bash`？是否成功 `colcon build`？ |
 | launch 文件找不到 | 同上，且 `ros2 launch <pkg> <name>.launch.py` 中的 launch 文件名要与 `launch/` 下文件一致 |
 | 上位机无 topic | 第四节启动顺序是否走通；`ROS_DOMAIN_ID` 是否一致；`ros2 topic list` 是否能看到车载端 topic |
-| GUI 提示缺少 PySide6 | 执行 `python3 -m pip install PySide6` |
+| GUI 提示缺少 PySide6 | 确认执行过 `./scripts/uv_setup.sh desktop`，并通过 `uv_run.sh desktop` 启动 |
 | GUI 显示“DDS 已启动”但无遥测 | 检查 Fast DDS domain、同网段、防火墙以及 NUC 网关是否启动 |
 | Fast DDS 抛 `FastDDSUnavailable` | 未安装/source Fast-DDS-python，或未生成并加载 `Robot320Dds` 模块 |

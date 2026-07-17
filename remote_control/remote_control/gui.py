@@ -321,7 +321,9 @@ if QApplication is not None:
                     button.clicked.connect(self._stop_motion)
                 else:
                     button.pressed.connect(
-                        lambda l=linear, a=angular: self._start_motion(l, a)
+                        lambda linear_factor=linear, angular_factor=angular: self._start_motion(
+                            linear_factor, angular_factor
+                        )
                     )
                     button.released.connect(self._stop_motion)
                 pad.addWidget(button, row, column)

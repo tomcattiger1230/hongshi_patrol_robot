@@ -1,0 +1,38 @@
+# 公网只启用 RTSP/TCP。机器人和本地电脑都主动连接此端口。
+logLevel: info
+logDestinations: [stdout]
+
+authMethod: internal
+# 这里固定权限结构，用户名和密码由 Compose 环境变量覆盖。
+authInternalUsers:
+  - user: publisher-placeholder
+    pass: publisher-placeholder
+    ips: []
+    permissions:
+      - action: publish
+        path: robot
+  - user: reader-placeholder
+    pass: reader-placeholder
+    ips: []
+    permissions:
+      - action: read
+        path: robot
+
+rtsp: true
+rtspTransports: [tcp]
+rtspAddress: :8554
+rtspAuthMethods: [basic]
+
+rtmp: false
+hls: false
+webrtc: false
+srt: false
+api: false
+metrics: false
+pprof: false
+playback: false
+
+paths:
+  robot:
+    source: publisher
+    overridePublisher: true

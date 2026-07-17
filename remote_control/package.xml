@@ -6,7 +6,8 @@
   <name>remote_control</name>
   <version>0.1.0</version>
   <description>
-    Robot320 remote-side control clients for UDP JSON, ROS 2 and FastDDS.
+    Robot320 remote-side Fast DDS control API and Qt GUI, with ROS 2 and UDP
+    debug clients.
   </description>
 
   <maintainer email="hongshi-agent@example.com">Hongshi Agent Contributors</maintainer>

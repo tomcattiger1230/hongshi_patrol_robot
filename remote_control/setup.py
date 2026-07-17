@@ -27,7 +27,7 @@ setup(
     maintainer_email="hongshi-agent@example.com",
     description="Robot320 remote side: ROS 2 / FastDDS / UDP-JSON control clients",
     license="MIT",
-    extras_require={"test": ["pytest"]},
+    extras_require={"gui": ["PySide6>=6.5"], "test": ["pytest"]},
     entry_points={
         "console_scripts": [
             "robot320_remote_cli = remote_control.cli:main",

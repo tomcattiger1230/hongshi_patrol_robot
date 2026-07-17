@@ -134,7 +134,7 @@ remote_control:
   robot320_remote_cli        UDP JSON 远程 CLI
   robot320_remote_ros2       ROS 2 上位机入口
   robot320_remote_fastdds    不依赖 ROS 2 的 Fast DDS 上位机
-  robot320_remote_gui        Tkinter GUI 原型
+  robot320_remote_gui        PySide6 + Fast DDS 图形控制台（无需 ROS 2）
 ```
 
 启动 launch：

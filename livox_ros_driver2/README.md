@@ -26,8 +26,7 @@ sudo cmake --install /tmp/Livox-SDK2/build
 ```bash
 ./scripts/uv_setup.sh nuc
 ./scripts/uv_run.sh nuc ./build.sh --packages-up-to livox_ros_driver2
-FASTDDS_SETUP=/path/to/Fast-DDS-python/install/setup.bash \
-  ./scripts/uv_run.sh nuc ros2 launch \
+./scripts/uv_run.sh nuc ros2 launch \
   robot320_localization_bringup robot320_slam.launch.py \
   mode:=mapping host_ip:=192.168.1.50 lidar_ip:=192.168.1.107
 ```

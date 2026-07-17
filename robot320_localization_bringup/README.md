@@ -13,16 +13,12 @@ MID-360s -> /livox/lidar -> mid360_preprocess -> /filtered_points
 - Ubuntu 24.04、ROS 2 Jazzy
 - `ros-jazzy-cartographer-ros`、PCL、`pcl_conversions`、`tf2_ros`
 - Livox SDK2
-- Fast DDS C++ runtime、Fast-DDS-python、Fast DDS-Gen
+- NUC 系统镜像自带的 ROS 2/Fast DDS 通讯环境
 
 ```bash
 rosdep install --from-paths . --ignore-src -r -y
 ./scripts/uv_setup.sh nuc
-FASTDDS_SETUP=/path/to/Fast-DDS-python/install/setup.bash \
-  ./scripts/uv_run.sh nuc \
-  ./robot320_interfaces/scripts/generate_fastdds_types.sh
-FASTDDS_SETUP=/path/to/Fast-DDS-python/install/setup.bash \
-  ./scripts/uv_run.sh nuc ./build.sh
+./scripts/uv_run.sh nuc ./build.sh
 ```
 
 NUC uv profile 使用 `/usr/bin/python3` 和 system site packages，以读取 apt 安装的 ROS 2
@@ -42,8 +38,7 @@ NUC uv profile 使用 `/usr/bin/python3` 和 system site packages，以读取 ap
 ## 3. 建图
 
 ```bash
-FASTDDS_SETUP=/path/to/Fast-DDS-python/install/setup.bash \
-  ./scripts/uv_run.sh nuc ros2 launch \
+./scripts/uv_run.sh nuc ros2 launch \
   robot320_localization_bringup robot320_slam.launch.py \
   mode:=mapping \
   host_ip:=192.168.1.50 lidar_ip:=192.168.1.107 \
@@ -63,16 +58,15 @@ mkdir -p /var/lib/robot320/maps
 ## 4. 定位
 
 ```bash
-FASTDDS_SETUP=/path/to/Fast-DDS-python/install/setup.bash \
-  ./scripts/uv_run.sh nuc ros2 launch \
+./scripts/uv_run.sh nuc ros2 launch \
   robot320_localization_bringup robot320_slam.launch.py \
   mode:=localization \
   map_state_file:=/var/lib/robot320/maps/site.pbstream \
   host_ip:=192.168.1.50 lidar_ip:=192.168.1.107
 ```
 
-定位模式要求 `.pbstream` 已存在。只调雷达时可传 `enable_chassis:=false`；未安装 Fast DDS
-binding 时可临时传 `enable_fastdds_gateway:=false`。
+定位模式要求 `.pbstream` 已存在。只调雷达时可传 `enable_chassis:=false`；排查通讯网关时
+可临时传 `enable_fastdds_gateway:=false`。
 
 该 launch 提供定位和 Fast DDS 到 Nav2 action 的网关，但不包含现场 Nav2 planner、
 controller、costmap 参数。发送导航目标前必须另行启动 `/navigate_to_pose` action server；

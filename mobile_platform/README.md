@@ -19,18 +19,16 @@ Fast DDS state/reply/heartbeat
 
 ```bash
 ./scripts/uv_setup.sh nuc
-FASTDDS_SETUP=/path/to/Fast-DDS-python/install/setup.bash \
-  ./scripts/uv_run.sh nuc \
-  ./robot320_interfaces/scripts/generate_fastdds_types.sh
-FASTDDS_SETUP=/path/to/Fast-DDS-python/install/setup.bash \
-  ./scripts/uv_run.sh nuc ./build.sh
+./scripts/uv_run.sh nuc ./build.sh
 ```
+
+NUC 系统镜像默认已通过 ROS 2 安装并配置 Fast DDS，同时提供网关所需的 Python binding
+和 `Robot320Dds` 类型；车载端不重复执行上位机的 Fast DDS 安装流程。
 
 定位模式：
 
 ```bash
-FASTDDS_SETUP=/path/to/Fast-DDS-python/install/setup.bash \
-  ./scripts/uv_run.sh nuc ros2 launch \
+./scripts/uv_run.sh nuc ros2 launch \
   robot320_localization_bringup robot320_slam.launch.py \
   mode:=localization \
   map_state_file:=/var/lib/robot320/maps/site.pbstream

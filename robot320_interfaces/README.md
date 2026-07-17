@@ -17,13 +17,12 @@ DDS envelope 的二进制类型。
 
 ## 生成 Python 类型
 
-先安装 Fast DDS C++ runtime、Fast-DDS-python 和 Fast DDS-Gen。Windows/macOS 具体路径
-见 [`remote_control/README.md`](../remote_control/README.md)。Linux/macOS：
+上位机需要安装 Fast DDS C++ runtime、Fast-DDS-python 和 Fast DDS-Gen，Windows/macOS
+具体路径见 [`remote_control/README.md`](../remote_control/README.md)。NUC 镜像默认随
+ROS 2 提供完整通讯环境，不执行本节安装步骤。上位机生成命令：
 
 ```bash
-FASTDDS_SETUP=/path/to/Fast-DDS-python/install/setup.bash \
-  ./scripts/uv_run.sh desktop \
-  ./robot320_interfaces/scripts/generate_fastdds_types.sh
+./scripts/setup_fastdds.sh
 ```
 
 默认输出为 `robot320_interfaces/generated/Robot320Dds/build`，`uv_run.sh` 会自动加入

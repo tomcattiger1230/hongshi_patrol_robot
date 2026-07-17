@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import platform
 import sys
 import threading
 import time
@@ -240,9 +241,21 @@ def _telemetry_line(telemetry: RobotTelemetry) -> str:
 
 
 def _create_transport(backend: str, domain_id: int, client_id: str):
-    if backend == "ros2" or (backend == "auto" and ros2_available()):
+    if backend == "ros2" or (
+        backend == "auto" and (ros2_available() or _is_ubuntu())
+    ):
         return Ros2RemoteTransport(domain_id, client_id)
     return FastDdsRemoteTransport(domain_id, client_id)
+
+
+def _is_ubuntu() -> bool:
+    if not sys.platform.startswith("linux"):
+        return False
+    try:
+        release = platform.freedesktop_os_release()
+    except OSError:
+        return False
+    return release.get("ID", "").lower() == "ubuntu"
 
 
 if __name__ == "__main__":

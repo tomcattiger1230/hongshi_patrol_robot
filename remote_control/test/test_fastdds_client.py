@@ -62,3 +62,12 @@ def test_auto_backend_prefers_ros2_when_available(monkeypatch):
     monkeypatch.setattr(client_module, "Ros2RemoteTransport", lambda *_: marker)
 
     assert _create_transport("auto", 20, "test") is marker
+
+
+def test_auto_backend_does_not_fall_back_to_fastdds_on_ubuntu(monkeypatch):
+    marker = object()
+    monkeypatch.setattr(client_module, "ros2_available", lambda: False)
+    monkeypatch.setattr(client_module, "_is_ubuntu", lambda: True)
+    monkeypatch.setattr(client_module, "Ros2RemoteTransport", lambda *_: marker)
+
+    assert _create_transport("auto", 20, "test") is marker

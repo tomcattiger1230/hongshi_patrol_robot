@@ -39,6 +39,10 @@ def ros2_available() -> bool:
     return rclpy is not None
 
 
+def ros2_unavailability_reason() -> str:
+    return str(_ROS_IMPORT_ERROR) if _ROS_IMPORT_ERROR is not None else "unknown error"
+
+
 class Ros2RemoteTransport:
     backend = "ros2"
 
@@ -50,7 +54,9 @@ class Ros2RemoteTransport:
     ):
         if rclpy is None:
             raise Ros2Unavailable(
-                "ROS 2 Python packages are unavailable; source /opt/ros/jazzy/setup.bash"
+                "ROS 2 Python packages are unavailable. Recreate the desktop environment "
+                "with './scripts/uv_setup.sh desktop' after installing ROS 2, then retry. "
+                f"Import error: {ros2_unavailability_reason()}"
             ) from _ROS_IMPORT_ERROR
         self.client_id = client_id
         self._owns_context = not rclpy.ok()

@@ -20,7 +20,8 @@ GUI 支持：
 ```
 
 Ubuntu 上位机由 `uv_run.sh` 自动 source `/opt/ros/jazzy/setup.bash`，GUI 的默认
-`--backend auto` 会优先选择 ROS 2：
+`--backend auto` 会强制选择 ROS 2。Linux desktop uv 环境使用 `/usr/bin/python3` 和
+system site packages，以读取 apt 安装的 ROS 2 Python 模块：
 
 ```bash
 ./scripts/uv_run.sh desktop robot320_remote_gui --domain-id 20

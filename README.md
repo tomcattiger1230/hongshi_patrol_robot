@@ -36,6 +36,9 @@ Ubuntu 上位机默认和 NUC 一样已安装 ROS 2。安装
 ./scripts/uv_run.sh desktop robot320_remote_gui --domain-id 20
 ```
 
+Linux 上的 `desktop` profile 固定使用 `/usr/bin/python3` 和 system site packages，从而
+读取 apt 安装的 `rclpy`、`std_msgs` 等 ROS 2 模块。
+
 GUI 的 `--backend auto` 默认优先选择 ROS 2。只有 Windows、macOS 等非 Ubuntu 上位机
 需要额外安装 Fast DDS Python binding 和生成 ROS 2 String TypeSupport。具体步骤见
 [`remote_control/README.md`](./remote_control/README.md)。

@@ -8,6 +8,7 @@ import logging
 import sys
 import time
 
+from .ackermann import AckermannConfig, twist_to_steering
 from .controlcan import CANAdapterConfig
 from .messages import ChassisCommand, ChassisStatus, RobotTelemetry
 from .protocol import Direction
@@ -32,14 +33,14 @@ class OnboardNode:
         telemetry_publisher: TelemetryPublisher,
         safety: SafetyController | None = None,
         rpm_per_mps: float = 500.0,
-        steering_gain_deg_per_radps: float = 180.0,
+        ackermann_config: AckermannConfig | None = None,
     ):
         self.robot = robot
         self.command_subscriber = command_subscriber
         self.telemetry_publisher = telemetry_publisher
         self.safety = safety or SafetyController()
         self.rpm_per_mps = rpm_per_mps
-        self.steering_gain_deg_per_radps = steering_gain_deg_per_radps
+        self.ackermann_config = ackermann_config or AckermannConfig()
         self._last_telemetry = 0.0
         self._last_stop_due_timeout = False
 
@@ -77,12 +78,16 @@ class OnboardNode:
 
         self.robot.release_brake()
 
-        steering_angle = min(350, int(abs(command.angular_speed_radps) * self.steering_gain_deg_per_radps))
-        if steering_angle == 0:
+        steering = twist_to_steering(
+            command.linear_speed_mps,
+            command.angular_speed_radps,
+            self.ackermann_config,
+        )
+        if steering.actuator_command == 0:
             self.robot.center_steering()
         else:
-            turn_direction = Direction.RIGHT if command.angular_speed_radps < 0 else Direction.LEFT
-            self.robot.turn(steering_angle, turn_direction)
+            turn_direction = Direction.LEFT if steering.wheel_angle_rad > 0.0 else Direction.RIGHT
+            self.robot.turn(steering.actuator_command, turn_direction)
 
         rpm = int(abs(command.linear_speed_mps) * self.rpm_per_mps)
         if rpm <= 0:
@@ -120,7 +125,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-linear-speed", type=float, default=0.8)
     parser.add_argument("--max-angular-speed", type=float, default=1.2)
     parser.add_argument("--rpm-per-mps", type=float, default=500.0)
-    parser.add_argument("--steering-gain", type=float, default=180.0)
+    parser.add_argument("--wheelbase", type=float, default=0.700)
+    parser.add_argument("--min-turning-radius", type=float, default=2.350)
+    parser.add_argument("--max-wheel-angle", type=float, default=16.59)
+    parser.add_argument("--max-steering-command", type=int, default=350)
+    parser.add_argument("--min-steering-speed", type=float, default=0.05)
     parser.add_argument("--verbose", action="store_true")
     return parser
 
@@ -153,7 +162,13 @@ def main(argv: list[str] | None = None) -> int:
             )
         ),
         rpm_per_mps=args.rpm_per_mps,
-        steering_gain_deg_per_radps=args.steering_gain,
+        ackermann_config=AckermannConfig(
+            wheelbase_m=args.wheelbase,
+            min_turning_radius_m=args.min_turning_radius,
+            max_wheel_angle_deg=args.max_wheel_angle,
+            max_steering_command=args.max_steering_command,
+            min_linear_speed_mps=args.min_steering_speed,
+        ),
     )
 
     try:

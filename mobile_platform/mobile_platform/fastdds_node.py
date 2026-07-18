@@ -14,6 +14,7 @@ from robot320_interfaces.fastdds_transport import (
 )
 from robot320_interfaces.messages import CommandReply, RobotCommand, RobotTelemetry
 
+from .ackermann import AckermannConfig
 from .controlcan import CANAdapterConfig
 from .onboard_node import OnboardNode
 from .robot320 import Robot320Platform
@@ -31,7 +32,7 @@ class Robot320FastDDSBridge:
         domain_id: int = 20,
         robot_id: str = "robot320",
         rpm_per_mps: float = 500.0,
-        steering_gain_deg_per_radps: float = 180.0,
+        ackermann_config: AckermannConfig | None = None,
         telemetry_period_s: float = 0.2,
         heartbeat_period_s: float = 1.0,
         max_command_age_s: float = 2.0,
@@ -45,7 +46,7 @@ class Robot320FastDDSBridge:
             telemetry_publisher=_NoTelemetryPublisher(),
             safety=safety,
             rpm_per_mps=rpm_per_mps,
-            steering_gain_deg_per_radps=steering_gain_deg_per_radps,
+            ackermann_config=ackermann_config,
         )
         self.transport = transport or FastDdsRobotTransport(domain_id, robot_id)
         self.telemetry_period_s = telemetry_period_s
@@ -174,7 +175,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-linear-speed", type=float, default=0.8)
     parser.add_argument("--max-angular-speed", type=float, default=1.2)
     parser.add_argument("--rpm-per-mps", type=float, default=500.0)
-    parser.add_argument("--steering-gain", type=float, default=180.0)
+    parser.add_argument("--wheelbase", type=float, default=0.700)
+    parser.add_argument("--min-turning-radius", type=float, default=2.350)
+    parser.add_argument("--max-wheel-angle", type=float, default=16.59)
+    parser.add_argument("--max-steering-command", type=int, default=350)
+    parser.add_argument("--min-steering-speed", type=float, default=0.05)
     parser.add_argument("--telemetry-period", type=float, default=0.2)
     parser.add_argument("--heartbeat-period", type=float, default=1.0)
     parser.add_argument("--verbose", action="store_true")
@@ -203,7 +208,13 @@ def main(argv: list[str] | None = None) -> int:
             domain_id=args.domain_id,
             robot_id=args.robot_id,
             rpm_per_mps=args.rpm_per_mps,
-            steering_gain_deg_per_radps=args.steering_gain,
+            ackermann_config=AckermannConfig(
+                wheelbase_m=args.wheelbase,
+                min_turning_radius_m=args.min_turning_radius,
+                max_wheel_angle_deg=args.max_wheel_angle,
+                max_steering_command=args.max_steering_command,
+                min_linear_speed_mps=args.min_steering_speed,
+            ),
             telemetry_period_s=args.telemetry_period,
             heartbeat_period_s=args.heartbeat_period,
             max_command_age_s=args.max_command_age,

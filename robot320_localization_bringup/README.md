@@ -68,9 +68,13 @@ mkdir -p /var/lib/robot320/maps
 定位模式要求 `.pbstream` 已存在。只调雷达时可传 `enable_chassis:=false`；排查通讯网关时
 可临时传 `enable_fastdds_gateway:=false`。
 
-该 launch 提供定位和 ROS 2 String 指令到 Nav2 action 的网关，但不包含现场 Nav2 planner、
-controller、costmap 参数。发送导航目标前必须另行启动 `/navigate_to_pose` action server；
-否则目标会收到 `rejected` reply。
+该 launch 提供定位、ROS 2 String 指令到 Nav2 action 的网关，以及一套待现场标定的
+`nav2_ackermann.yaml` 初始参数。默认不启动 Nav2；
+在 `/odom` 和 `map -> odom -> base_link` 验证完成后可传 `enable_nav2:=true`。否则即使 action
+server 启动，控制器也无法获得连续可靠的底盘速度。
+
+Robot320 初始阿克曼参数为轴距 `0.700 m`、最小转弯半径 `2.350 m`、等效前轮最大转角
+`16.59 deg`，CAN 单一转向执行器命令范围为 `0..350`。这些参数均可通过 launch 参数覆盖。
 
 ## 5. 验证
 
@@ -100,5 +104,11 @@ controller、costmap 参数。发送导航目标前必须另行启动 `/navigate
 | `fastdds_domain_id` | `20` | `ROS_DOMAIN_ID`（参数名为兼容旧配置保留） |
 | `nav_action` | `/navigate_to_pose` | Nav2 action |
 | `nav_cmd_vel_topic` | `/cmd_vel` | Nav2 速度输出 |
+| `enable_nav2` | `false` | 启动仓库内的 Nav2 Ackermann 配置 |
+| `nav2_params_file` | 包内配置 | Nav2 参数文件 |
+| `wheelbase` | `0.700` | 前后轴距（米） |
+| `min_turning_radius` | `2.350` | 最小转弯半径（米） |
+| `max_wheel_angle` | `16.59` | 等效前轮最大转角（度） |
+| `max_steering_command` | `350` | CAN 转向执行器最大命令量 |
 
 定位质量主要取决于雷达外参、时间戳、环境几何特征和地图一致性。

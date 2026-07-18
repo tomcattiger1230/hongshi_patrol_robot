@@ -103,6 +103,11 @@ def _launch_setup(context):
                     "topic_prefix": _value(context, "topic_prefix"),
                     "localization_pose_topic": _value(context, "tracked_pose_topic"),
                     "command_timeout": _value(context, "command_timeout"),
+                    "wheelbase": _value(context, "wheelbase"),
+                    "min_turning_radius": _value(context, "min_turning_radius"),
+                    "max_wheel_angle": _value(context, "max_wheel_angle"),
+                    "max_steering_command": _value(context, "max_steering_command"),
+                    "min_steering_speed": _value(context, "min_steering_speed"),
                 }.items(),
             )
         )
@@ -217,6 +222,20 @@ def _launch_setup(context):
             ),
         ]
     )
+
+    if _enabled(_value(context, "enable_nav2")):
+        actions.append(
+            IncludeLaunchDescription(
+                PythonLaunchDescriptionSource(
+                    str(package_share / "launch" / "robot320_nav2.launch.py")
+                ),
+                launch_arguments={
+                    "params_file": _value(context, "nav2_params_file"),
+                    "use_sim_time": "false",
+                    "autostart": "true",
+                }.items(),
+            )
+        )
     return actions
 
 
@@ -226,6 +245,7 @@ def generate_launch_description() -> LaunchDescription:
         DeclareLaunchArgument("map_state_file", default_value=""),
         DeclareLaunchArgument("enable_chassis", default_value="true"),
         DeclareLaunchArgument("enable_fastdds_gateway", default_value="true"),
+        DeclareLaunchArgument("enable_nav2", default_value="false"),
         DeclareLaunchArgument("fastdds_domain_id", default_value="20"),
         DeclareLaunchArgument("robot_id", default_value="robot320"),
         DeclareLaunchArgument("nav_action", default_value="/navigate_to_pose"),
@@ -235,6 +255,11 @@ def generate_launch_description() -> LaunchDescription:
         DeclareLaunchArgument("can_index", default_value="0"),
         DeclareLaunchArgument("topic_prefix", default_value="/robot320"),
         DeclareLaunchArgument("command_timeout", default_value="0.6"),
+        DeclareLaunchArgument("wheelbase", default_value="0.700"),
+        DeclareLaunchArgument("min_turning_radius", default_value="2.350"),
+        DeclareLaunchArgument("max_wheel_angle", default_value="16.59"),
+        DeclareLaunchArgument("max_steering_command", default_value="350"),
+        DeclareLaunchArgument("min_steering_speed", default_value="0.05"),
         DeclareLaunchArgument("host_ip", default_value="192.168.1.50"),
         DeclareLaunchArgument("lidar_ip", default_value="192.168.1.107"),
         DeclareLaunchArgument("lidar_frame", default_value="livox_frame"),
@@ -252,5 +277,13 @@ def generate_launch_description() -> LaunchDescription:
         DeclareLaunchArgument("max_z", default_value="2.5"),
         DeclareLaunchArgument("voxel_size", default_value="0.05"),
         DeclareLaunchArgument("map_resolution", default_value="0.05"),
+        DeclareLaunchArgument(
+            "nav2_params_file",
+            default_value=str(
+                Path(get_package_share_directory("robot320_localization_bringup"))
+                / "config"
+                / "nav2_ackermann.yaml"
+            ),
+        ),
     ]
     return LaunchDescription([*arguments, OpaqueFunction(function=_launch_setup)])

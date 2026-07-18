@@ -47,7 +47,11 @@ def generate_launch_description() -> LaunchDescription:
         DeclareLaunchArgument("max_linear_speed", default_value="0.8"),
         DeclareLaunchArgument("max_angular_speed", default_value="1.2"),
         DeclareLaunchArgument("rpm_per_mps", default_value="500"),
-        DeclareLaunchArgument("steering_gain", default_value="180"),
+        DeclareLaunchArgument("wheelbase", default_value="0.700"),
+        DeclareLaunchArgument("min_turning_radius", default_value="2.350"),
+        DeclareLaunchArgument("max_wheel_angle", default_value="16.59"),
+        DeclareLaunchArgument("max_steering_command", default_value="350"),
+        DeclareLaunchArgument("min_steering_speed", default_value="0.05"),
     ]
 
     if bridge_cmd.startswith("python3"):
@@ -67,7 +71,11 @@ def generate_launch_description() -> LaunchDescription:
                 "--max-linear-speed", LaunchConfiguration("max_linear_speed"),
                 "--max-angular-speed", LaunchConfiguration("max_angular_speed"),
                 "--rpm-per-mps", LaunchConfiguration("rpm_per_mps"),
-                "--steering-gain", LaunchConfiguration("steering_gain"),
+                "--wheelbase", LaunchConfiguration("wheelbase"),
+                "--min-turning-radius", LaunchConfiguration("min_turning_radius"),
+                "--max-wheel-angle", LaunchConfiguration("max_wheel_angle"),
+                "--max-steering-command", LaunchConfiguration("max_steering_command"),
+                "--min-steering-speed", LaunchConfiguration("min_steering_speed"),
             ],
             output="screen",
         )
@@ -86,7 +94,11 @@ def generate_launch_description() -> LaunchDescription:
                 "--max-linear-speed", LaunchConfiguration("max_linear_speed"),
                 "--max-angular-speed", LaunchConfiguration("max_angular_speed"),
                 "--rpm-per-mps", LaunchConfiguration("rpm_per_mps"),
-                "--steering-gain", LaunchConfiguration("steering_gain"),
+                "--wheelbase", LaunchConfiguration("wheelbase"),
+                "--min-turning-radius", LaunchConfiguration("min_turning_radius"),
+                "--max-wheel-angle", LaunchConfiguration("max_wheel_angle"),
+                "--max-steering-command", LaunchConfiguration("max_steering_command"),
+                "--min-steering-speed", LaunchConfiguration("min_steering_speed"),
             ],
             output="screen",
         )

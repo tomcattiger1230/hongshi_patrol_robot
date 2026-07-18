@@ -15,6 +15,7 @@ import math
 import sys
 import time
 
+from .ackermann import AckermannConfig
 from .controlcan import CANAdapterConfig
 from .messages import ChassisCommand, Pose2D, RobotTelemetry, to_json
 from .onboard_node import OnboardNode
@@ -44,7 +45,7 @@ class Robot320RosNode(Node):
         robot: Robot320Platform,
         safety: SafetyController,
         rpm_per_mps: float = 500.0,
-        steering_gain_deg_per_radps: float = 180.0,
+        ackermann_config: AckermannConfig | None = None,
         telemetry_period_s: float = 0.2,
         topic_prefix: str = "/robot320",
         localization_pose_topic: str = "/tracked_pose",
@@ -57,7 +58,7 @@ class Robot320RosNode(Node):
             telemetry_publisher=NoneTelemetryPublisher(),
             safety=safety,
             rpm_per_mps=rpm_per_mps,
-            steering_gain_deg_per_radps=steering_gain_deg_per_radps,
+            ackermann_config=ackermann_config,
         )
         self.topic_prefix = topic_prefix.rstrip("/")
         self._last_stop_due_timeout = False
@@ -177,7 +178,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-linear-speed", type=float, default=0.8)
     parser.add_argument("--max-angular-speed", type=float, default=1.2)
     parser.add_argument("--rpm-per-mps", type=float, default=500.0)
-    parser.add_argument("--steering-gain", type=float, default=180.0)
+    parser.add_argument("--wheelbase", type=float, default=0.700)
+    parser.add_argument("--min-turning-radius", type=float, default=2.350)
+    parser.add_argument("--max-wheel-angle", type=float, default=16.59)
+    parser.add_argument("--max-steering-command", type=int, default=350)
+    parser.add_argument("--min-steering-speed", type=float, default=0.05)
     parser.add_argument("--verbose", action="store_true")
     return parser
 
@@ -206,7 +211,13 @@ def main(argv: list[str] | None = None) -> int:
             )
         ),
         rpm_per_mps=args.rpm_per_mps,
-        steering_gain_deg_per_radps=args.steering_gain,
+        ackermann_config=AckermannConfig(
+            wheelbase_m=args.wheelbase,
+            min_turning_radius_m=args.min_turning_radius,
+            max_wheel_angle_deg=args.max_wheel_angle,
+            max_steering_command=args.max_steering_command,
+            min_linear_speed_mps=args.min_steering_speed,
+        ),
         telemetry_period_s=args.telemetry_period,
         topic_prefix=args.topic_prefix,
         localization_pose_topic=args.localization_pose_topic,

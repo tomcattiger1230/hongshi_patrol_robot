@@ -2,13 +2,25 @@ import os
 import unittest
 from unittest.mock import patch
 
-from video_relay.robot.push_stream import add_credentials, build_command, redact_command
+from video_relay.robot.push_stream import (
+    add_credentials,
+    build_command,
+    redact_command,
+    redact_text,
+)
 
 
 class PushStreamTests(unittest.TestCase):
     def test_add_credentials_encodes_reserved_characters(self) -> None:
         actual = add_credentials("rtsp://192.168.1.64:554/live", "admin", "p@ss:word")
         self.assertEqual(actual, "rtsp://admin:p%40ss%3Aword@192.168.1.64:554/live")
+
+    def test_redact_text_removes_credentials_from_ffmpeg_log(self) -> None:
+        raw = "Error opening rtsp://admin:p%40ss@192.168.1.64/live"
+        safe = redact_text(raw)
+        self.assertNotIn("admin", safe)
+        self.assertNotIn("p%40ss", safe)
+        self.assertIn("192.168.1.64/live", safe)
 
     @patch.dict(
         os.environ,
@@ -27,6 +39,8 @@ class PushStreamTests(unittest.TestCase):
         command = build_command()
         self.assertIn("copy", command)
         self.assertNotIn("libx264", command)
+        self.assertIn("+genpts", command)
+        self.assertIn("-use_wallclock_as_timestamps", command)
         self.assertEqual(command.count("-rtsp_transport"), 2)
         safe_log = redact_command(command)
         self.assertNotIn("camera-secret", safe_log)

@@ -4,16 +4,19 @@
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import signal
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 from urllib.parse import quote, urlsplit, urlunsplit
 
 
 STOP_REQUESTED = False
+CREDENTIALS_PATTERN = re.compile(r"(?P<scheme>rtsps?://)[^/@\s]+@", re.IGNORECASE)
 
 
 def load_env_file(path: Path) -> None:
@@ -73,9 +76,13 @@ def build_command() -> list[str]:
         "-hide_banner",
         "-loglevel",
         os.getenv("FFMPEG_LOG_LEVEL", "warning"),
+        "-fflags",
+        "+genpts",
+        "-use_wallclock_as_timestamps",
+        "1",
         "-rtsp_transport",
         "tcp",
-        "-rw_timeout",
+        "-timeout",
         "15000000",
         "-i",
         camera_url,
@@ -125,6 +132,22 @@ def redact_command(command: list[str]) -> str:
     return " ".join(redacted)
 
 
+def redact_text(value: str) -> str:
+    """Remove RTSP URL credentials from a child-process log line."""
+    return CREDENTIALS_PATTERN.sub(r"\g<scheme><credentials-redacted>@", value)
+
+
+def forward_ffmpeg_logs(pipe: object) -> None:
+    """Forward FFmpeg stderr while preventing credential disclosure."""
+    if not hasattr(pipe, "readline"):
+        return
+    try:
+        for line in iter(pipe.readline, ""):
+            print(redact_text(line.rstrip("\n")), file=sys.stderr, flush=True)
+    finally:
+        pipe.close()
+
+
 def request_stop(_signum: int, _frame: object) -> None:
     global STOP_REQUESTED
     STOP_REQUESTED = True
@@ -149,7 +172,20 @@ def main() -> int:
     while not STOP_REQUESTED:
         print(f"启动视频转发：{redact_command(command)}", flush=True)
         started_at = time.monotonic()
-        process = subprocess.Popen(command)
+        process = subprocess.Popen(
+            command,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1,
+        )
+        log_thread = threading.Thread(
+            target=forward_ffmpeg_logs,
+            args=(process.stderr,),
+            name="ffmpeg-log-forwarder",
+            daemon=True,
+        )
+        log_thread.start()
         while process.poll() is None and not STOP_REQUESTED:
             time.sleep(0.5)
         if STOP_REQUESTED and process.poll() is None:
@@ -158,6 +194,7 @@ def main() -> int:
                 process.wait(timeout=8)
             except subprocess.TimeoutExpired:
                 process.terminate()
+        log_thread.join(timeout=2)
         if STOP_REQUESTED:
             break
         runtime = time.monotonic() - started_at

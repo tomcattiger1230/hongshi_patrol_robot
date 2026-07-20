@@ -108,13 +108,11 @@ python3 push_stream.py
 
 程序会在摄像头断线、网络切换或服务器重启后自动重连。日志中的 URL 会隐藏密码。
 
-长期运行时，把程序和已经填写的 `.env` 安装到 `/opt`。服务是模板形式，下面的 `$USER` 会自动使用当前 NUC 登录用户：
+长期运行时，将仓库放在 NUC 的 `~/Develop/github_ws/hongshi_patrol_robot`。服务是模板形式，下面的 `$USER` 会自动使用当前 NUC 登录用户：
 
 ```bash
-sudo mkdir -p /opt/hikvision-video-relay/robot
-sudo cp push_stream.py .env /opt/hikvision-video-relay/robot/
-sudo chown "$USER":"$(id -gn)" /opt/hikvision-video-relay/robot/.env
-sudo chmod 600 /opt/hikvision-video-relay/robot/.env
+cd ~/Develop/github_ws/hongshi_patrol_robot/video_relay/robot
+chmod 600 .env
 sudo cp hikvision-video-relay@.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now "hikvision-video-relay@$USER"
@@ -125,7 +123,9 @@ sudo journalctl -u "hikvision-video-relay@$USER" -f
 
 ## 四、本地电脑查看和录制
 
-本地电脑安装 FFmpeg，然后：
+### 命令行快速验证
+
+本地电脑安装 FFmpeg，然后先用 `probe` 确认是否收到视频数据，再进行播放或录制：
 
 ```bash
 cd video_relay/local
@@ -136,11 +136,35 @@ python3 client.py play
 python3 client.py record
 ```
 
+`probe` 成功时会输出 `Video: h264` 或 `Video: hevc`、分辨率和帧率；`play` 会打开低延迟播放窗口；`record` 会把原始码流无损保存成带时间戳的 MKV 文件。
+
 也可直接用 VLC 打开：
 
 ```text
 rtsp://local_viewer:只读密码@SERVER_PUBLIC_IP:8554/robot
 ```
+
+### Python Web 查看器
+
+项目提供了一个简易 Web 页面。视频仍通过 RTSP 从公网服务器获取，由本地 Python/OpenCV 解码成 MJPEG，因此公网服务器不需要增加端口：
+
+```bash
+cd video_relay/local
+python3 -m venv .venv
+source .venv/bin/activate       # Windows PowerShell 使用：.venv\Scripts\Activate.ps1
+python3 -m pip install -r requirements.txt
+cp .env.example .env           # 如果之前已配置则不要覆盖
+# 编辑 .env，填写 SERVER_HOST、READ_USER 和 READ_PASSWORD
+python3 web_viewer.py
+```
+
+浏览器打开 <http://127.0.0.1:8081>。页面会显示连接状态、画面分辨率、接收帧率和最新帧时间，同时提供以下数据接口：
+
+- `/video`：浏览器可直接显示的 MJPEG 视频流。
+- `/snapshot.jpg`：获取当前帧 JPEG 图片。
+- `/api/status`：获取连接状态、分辨率、FPS 和累计帧数 JSON。
+
+Web 服务默认只监听 `127.0.0.1`，其他电脑无法访问。如果确实需要局域网访问，可在 `local/.env` 中设置 `WEB_HOST=0.0.0.0`，但该页面没有登录认证，不应直接暴露到公网。
 
 公网链路统一强制 RTSP over TCP，防火墙配置简单，并避免 UDP 在 NAT 环境下丢包。端到端带宽约等于摄像头码率；例如 2.5 Mbit/s 连续运行约产生 810 GB/月的服务器入站流量，每增加一个观看端还会产生约 810 GB/月出站流量。
 

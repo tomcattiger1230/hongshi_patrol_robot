@@ -6,8 +6,8 @@ Wants=network-online.target
 [Service]
 Type=simple
 User=%i
-WorkingDirectory=/opt/hikvision-video-relay/robot
-ExecStart=/usr/bin/python3 /opt/hikvision-video-relay/robot/push_stream.py
+WorkingDirectory=/home/%i/Develop/github_ws/hongshi_patrol_robot/video_relay/robot
+ExecStart=/usr/bin/python3 /home/%i/Develop/github_ws/hongshi_patrol_robot/video_relay/robot/push_stream.py
 Restart=always
 RestartSec=3
 NoNewPrivileges=true

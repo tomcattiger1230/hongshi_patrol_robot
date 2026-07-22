@@ -146,25 +146,160 @@ rtsp://local_viewer:只读密码@SERVER_PUBLIC_IP:8554/robot
 
 ### Python Web 查看器
 
-项目提供了一个简易 Web 页面。视频仍通过 RTSP 从公网服务器获取，由本地 Python/OpenCV 解码成 MJPEG，因此公网服务器不需要增加端口：
+项目提供了一个简易 Web 页面。本地 Python/OpenCV 从 RTSP 解码为 MJPEG；与 NUC 同网时优先使用局域网直连，失败时自动回退到公网服务器，因此公网服务器不需要增加端口。
+
+macOS 首次使用时，在仓库根目录创建虚拟环境并安装依赖：
 
 ```bash
-cd video_relay/local
+cd ~/Develop/github/hongshi_patrol_robot
 python3 -m venv .venv
-source .venv/bin/activate       # Windows PowerShell 使用：.venv\Scripts\Activate.ps1
-python3 -m pip install -r requirements.txt
-cp .env.example .env           # 如果之前已配置则不要覆盖
-# 编辑 .env，填写 SERVER_HOST、READ_USER 和 READ_PASSWORD
-python3 web_viewer.py
+.venv/bin/python -m pip install -r video_relay/local/requirements.txt
+cp video_relay/local/.env.example video_relay/local/.env  # 已配置时不要覆盖
 ```
 
-浏览器打开 <http://127.0.0.1:8081>。页面会显示连接状态、画面分辨率、接收帧率和最新帧时间，同时提供以下数据接口：
+编辑 `video_relay/local/.env`，填写 `SERVER_HOST`、`READ_USER`、`READ_PASSWORD`，需要云台控制时还要填写 `PTZ_AGENT_URL` 和 `PTZ_TOKEN`。
+
+以后每次在本地 Mac 启动页面，只需执行：
+
+```bash
+cd ~/Develop/github/hongshi_patrol_robot
+.venv/bin/python video_relay/local/web_viewer.py
+```
+
+终端出现 `本地视频页面：http://127.0.0.1:8081` 后，在浏览器打开 <http://127.0.0.1:8081>。保持该终端运行；需要停止服务时按 `Ctrl+C`。如果启动时提示 `8081` 端口已被占用，通常表示查看器已经运行，可直接打开页面，也可以使用以下命令确认：
+
+```bash
+lsof -nP -iTCP:8081 -sTCP:LISTEN
+```
+
+页面会显示连接状态、画面分辨率、接收帧率和最新帧时间，同时提供以下数据接口：
 
 - `/video`：浏览器可直接显示的 MJPEG 视频流。
 - `/snapshot.jpg`：获取当前帧 JPEG 图片。
 - `/api/status`：获取连接状态、分辨率、FPS 和累计帧数 JSON。
 
 Web 服务默认只监听 `127.0.0.1`，其他电脑无法访问。如果确实需要局域网访问，可在 `local/.env` 中设置 `WEB_HOST=0.0.0.0`，但该页面没有登录认证，不应直接暴露到公网。
+
+云台控制要求本地 Mac 和 NUC 位于同一个 Wi-Fi/LAN 网络，并且 NUC 上的 `hikvision-ptz-agent@$USER` 服务正在运行。该服务安装并启用后会随 NUC 开机自动启动。
+
+### 局域网低延迟视频
+
+本地电脑和 NUC 位于同一 Wi-Fi/LAN 时，可以绕过公网服务器直接观看。Web 查看器会优先连接 NUC 的本地 RTSP 代理；局域网不可用时自动回退到公网 MediaMTX：
+
+```text
+本地 Mac → NUC go2rtc → 海康摄像头        （局域网优先）
+本地 Mac → 公网 MediaMTX ← NUC ← 海康摄像头（公网回退）
+```
+
+NUC 需要安装 go2rtc，并在 `robot/.env` 中配置：
+
+```dotenv
+LOCAL_READ_USER=local_viewer
+LOCAL_READ_PASSWORD=替换为强密码
+LOCAL_RTSP_PORT=8554
+GO2RTC_BIN=/home/hs/go2rtc/go2rtc_linux_amd64
+```
+
+安装并启动本地 RTSP 代理：
+
+```bash
+cd ~/Develop/github_ws/hongshi_patrol_robot/video_relay/robot
+sudo cp hikvision-local-rtsp@.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now "hikvision-local-rtsp@$USER"
+systemctl status "hikvision-local-rtsp@$USER" --no-pager
+```
+
+本地 `local/.env` 中使用相同的 `READ_USER`、`READ_PASSWORD`，并添加：
+
+```dotenv
+LOCAL_SERVER_HOST=10.88.223.39
+LOCAL_SERVER_PORT=8554
+LOCAL_STREAM_PATH=robot
+RTSP_OPEN_TIMEOUT_MS=5000
+```
+
+页面状态会标明当前使用“局域网”还是“公网”。本地代理的管理 API 只监听 NUC 的 `127.0.0.1`，RTSP 端口使用账号密码认证，不应映射到公网。
+
+当前海康摄像头 `/102` 子码流的硬件最高帧率为 12.5 FPS。推荐使用 H.264、640×360、CBR 768 kbit/s，由 NUC 直接复制码流；实测局域网页面可稳定达到约 12.5 FPS，同时将 NUC FFmpeg CPU 占用从约 26% 降至约 2%。
+
+### NUC 与 USR-G809 有线网络检查
+
+当前网络结构如下：
+
+```text
+海康摄像头 192.168.1.64 ─┐
+                          ├─ USR-G809 192.168.1.1 ── 4G/5G
+NUC enp85s0 192.168.1.50 ─┘
+NUC wlo1   10.88.223.39  ─── Wi-Fi
+```
+
+2026-07-22 实测结果：NUC 有线链路、USR-G809 管理页面和摄像头均正常可达；但 NUC 的有线默认网关被配置成不可达的 `192.168.1.0`，正确值应为路由器地址 `192.168.1.1`。NUC 当时的互联网流量实际经 Wi-Fi 默认网关 `10.88.223.42` 发出，强制从有线网卡访问公网失败，因此还不能据此判断路由器的 4G/5G 是否已经恢复。
+
+在 NUC 上检查路由与链路：
+
+```bash
+ip -br -4 addr
+ip -4 route
+ip -4 route get 223.5.5.5
+ping -I enp85s0 -c 3 192.168.1.1
+curl --interface enp85s0 --connect-timeout 5 https://www.baidu.com/
+```
+
+修正有线网关前先确认当前配置来源：
+
+```bash
+nmcli -f connection.id,ipv4.method,ipv4.addresses,ipv4.gateway connection show netplan-enp85s0
+sudo grep -R "192.168.1.0\|gateway" /etc/netplan
+```
+
+把 `enp85s0` 的网关修正为 `192.168.1.1` 并应用配置后，再重复上面的强制有线测试。不要在通过 NUC Wi-Fi 地址进行 SSH 时直接关闭 Wi-Fi，否则远程会话会立即断开；应先准备有线侧 SSH 路径或现场操作。若修正网关后仍无法通过有线访问公网，再继续检查 USR-G809 的 SIM、APN、注册状态、信号强度和蜂窝拨号状态。
+
+### 在 Web 页面遥操作云台
+
+摄像头位于 NUC 的有线网段，本地电脑不能直接访问其 ONVIF 端口。因此 PTZ 使用以下链路：
+
+```text
+本地浏览器 → local/web_viewer.py → NUC PTZ Agent → 海康 ONVIF
+```
+
+先生成一个独立的 PTZ Token：
+
+```bash
+python3 -c 'import secrets; print(secrets.token_urlsafe(32))'
+```
+
+在 NUC 的 `video_relay/robot/.env` 中添加：
+
+```dotenv
+CAMERA_ONVIF_PORT=80
+CAMERA_PROFILE_TOKEN=Profile_101
+PTZ_BIND_HOST=0.0.0.0
+PTZ_AGENT_PORT=8090
+PTZ_TOKEN=替换为刚才生成的Token
+PTZ_DEADMAN_SECONDS=1.5
+```
+
+安装并启动 NUC PTZ 服务：
+
+```bash
+cd ~/Develop/github_ws/hongshi_patrol_robot/video_relay/robot
+sudo cp hikvision-ptz-agent@.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now "hikvision-ptz-agent@$USER"
+systemctl status "hikvision-ptz-agent@$USER" --no-pager
+```
+
+在本地电脑的 `video_relay/local/.env` 中添加同一个 Token：
+
+```dotenv
+PTZ_AGENT_URL=http://10.88.223.39:8090
+PTZ_TOKEN=替换为同一个Token
+```
+
+重新启动 `python3 web_viewer.py` 后，页面会显示方向、变焦、停止和速度控制。按住按钮持续移动，松开、窗口失焦或切换标签页时自动发送停止命令。网页还会定时续约移动命令；若浏览器或网络意外断开，NUC 端看门狗默认会在 1.5 秒后主动停止云台。Token 只由本地 Python 后端发送，不会暴露给浏览器。
+
+`8090/tcp` 只应在 NUC 与操作电脑所在的可信局域网或 VPN 中使用，不要在路由器上做公网端口映射。NUC 离线时页面会显示“无法连接 NUC PTZ Agent”，不会影响视频状态页面。
 
 公网链路统一强制 RTSP over TCP，防火墙配置简单，并避免 UDP 在 NAT 环境下丢包。端到端带宽约等于摄像头码率；例如 2.5 Mbit/s 连续运行约产生 810 GB/月的服务器入站流量，每增加一个观看端还会产生约 810 GB/月出站流量。
 

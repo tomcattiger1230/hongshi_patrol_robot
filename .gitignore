@@ -217,6 +217,9 @@ tempCodeRunnerFile.py
 # PyPI configuration file
 .pypirc
 
+# Temporary ONVIF prototype (integrated into video_relay)
+my_onvif_ptz/
+
 # Marimo
 marimo/_static/
 marimo/_lsp/

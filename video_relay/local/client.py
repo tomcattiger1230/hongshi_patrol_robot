@@ -37,6 +37,20 @@ def stream_url() -> str:
     return f"rtsp://{user}:{password}@{host}:{port}/{path}"
 
 
+def stream_urls() -> list[tuple[str, str]]:
+    """Return preferred local and fallback public streams with safe labels."""
+    public_url = stream_url()
+    local_host = os.getenv("LOCAL_SERVER_HOST", "").strip()
+    if not local_host:
+        return [("公网", public_url)]
+    user = quote(os.environ["READ_USER"], safe="")
+    password = quote(os.environ["READ_PASSWORD"], safe="")
+    local_port = os.getenv("LOCAL_SERVER_PORT", "8554")
+    local_path = os.getenv("LOCAL_STREAM_PATH", os.getenv("STREAM_PATH", "robot")).strip("/")
+    local_url = f"rtsp://{user}:{password}@{local_host}:{local_port}/{local_path}"
+    return [("局域网", local_url), ("公网", public_url)]
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="查看或录制机器人公网视频流")
     subparsers = parser.add_subparsers(dest="action")

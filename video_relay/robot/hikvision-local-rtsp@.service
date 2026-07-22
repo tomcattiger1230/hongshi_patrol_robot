@@ -1,0 +1,16 @@
+[Unit]
+Description=Hikvision local authenticated RTSP proxy (%i)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=%i
+WorkingDirectory=/home/%i/Develop/github_ws/hongshi_patrol_robot/video_relay/robot
+ExecStart=/usr/bin/python3 /home/%i/Develop/github_ws/hongshi_patrol_robot/video_relay/robot/local_rtsp_proxy.py
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

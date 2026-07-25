@@ -1,8 +1,9 @@
 # Livox ROS Driver 2（项目集成）
 
-本目录是项目内使用的 Livox ROS Driver 2 源码，目标设备为 MID-360s，目标环境为
-Ubuntu 24.04 + ROS 2 Jazzy。不要使用上游面向 ROS1、Foxy 或 Humble 的独立 build
-脚本；本仓库通过根目录 `build.sh` 和统一 launch 构建、启动。
+本目录是项目内使用的 Livox ROS Driver 2 源码，目标设备为 MID-360s。当前已验证环境为
+Ubuntu 24.04 + ROS 2 Jazzy，以及 Ubuntu 26.04 + ROS 2 Lyrical。不要使用上游面向
+ROS1、Foxy 或 Humble 的独立 build 脚本；本仓库通过根目录 `build.sh` 和统一 launch
+构建、启动。
 
 上游项目、完整参数和许可证：
 [Livox-SDK/livox_ros_driver2](https://github.com/Livox-SDK/livox_ros_driver2)。
@@ -14,10 +15,15 @@ Ubuntu 24.04 + ROS 2 Jazzy。不要使用上游面向 ROS1、Foxy 或 Humble 的
 ```bash
 git clone https://github.com/Livox-SDK/Livox-SDK2.git /tmp/Livox-SDK2
 cmake -S /tmp/Livox-SDK2 -B /tmp/Livox-SDK2/build \
-  -DCMAKE_INSTALL_PREFIX=/usr/local
+  -DCMAKE_INSTALL_PREFIX=/usr/local \
+  -DCMAKE_CXX_FLAGS="-include cstdint"
 cmake --build /tmp/Livox-SDK2/build --parallel
 sudo cmake --install /tmp/Livox-SDK2/build
+sudo ldconfig
 ```
+
+`-include cstdint` 兼容 Livox SDK2 当前源码在 Ubuntu 26.04 / GCC 15 下遗漏
+`<cstdint>` 的问题，在 Ubuntu 24.04 上也可安全使用。
 
 若安装到自定义 prefix，需要把其 `lib` 加入 `LD_LIBRARY_PATH`。
 
@@ -47,4 +53,5 @@ sudo cmake --install /tmp/Livox-SDK2/build
 - NUC 雷达网口和 MID-360s 必须在同一子网。
 - `host_ip` 必须是 NUC 雷达网口地址，不能填其他网卡地址。
 - 无点云时先检查 ping、UDP 防火墙和 SDK JSON 中的地址/端口。
-- `liblivox_sdk_shared.so` 找不到时检查安装 prefix 和 `LD_LIBRARY_PATH`。
+- `liblivox_lidar_sdk_shared.so` 找不到时检查安装 prefix、运行 `sudo ldconfig`，并确认
+  自定义 prefix 的 `lib` 已加入 `LD_LIBRARY_PATH`。

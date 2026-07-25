@@ -156,14 +156,34 @@ def _add_static_box(
     size: tuple[float, float, float],
     position: tuple[float, float, float],
     color: tuple[float, float, float],
+    yaw: float = 0.0,
 ) -> None:
     cube = UsdGeom.Cube.Define(stage, path)
     cube.GetSizeAttr().Set(1.0)
     cube.GetDisplayColorAttr().Set([Gf.Vec3f(*color)])
     xform = UsdGeom.Xformable(cube)
     xform.AddTranslateOp().Set(Gf.Vec3d(*position))
+    if yaw:
+        xform.AddRotateZOp().Set(math.degrees(yaw))
     xform.AddScaleOp().Set(Gf.Vec3f(*size))
     UsdPhysics.CollisionAPI.Apply(cube.GetPrim())
+
+
+def _add_static_cylinder(
+    stage,
+    path: str,
+    radius: float,
+    height: float,
+    position: tuple[float, float, float],
+    color: tuple[float, float, float],
+) -> None:
+    cylinder = UsdGeom.Cylinder.Define(stage, path)
+    cylinder.CreateRadiusAttr(radius)
+    cylinder.CreateHeightAttr(height)
+    cylinder.CreateAxisAttr("Z")
+    cylinder.GetDisplayColorAttr().Set([Gf.Vec3f(*color)])
+    UsdGeom.Xformable(cylinder).AddTranslateOp().Set(Gf.Vec3d(*position))
+    UsdPhysics.CollisionAPI.Apply(cylinder.GetPrim())
 
 
 def _build_scene(robot_usd: Path) -> WheeledRobot:
@@ -188,12 +208,73 @@ def _build_scene(robot_usd: Path) -> WheeledRobot:
         (2.2, 1.4, 0.4),
         (0.85, 0.30, 0.12),
     )
-    _add_static_box(
+    _add_static_cylinder(
         stage,
-        "/World/InspectionColumn",
-        (0.8, 0.8, 1.2),
+        "/World/InspectionTank",
+        0.45,
+        1.2,
         (-2.0, 1.8, 0.6),
         (0.18, 0.65, 0.35),
+    )
+    wall_color = (0.72, 0.75, 0.80)
+    _add_static_box(
+        stage,
+        "/World/NorthWall",
+        (14.0, 0.15, 1.5),
+        (0.0, 6.0, 0.75),
+        wall_color,
+    )
+    _add_static_box(
+        stage,
+        "/World/SouthWall",
+        (14.0, 0.15, 1.5),
+        (0.0, -6.0, 0.75),
+        wall_color,
+    )
+    _add_static_box(
+        stage,
+        "/World/EastWall",
+        (0.15, 12.0, 1.5),
+        (7.0, 0.0, 0.75),
+        wall_color,
+    )
+    _add_static_box(
+        stage,
+        "/World/WestWall",
+        (0.15, 12.0, 1.5),
+        (-7.0, 0.0, 0.75),
+        wall_color,
+    )
+    corridor_color = (0.24, 0.50, 0.84)
+    _add_static_box(
+        stage,
+        "/World/NorthCorridorWall",
+        (5.0, 0.18, 1.2),
+        (1.5, 3.3, 0.6),
+        corridor_color,
+    )
+    _add_static_box(
+        stage,
+        "/World/WestCorridorWall",
+        (0.18, 4.0, 1.2),
+        (-3.5, -1.5, 0.6),
+        corridor_color,
+    )
+    _add_static_box(
+        stage,
+        "/World/PalletStack",
+        (1.2, 0.9, 1.0),
+        (3.5, -2.5, 0.5),
+        (0.78, 0.52, 0.20),
+        yaw=0.25,
+    )
+    _add_static_box(
+        stage,
+        "/World/LowCrate",
+        (0.8, 1.2, 0.6),
+        (-1.5, -3.6, 0.3),
+        (0.82, 0.72, 0.16),
+        yaw=-0.2,
     )
 
     light = UsdLux.DistantLight.Define(stage, "/World/Sun")

@@ -37,6 +37,11 @@ ros2 launch patrol_robot_description patrol_robot_sim.launch.py demo:=true
 ros2 launch patrol_robot_description patrol_robot_sim.launch.py gui:=true
 ```
 
+场景包含外围墙、宽通道、箱体、托盘堆、低矮障碍和圆柱罐。需要同时验证
+SLAM Toolbox、AMCL 和 Nav2 时，使用
+`robot320_localization_bringup/launch/robot320_simulation.launch.py`，具体命令见
+该包 README。
+
 手动发送速度控制（启动时不要设置 `demo:=true`）：
 
 ```bash

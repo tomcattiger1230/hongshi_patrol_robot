@@ -19,6 +19,6 @@ setup(
     zip_safe=True,
     maintainer="Hongshi Agent Contributors",
     maintainer_email="hongshi-agent@example.com",
-    description="NUC bringup for Robot320 MID-360s Cartographer localization",
+    description="Robot320 MID-360 SLAM, localization, and Nav2 bringup",
     license="MIT",
 )

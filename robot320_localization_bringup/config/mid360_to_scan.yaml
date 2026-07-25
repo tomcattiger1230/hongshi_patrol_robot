@@ -1,0 +1,16 @@
+pointcloud_to_laserscan:
+  ros__parameters:
+    # Keep the scan in its input lidar frame. Heights are therefore relative
+    # to the MID-360 mounted 1.50 m above base_footprint.
+    target_frame: ""
+    transform_tolerance: 0.10
+    min_height: -1.35
+    max_height: -0.10
+    angle_min: -3.141592654
+    angle_max: 3.141592654
+    angle_increment: 0.008726646
+    scan_time: 0.10
+    range_min: 0.30
+    range_max: 20.0
+    use_inf: true
+    queue_size: 4

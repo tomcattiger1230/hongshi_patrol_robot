@@ -106,5 +106,143 @@
         </visual>
       </link>
     </model>
+
+    <!-- Asymmetric perimeter walls give SLAM stable long-range features. -->
+    <model name="north_wall">
+      <static>true</static>
+      <pose>0 6 0.75 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>14 0.15 1.5</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>14 0.15 1.5</size></box></geometry>
+          <material>
+            <ambient>0.62 0.65 0.70 1</ambient>
+            <diffuse>0.72 0.75 0.80 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="south_wall">
+      <static>true</static>
+      <pose>0 -6 0.75 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>14 0.15 1.5</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>14 0.15 1.5</size></box></geometry>
+          <material>
+            <ambient>0.62 0.65 0.70 1</ambient>
+            <diffuse>0.72 0.75 0.80 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="east_wall">
+      <static>true</static>
+      <pose>7 0 0.75 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.15 12 1.5</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.15 12 1.5</size></box></geometry>
+          <material>
+            <ambient>0.62 0.65 0.70 1</ambient>
+            <diffuse>0.72 0.75 0.80 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="west_wall">
+      <static>true</static>
+      <pose>-7 0 0.75 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.15 12 1.5</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.15 12 1.5</size></box></geometry>
+          <material>
+            <ambient>0.62 0.65 0.70 1</ambient>
+            <diffuse>0.72 0.75 0.80 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Interior walls form wide, Ackermann-drivable passages. -->
+    <model name="north_corridor_wall">
+      <static>true</static>
+      <pose>1.5 3.3 0.60 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>5.0 0.18 1.2</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>5.0 0.18 1.2</size></box></geometry>
+          <material>
+            <ambient>0.20 0.42 0.72 1</ambient>
+            <diffuse>0.24 0.50 0.84 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="west_corridor_wall">
+      <static>true</static>
+      <pose>-3.5 -1.5 0.60 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.18 4.0 1.2</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.18 4.0 1.2</size></box></geometry>
+          <material>
+            <ambient>0.20 0.42 0.72 1</ambient>
+            <diffuse>0.24 0.50 0.84 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="pallet_stack">
+      <static>true</static>
+      <pose>3.5 -2.5 0.50 0 0 0.25</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>1.2 0.9 1.0</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>1.2 0.9 1.0</size></box></geometry>
+          <material>
+            <ambient>0.68 0.45 0.16 1</ambient>
+            <diffuse>0.78 0.52 0.20 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="low_crate">
+      <static>true</static>
+      <pose>-1.5 -3.6 0.30 0 0 -0.2</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.8 1.2 0.6</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.8 1.2 0.6</size></box></geometry>
+          <material>
+            <ambient>0.72 0.62 0.12 1</ambient>
+            <diffuse>0.82 0.72 0.16 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
   </world>
 </sdf>

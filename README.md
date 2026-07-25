@@ -90,6 +90,13 @@ NVIDIA Isaac Sim 6 后端：
 ./patrol_robot_description/scripts/run_isaac_sim.sh --demo
 ```
 
+带障碍物的 Gazebo SLAM/导航仿真：
+
+```bash
+ros2 launch robot320_localization_bringup robot320_simulation.launch.py \
+  mode:=mapping demo:=true
+```
+
 ## 测试
 
 ```bash

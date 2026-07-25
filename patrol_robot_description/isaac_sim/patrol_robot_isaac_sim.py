@@ -59,6 +59,7 @@ from isaacsim.robot.experimental.wheeled_robots.controllers import (
     DifferentialController,
 )
 from isaacsim.robot.experimental.wheeled_robots.robots import WheeledRobot
+from isaacsim.sensors.experimental.rtx import Lidar, LidarSensor
 
 
 WHEEL_RADIUS = 0.10
@@ -173,6 +174,29 @@ def _build_scene(robot_usd: Path) -> WheeledRobot:
     )
 
 
+def _create_mid360s_lidar() -> LidarSensor:
+    """Create an RTX lidar with a MID-360-like range and ROS 2 output."""
+    lidar = Lidar.create(
+        path="/World/PatrolRobot/mid360s_lidar",
+        config="Example_Rotary",
+        tick_rate=10.0,
+        translations=np.array([-0.08, 0.0, 0.83]),
+        aux_output_level="FULL",
+        attributes={
+            "omni:sensor:Core:nearRangeM": 0.10,
+            "omni:sensor:Core:farRangeM": 70.0,
+            "omni:sensor:Core:outputFrameOfReference": "SENSOR",
+        },
+    )
+    sensor = LidarSensor(lidar, annotators=[])
+    sensor.attach_writer(
+        "RtxLidarROS2PublishPointCloud",
+        topicName="livox/lidar",
+        frameId="lidar_link",
+    )
+    return sensor
+
+
 def _stamp(seconds: float):
     whole_seconds = int(seconds)
     nanoseconds = int((seconds - whole_seconds) * 1e9)
@@ -269,9 +293,14 @@ def main() -> None:
     temporary_dir = tempfile.TemporaryDirectory(prefix="patrol_robot_isaac_")
     ros_node = None
     try:
+        app_utils.enable_extension("isaacsim.ros2.bridge")
+        app_utils.enable_extension("isaacsim.sensors.rtx.nodes")
+        app_utils.update_app(steps=2)
+
         work_dir = Path(temporary_dir.name)
         robot_usd = _import_robot(_generate_urdf(work_dir), work_dir)
         robot = _build_scene(robot_usd)
+        lidar_sensor = _create_mid360s_lidar()
         controller = DifferentialController(
             wheel_radius=WHEEL_RADIUS,
             wheel_base=WHEEL_SEPARATION,
@@ -290,7 +319,8 @@ def main() -> None:
         step = 0
         print(
             "PATROL_ISAAC_READY "
-            f"cmd_vel={ARGS.cmd_vel_topic} odom={ARGS.odom_topic}",
+            f"cmd_vel={ARGS.cmd_vel_topic} odom={ARGS.odom_topic} "
+            "lidar=/livox/lidar",
             flush=True,
         )
 
@@ -321,6 +351,7 @@ def main() -> None:
                 break
 
         robot.apply_wheel_actions(np.zeros(2, dtype=np.float32))
+        lidar_sensor.detach_writer("RtxLidarROS2PublishPointCloud")
         positions, _ = robot.get_world_poses()
         final_position = positions.numpy()[0]
         print(

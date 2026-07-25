@@ -81,7 +81,7 @@ source install/setup.bash
 ros2 launch patrol_robot_description patrol_robot_sim.launch.py demo:=true
 ```
 
-模型和手动 `/cmd_vel` 控制方法见
+模型、手动 `/cmd_vel` 控制和 `/livox/lidar` 仿真点云说明见
 [`patrol_robot_description/README.md`](./patrol_robot_description/README.md)。
 
 NVIDIA Isaac Sim 6 后端：

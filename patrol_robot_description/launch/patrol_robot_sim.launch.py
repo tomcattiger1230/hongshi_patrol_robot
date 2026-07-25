@@ -81,7 +81,10 @@ def generate_launch_description() -> LaunchDescription:
             "/odom@nav_msgs/msg/Odometry[gz.msgs.Odometry",
             "/joint_states@sensor_msgs/msg/JointState[gz.msgs.Model",
             "/tf@tf2_msgs/msg/TFMessage[gz.msgs.Pose_V",
+            "/livox/lidar_scan/points@sensor_msgs/msg/PointCloud2"
+            "[gz.msgs.PointCloudPacked",
         ],
+        remappings=[("/livox/lidar_scan/points", "/livox/lidar")],
     )
     demo_controller = Node(
         package="patrol_robot_description",

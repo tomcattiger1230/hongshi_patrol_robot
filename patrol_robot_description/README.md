@@ -55,6 +55,18 @@ ros2 topic pub --once /cmd_vel geometry_msgs/msg/Twist "{}"
 | `/joint_states` | `sensor_msgs/msg/JointState` | Gazebo → ROS 2 |
 | `/tf` | `tf2_msgs/msg/TFMessage` | Gazebo → ROS 2 |
 | `/clock` | `rosgraph_msgs/msg/Clock` | Gazebo → ROS 2 |
+| `/livox/lidar` | `sensor_msgs/msg/PointCloud2` | 仿真 MID-360s → ROS 2 |
+
+## MID-360s 雷达仿真
+
+Gazebo 和 Isaac Sim 都在 `lidar_link` 上安装仿真雷达，并将点云统一发布为
+`/livox/lidar`（`sensor_msgs/msg/PointCloud2`）。Gazebo 使用 GPU LiDAR，设置为
+360° 水平视场、约 59° 垂直视场、0.1–70 m 量程和 10 Hz。
+
+Isaac Sim 6 没有内置 Livox MID-360 扫描模板，因此使用 RTX `Example_Rotary`
+模板，并覆盖量程、安装位置和输出坐标系。这适合验证避障、点云管线及 ROS 2
+接口，但扫描线分布和 Livox 非重复扫描模式并不等同于真实 MID-360。需要验证
+Livox 特有算法时，应继续使用实机录制的 rosbag。
 
 ## Isaac Sim 6
 
@@ -77,5 +89,5 @@ Isaac Sim 安装在默认的 `~/isaacsim` 时，启动无界面仿真：
 ```
 
 若 Isaac Sim 位于其他目录，可设置 `ISAAC_SIM_ROOT`。Isaac Sim 后端复用与 Gazebo
-相同的 `/cmd_vel`、`/odom`、`/joint_states`、`/tf` 和 `/clock` 话题，因此手动控制
-命令无需改变。
+相同的 `/cmd_vel`、`/odom`、`/joint_states`、`/tf`、`/clock` 和
+`/livox/lidar` 话题，因此手动控制及点云消费端无需改变。

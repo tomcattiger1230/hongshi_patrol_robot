@@ -2,7 +2,12 @@ import math
 
 import pytest
 
-from remote_control.map_model import MapGeometry, goal_yaw, map_snapshot
+from remote_control.map_model import (
+    MapGeometry,
+    goal_yaw,
+    map_snapshot,
+    pose_uncertainty,
+)
 
 
 def test_map_geometry_round_trip_without_rotation():
@@ -73,3 +78,15 @@ def test_map_snapshot_reports_occupied_unknown_and_outside_cells():
     assert not snapshot.is_traversable(0.5, 1.5)
     assert snapshot.is_traversable(1.5, 1.5)
     assert snapshot.occupancy_at_world(3.0, 3.0) is None
+
+
+def test_pose_uncertainty_uses_largest_planar_variance():
+    covariance = [0.0] * 36
+    covariance[0] = 0.04
+    covariance[7] = 0.09
+    covariance[35] = math.radians(10.0) ** 2
+
+    position_sigma, yaw_sigma = pose_uncertainty(covariance)
+
+    assert position_sigma == pytest.approx(0.3)
+    assert math.degrees(yaw_sigma) == pytest.approx(10.0)

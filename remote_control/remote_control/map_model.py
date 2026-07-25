@@ -138,3 +138,12 @@ def goal_yaw(
     if math.hypot(delta_x, delta_y) < minimum_drag_m:
         return fallback
     return math.atan2(delta_y, delta_x)
+
+
+def pose_uncertainty(covariance: Sequence[float]) -> tuple[float, float]:
+    """Return conservative planar position and yaw standard deviations."""
+    if len(covariance) != 36:
+        raise ValueError("pose covariance must contain 36 values")
+    position_variance = max(0.0, float(covariance[0]), float(covariance[7]))
+    yaw_variance = max(0.0, float(covariance[35]))
+    return math.sqrt(position_variance), math.sqrt(yaw_variance)

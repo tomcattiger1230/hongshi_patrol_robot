@@ -178,11 +178,20 @@ ros2 launch robot320_localization_bringup robot320_simulation.launch.py \
 
 实车运行时去掉 `--use-sim-time`。操作顺序：
 
-1. 等待右上角显示“Nav2 已连接”，地图中出现蓝色机器人标记。
-2. 在空闲区域按下鼠标左键确定目标位置。
-3. 拖动鼠标设置目标车头朝向，松开鼠标。
-4. 检查右侧 X、Y、朝向，点击“发送目标，开始自动导航”。
-5. GUI 持续显示剩余距离、预计时间和最终结果；“取消当前导航”可随时终止。
+1. 等待右上角显示“Nav2 已连接”。
+2. 如果大致知道机器人位置，在地图上点击并拖动朝向，然后选择“将选中位姿设为初始位置”。
+3. 如果完全不知道位置，选择“不知道位置：全局重定位”。
+4. 全局重定位后使用综合遥控面板，让自行车底盘低速走一段大弧线或 S 形路径；不能要求
+   它像差速底盘一样原地旋转。
+5. 等待“定位置信度”由“不确定”变为“正在收敛”或“良好”；必要时选择
+   “使用当前扫描强制更新”。
+6. 在空闲区域点击并拖动目标朝向，确认坐标后选择“发送目标，开始自动导航”。
+7. GUI 持续显示剩余距离、预计时间和最终结果；“取消当前导航”可随时终止。
+
+重定位会先取消正在执行的导航。全局重定位调用 AMCL
+`/reinitialize_global_localization`，在地图自由空间均匀初始化粒子；强制更新调用
+`/request_nomotion_update`。GUI 通过 `/amcl_pose` 协方差显示位置和朝向的标准差。
+在置信度尚未收敛时不要发送自动导航目标。
 
 地图采用 ROS `OccupancyGrid` 坐标原点、分辨率和旋转信息进行换算，目标消息的
 `frame_id` 使用地图实际 frame。GUI 不会自行绕过 Nav2 安全检查：目标能否接受及能否
@@ -194,6 +203,8 @@ ros2 launch robot320_localization_bringup robot320_simulation.launch.py \
 ros2 run tf2_ros tf2_echo map base_footprint
 ros2 action info /navigate_to_pose
 ros2 topic echo /map --once
+ros2 service type /reinitialize_global_localization
+ros2 topic echo /amcl_pose --once
 ```
 
 地图导航功能目前要求 ROS 2 后端。Windows/macOS 的 standalone Fast DDS 模式仍可使用

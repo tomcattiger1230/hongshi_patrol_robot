@@ -80,7 +80,11 @@ ros2 launch robot320_localization_bringup robot320_simulation.launch.py \
   navigation:=true gui:=false
 ```
 
-定位启动后需要通过 RViz 的 “2D Pose Estimate” 或 `/initialpose` 设置初始位姿。
+定位启动后可通过地图导航 GUI、RViz 的 “2D Pose Estimate” 或 `/initialpose` 设置粗略
+初始位姿。完全不知道位置时，可在 GUI 中启动 AMCL 全局重定位；机器人随后应低速走
+大弧线或 S 形路径，使 MID-360 获得不同视角并让粒子分布收敛。当前 AMCL 配置启用了
+动态障碍波束跳过、最多 5000 粒子和随机位姿恢复注入，以改善复杂场景和“机器人被搬动”
+后的恢复能力。
 不要同时启用 `demo:=true` 和 `navigation:=true`，否则两个节点会竞争 `/cmd_vel`。
 
 ## 3. 网络与雷达外参

@@ -9,7 +9,13 @@ import os
 import sys
 from typing import Optional
 
-from .map_model import MapSnapshot, goal_yaw, map_snapshot, yaw_from_quaternion
+from .map_model import (
+    MapSnapshot,
+    goal_yaw,
+    map_snapshot,
+    pose_uncertainty,
+    yaw_from_quaternion,
+)
 
 try:
     from PySide6.QtCore import (
@@ -54,6 +60,7 @@ except ImportError:  # pragma: no cover - depends on the desktop environment.
 try:
     import rclpy
     from action_msgs.msg import GoalStatus
+    from geometry_msgs.msg import PoseWithCovarianceStamped
     from nav2_msgs.action import NavigateToPose
     from nav_msgs.msg import OccupancyGrid
     from rclpy.action import ActionClient
@@ -61,6 +68,7 @@ try:
     from rclpy.parameter import Parameter
     from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
     from rclpy.time import Time
+    from std_srvs.srv import Empty
     from tf2_ros import Buffer, TransformListener
 except ImportError as exc:  # pragma: no cover - depends on ROS 2 installation.
     rclpy = None
@@ -322,6 +330,8 @@ if QApplication is not None:
         connection_changed = Signal(bool, str)
         navigation_changed = Signal(str)
         feedback_changed = Signal(float, float)
+        localization_quality_changed = Signal(float, float)
+        relocalization_changed = Signal(str)
         error = Signal(str)
 
         def __init__(
@@ -344,6 +354,9 @@ if QApplication is not None:
             self.tf_buffer = None
             self.tf_listener = None
             self.nav_client = None
+            self.initial_pose_pub = None
+            self.global_localization_client = None
+            self.nomotion_update_client = None
             self.goal_handle = None
             self._owns_rclpy = False
             self._last_tf_emit_ns = 0
@@ -378,6 +391,25 @@ if QApplication is not None:
                     self.map_topic,
                     self._on_map,
                     map_qos,
+                )
+                self.node.create_subscription(
+                    PoseWithCovarianceStamped,
+                    "/amcl_pose",
+                    self._on_amcl_pose,
+                    10,
+                )
+                self.initial_pose_pub = self.node.create_publisher(
+                    PoseWithCovarianceStamped,
+                    "/initialpose",
+                    10,
+                )
+                self.global_localization_client = self.node.create_client(
+                    Empty,
+                    "/reinitialize_global_localization",
+                )
+                self.nomotion_update_client = self.node.create_client(
+                    Empty,
+                    "/request_nomotion_update",
                 )
                 self.tf_buffer = Buffer()
                 self.tf_listener = TransformListener(
@@ -460,6 +492,79 @@ if QApplication is not None:
             self.map_frame = snapshot.frame_id
             self.map_received.emit(snapshot)
 
+        def _on_amcl_pose(self, message: PoseWithCovarianceStamped) -> None:
+            position_sigma, yaw_sigma = pose_uncertainty(message.pose.covariance)
+            self.localization_quality_changed.emit(position_sigma, yaw_sigma)
+
+        @Slot(float, float, float, str)
+        def set_initial_pose(
+            self,
+            x_m: float,
+            y_m: float,
+            yaw_rad: float,
+            frame_id: str,
+        ) -> None:
+            if self.initial_pose_pub is None or self.node is None:
+                self.error.emit("ROS 2 初始位姿发布器尚未就绪")
+                return
+            self._cancel_active_goal()
+            message = PoseWithCovarianceStamped()
+            message.header.frame_id = frame_id or self.map_frame
+            message.header.stamp = self.node.get_clock().now().to_msg()
+            message.pose.pose.position.x = x_m
+            message.pose.pose.position.y = y_m
+            message.pose.pose.orientation.z = math.sin(yaw_rad / 2.0)
+            message.pose.pose.orientation.w = math.cos(yaw_rad / 2.0)
+            message.pose.covariance[0] = 0.25
+            message.pose.covariance[7] = 0.25
+            message.pose.covariance[35] = math.radians(15.0) ** 2
+            self.initial_pose_pub.publish(message)
+            self.relocalization_changed.emit(
+                "已发布粗略初始位姿；请观察蓝色机器人标记是否稳定"
+            )
+
+        @Slot()
+        def global_relocalize(self) -> None:
+            if (
+                self.global_localization_client is None
+                or not self.global_localization_client.service_is_ready()
+            ):
+                self.error.emit("AMCL 全局重定位服务尚未就绪")
+                return
+            self._cancel_active_goal()
+            self.relocalization_changed.emit("正在请求 AMCL 全地图粒子搜索……")
+            future = self.global_localization_client.call_async(Empty.Request())
+            future.add_done_callback(self._on_global_relocalize_done)
+
+        def _on_global_relocalize_done(self, future) -> None:
+            try:
+                future.result()
+            except Exception as exc:
+                self.relocalization_changed.emit(f"全局重定位请求失败：{exc}")
+                return
+            self.relocalization_changed.emit(
+                "全局搜索已启动；请手动低速走大弧线，待定位置信度收敛后再导航"
+            )
+
+        @Slot()
+        def request_nomotion_update(self) -> None:
+            if (
+                self.nomotion_update_client is None
+                or not self.nomotion_update_client.service_is_ready()
+            ):
+                self.error.emit("AMCL 强制更新服务尚未就绪")
+                return
+            future = self.nomotion_update_client.call_async(Empty.Request())
+            future.add_done_callback(self._on_nomotion_update_done)
+
+        def _on_nomotion_update_done(self, future) -> None:
+            try:
+                future.result()
+            except Exception as exc:
+                self.relocalization_changed.emit(f"强制定位更新失败：{exc}")
+                return
+            self.relocalization_changed.emit("已使用当前 MID-360 扫描强制更新定位")
+
         @Slot(float, float, float, str)
         def send_goal(
             self,
@@ -471,9 +576,7 @@ if QApplication is not None:
             if self.nav_client is None or not self.nav_client.server_is_ready():
                 self.error.emit("Nav2 /navigate_to_pose 尚未就绪")
                 return
-            if self.goal_handle is not None:
-                self.goal_handle.cancel_goal_async()
-                self.goal_handle = None
+            self._cancel_active_goal()
 
             goal = NavigateToPose.Goal()
             goal.pose.header.frame_id = frame_id or self.map_frame
@@ -534,6 +637,11 @@ if QApplication is not None:
             self.goal_handle.cancel_goal_async()
             self.navigation_changed.emit("正在取消导航……")
 
+        def _cancel_active_goal(self) -> None:
+            if self.goal_handle is not None:
+                self.goal_handle.cancel_goal_async()
+                self.goal_handle = None
+
         @Slot()
         def shutdown(self) -> None:
             if self.spin_timer is not None:
@@ -553,6 +661,9 @@ if QApplication is not None:
     class NavigationWindow(QMainWindow):
         goal_requested = Signal(float, float, float, str)
         cancel_requested = Signal()
+        initial_pose_requested = Signal(float, float, float, str)
+        global_relocalize_requested = Signal()
+        nomotion_update_requested = Signal()
 
         def __init__(
             self,
@@ -568,7 +679,7 @@ if QApplication is not None:
             self.goal: Optional[tuple[float, float, float]] = None
             self._closing = False
             self.setWindowTitle("Robot320 地图导航")
-            self.resize(1280, 820)
+            self.resize(1280, 900)
             self._build_ui()
             self._apply_style()
 
@@ -585,11 +696,20 @@ if QApplication is not None:
             self.worker_thread.finished.connect(self.worker.deleteLater)
             self.goal_requested.connect(self.worker.send_goal)
             self.cancel_requested.connect(self.worker.cancel_goal)
+            self.initial_pose_requested.connect(self.worker.set_initial_pose)
+            self.global_relocalize_requested.connect(self.worker.global_relocalize)
+            self.nomotion_update_requested.connect(self.worker.request_nomotion_update)
             self.worker.map_received.connect(self._on_map)
             self.worker.pose_received.connect(self._on_pose)
             self.worker.connection_changed.connect(self._on_connection)
             self.worker.navigation_changed.connect(self.navigation_value.setText)
             self.worker.feedback_changed.connect(self._on_feedback)
+            self.worker.localization_quality_changed.connect(
+                self._on_localization_quality
+            )
+            self.worker.relocalization_changed.connect(
+                self.relocalization_value.setText
+            )
             self.worker.error.connect(self._on_error)
             self.worker_thread.start()
 
@@ -626,13 +746,15 @@ if QApplication is not None:
             self.map_value = QLabel("等待 /map")
             self.map_value.setWordWrap(True)
             self.pose_value = QLabel("等待 map → base_footprint")
+            self.localization_quality_value = QLabel("等待 /amcl_pose")
             self.cursor_value = QLabel("--")
             map_layout.addRow("地图", self.map_value)
             map_layout.addRow("机器人", self.pose_value)
+            map_layout.addRow("定位置信度", self.localization_quality_value)
             map_layout.addRow("鼠标", self.cursor_value)
             layout.addWidget(map_group)
 
-            goal_group = QGroupBox("目标位姿")
+            goal_group = QGroupBox("地图选中位姿")
             goal_layout = QFormLayout(goal_group)
             self.goal_x = self._spin(-1000.0, 1000.0, " m")
             self.goal_y = self._spin(-1000.0, 1000.0, " m")
@@ -641,6 +763,26 @@ if QApplication is not None:
             goal_layout.addRow("Y", self.goal_y)
             goal_layout.addRow("朝向", self.goal_yaw)
             layout.addWidget(goal_group)
+
+            relocalization_group = QGroupBox("重定位")
+            relocalization_layout = QVBoxLayout(relocalization_group)
+            set_initial_pose_button = QPushButton("将选中位姿设为初始位置")
+            set_initial_pose_button.clicked.connect(self._set_initial_pose)
+            global_relocalize_button = QPushButton("不知道位置：全局重定位")
+            global_relocalize_button.clicked.connect(
+                lambda _checked=False: self.global_relocalize_requested.emit()
+            )
+            nomotion_update_button = QPushButton("使用当前扫描强制更新")
+            nomotion_update_button.clicked.connect(
+                lambda _checked=False: self.nomotion_update_requested.emit()
+            )
+            self.relocalization_value = QLabel("可设置粗略位置或启动全地图搜索")
+            self.relocalization_value.setWordWrap(True)
+            relocalization_layout.addWidget(set_initial_pose_button)
+            relocalization_layout.addWidget(global_relocalize_button)
+            relocalization_layout.addWidget(nomotion_update_button)
+            relocalization_layout.addWidget(self.relocalization_value)
+            layout.addWidget(relocalization_group)
 
             self.send_button = QPushButton("发送目标，开始自动导航")
             self.send_button.setObjectName("primary")
@@ -680,7 +822,7 @@ if QApplication is not None:
 
             help_text = QLabel(
                 "操作：在可通行区域按下鼠标左键确定目标点，拖动决定车头朝向，"
-                "松开后检查坐标，再点击“发送目标”。滚轮缩放，中键拖动平移地图。"
+                "松开后可将它用作初始位姿或导航目标。滚轮缩放，中键拖动平移地图。"
             )
             help_text.setWordWrap(True)
             help_text.setObjectName("help")
@@ -730,23 +872,39 @@ if QApplication is not None:
             self.cursor_value.setText(f"x={x_m:.2f} m，y={y_m:.2f} m")
 
         def _send_goal(self) -> None:
+            selected_pose = self._validated_selected_pose()
+            if selected_pose is None:
+                return
+            x_m, y_m, yaw_rad = selected_pose
+            self.goal = (x_m, y_m, yaw_rad)
+            self.map_view.set_goal(*self.goal)
+            self.goal_requested.emit(x_m, y_m, yaw_rad, self.map_frame)
+
+        def _set_initial_pose(self) -> None:
+            selected_pose = self._validated_selected_pose()
+            if selected_pose is None:
+                return
+            self.initial_pose_requested.emit(*selected_pose, self.map_frame)
+
+        def _validated_selected_pose(self) -> Optional[tuple[float, float, float]]:
             if self.snapshot is None:
                 self._on_error("尚未收到地图")
-                return
+                return None
+            if self.goal is None:
+                self._on_error("请先在地图中点击并拖动选择位姿")
+                return None
             x_m = self.goal_x.value()
             y_m = self.goal_y.value()
             yaw_rad = math.radians(self.goal_yaw.value())
             occupancy = self.snapshot.occupancy_at_world(x_m, y_m)
             if occupancy is None:
-                self._on_error("目标点不在当前地图范围内")
-                return
+                self._on_error("选中位置不在当前地图范围内")
+                return None
             if not self.snapshot.is_traversable(x_m, y_m):
                 description = "未知区域" if occupancy < 0 else f"占用值 {occupancy}"
-                self._on_error(f"目标点位于障碍物或{description}，请重新选择")
-                return
-            self.goal = (x_m, y_m, yaw_rad)
-            self.map_view.set_goal(*self.goal)
-            self.goal_requested.emit(x_m, y_m, yaw_rad, self.map_frame)
+                self._on_error(f"选中位置位于障碍物或{description}，请重新选择")
+                return None
+            return x_m, y_m, yaw_rad
 
         def _clear_goal(self) -> None:
             self.goal = None
@@ -758,6 +916,24 @@ if QApplication is not None:
             eta_text = f"{eta_seconds:.0f} s" if math.isfinite(eta_seconds) else "--"
             self.feedback_value.setText(
                 f"剩余距离：{distance_m:.2f} m　预计时间：{eta_text}"
+            )
+
+        @Slot(float, float)
+        def _on_localization_quality(
+            self,
+            position_sigma_m: float,
+            yaw_sigma_rad: float,
+        ) -> None:
+            yaw_sigma_deg = math.degrees(yaw_sigma_rad)
+            if position_sigma_m <= 0.25 and yaw_sigma_deg <= 10.0:
+                level = "良好"
+            elif position_sigma_m <= 0.75 and yaw_sigma_deg <= 25.0:
+                level = "正在收敛"
+            else:
+                level = "不确定"
+            self.localization_quality_value.setText(
+                f"{level} · σ位置={position_sigma_m:.2f} m，"
+                f"σ朝向={yaw_sigma_deg:.1f}°"
             )
 
         @Slot(bool, str)

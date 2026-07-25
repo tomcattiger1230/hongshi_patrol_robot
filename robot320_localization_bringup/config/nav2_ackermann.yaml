@@ -21,11 +21,18 @@ amcl:
     laser_likelihood_max_dist: 2.0
     laser_min_range: 0.30
     laser_max_range: 20.0
+    do_beamskip: true
+    beam_skip_distance: 0.5
+    beam_skip_threshold: 0.3
+    beam_skip_error_threshold: 0.9
     max_beams: 90
     min_particles: 500
-    max_particles: 2500
+    max_particles: 5000
     pf_err: 0.05
     pf_z: 0.99
+    recovery_alpha_fast: 0.10
+    recovery_alpha_slow: 0.001
+    save_pose_rate: 1.0
     update_min_d: 0.10
     update_min_a: 0.05
     resample_interval: 1

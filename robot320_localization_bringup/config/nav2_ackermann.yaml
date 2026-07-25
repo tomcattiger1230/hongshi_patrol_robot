@@ -35,7 +35,6 @@ amcl:
 map_server:
   ros__parameters:
     use_sim_time: false
-    yaml_filename: ""
 
 map_saver:
   ros__parameters:
@@ -65,8 +64,8 @@ bt_navigator:
 
 controller_server:
   ros__parameters:
-    controller_frequency: 20.0
-    costmap_update_timeout: 0.30
+    controller_frequency: 10.0
+    costmap_update_timeout: 0.75
     min_x_velocity_threshold: 0.001
     min_y_velocity_threshold: 0.001
     min_theta_velocity_threshold: 0.001
@@ -88,8 +87,8 @@ controller_server:
     FollowPath:
       plugin: "nav2_mppi_controller::MPPIController"
       time_steps: 56
-      model_dt: 0.05
-      batch_size: 2000
+      model_dt: 0.10
+      batch_size: 800
       vx_std: 0.12
       vy_std: 0.0
       wz_std: 0.08
@@ -104,7 +103,7 @@ controller_server:
       az_max: 0.25
       iteration_count: 1
       prune_distance: 2.5
-      transform_tolerance: 0.2
+      transform_tolerance: 0.5
       temperature: 0.3
       gamma: 0.015
       motion_model: "Ackermann"
@@ -188,6 +187,7 @@ local_costmap:
       width: 8
       height: 8
       resolution: 0.05
+      transform_tolerance: 0.5
       footprint: "[[0.77, 0.435], [0.77, -0.435], [-0.77, -0.435], [-0.77, 0.435]]"
       footprint_padding: 0.05
       plugins: ["voxel_layer", "inflation_layer"]
@@ -218,7 +218,7 @@ local_costmap:
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 3.0
-        inflation_radius: 0.65
+        inflation_radius: 1.00
       always_send_full_costmap: true
 
 global_costmap:
@@ -229,6 +229,7 @@ global_costmap:
       global_frame: map
       robot_base_frame: base_footprint
       resolution: 0.05
+      transform_tolerance: 0.5
       track_unknown_space: true
       footprint: "[[0.77, 0.435], [0.77, -0.435], [-0.77, -0.435], [-0.77, 0.435]]"
       footprint_padding: 0.05
@@ -255,7 +256,7 @@ global_costmap:
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 3.0
-        inflation_radius: 0.65
+        inflation_radius: 1.00
       always_send_full_costmap: true
 
 planner_server:
@@ -346,3 +347,71 @@ velocity_smoother:
     odom_duration: 0.1
     deadband_velocity: [0.02, 0.0, 0.01]
     velocity_timeout: 0.5
+
+collision_monitor:
+  ros__parameters:
+    base_frame_id: base_footprint
+    odom_frame_id: odom
+    cmd_vel_in_topic: cmd_vel_smoothed
+    cmd_vel_out_topic: cmd_vel
+    state_topic: collision_monitor_state
+    transform_tolerance: 0.2
+    source_timeout: 1.0
+    base_shift_correction: true
+    stop_pub_timeout: 2.0
+    polygons: ["FootprintApproach"]
+    FootprintApproach:
+      type: polygon
+      action_type: approach
+      footprint_topic: /local_costmap/published_footprint
+      time_before_collision: 1.2
+      simulation_time_step: 0.1
+      min_points: 6
+      visualize: true
+      enabled: true
+    observation_sources: ["scan"]
+    scan:
+      type: scan
+      topic: /scan
+      enabled: true
+
+docking_server:
+  ros__parameters:
+    controller_frequency: 50.0
+    initial_perception_timeout: 5.0
+    wait_charge_timeout: 5.0
+    dock_approach_timeout: 30.0
+    undock_linear_tolerance: 0.05
+    undock_angular_tolerance: 0.1
+    max_retries: 3
+    base_frame: base_footprint
+    fixed_frame: odom
+    dock_backwards: false
+    dock_prestaging_tolerance: 0.5
+    dock_plugins: ["simple_charging_dock"]
+    simple_charging_dock:
+      plugin: "opennav_docking::SimpleChargingDock"
+      docking_threshold: 0.05
+      staging_x_offset: -0.7
+      use_external_detection_pose: true
+      use_battery_status: false
+      use_stall_detection: false
+      external_detection_timeout: 1.0
+      external_detection_translation_x: -0.18
+      external_detection_translation_y: 0.0
+      external_detection_rotation_roll: -1.57
+      external_detection_rotation_pitch: -1.57
+      external_detection_rotation_yaw: 0.0
+      filter_coef: 0.1
+    controller:
+      k_phi: 3.0
+      k_delta: 2.0
+      v_linear_min: 0.15
+      v_linear_max: 0.15
+      use_collision_detection: true
+      costmap_topic: local_costmap/costmap_raw
+      footprint_topic: local_costmap/published_footprint
+      transform_tolerance: 0.1
+      projection_time: 5.0
+      simulation_step: 0.1
+      dock_collision_threshold: 0.3

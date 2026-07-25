@@ -97,6 +97,15 @@ ros2 launch robot320_localization_bringup robot320_simulation.launch.py \
   mode:=mapping demo:=true
 ```
 
+通过地图鼠标点击发布 Nav2 目标：
+
+```bash
+./scripts/uv_run.sh desktop robot320_navigation_gui \
+  --domain-id 20 --use-sim-time
+```
+
+具体操作见 [`remote_control/README.md`](remote_control/README.md)。
+
 ## 测试
 
 ```bash

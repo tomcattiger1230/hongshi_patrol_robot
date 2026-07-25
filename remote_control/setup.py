@@ -34,6 +34,7 @@ setup(
             "robot320_remote_ros2 = remote_control.ros2_client:main",
             "robot320_remote_fastdds = remote_control.fastdds_client:main",
             "robot320_remote_gui = remote_control.gui:main",
+            "robot320_navigation_gui = remote_control.navigation_gui:main",
         ],
     },
 )

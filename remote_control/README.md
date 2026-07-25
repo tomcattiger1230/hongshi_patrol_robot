@@ -8,6 +8,7 @@ GUI 支持：
 - 按住持续发送的前进、后退和转向，松开立即停车
 - 停止、刹车、急停和解除急停
 - Nav2 目标发送、取消、状态和进度
+- ROS 2 地图显示、机器人实时位置和鼠标拖拽目标位姿
 - 升降杆动作和目标高度
 - 底盘、SLAM 位姿、升降杆、电池、故障和指令应答
 
@@ -152,6 +153,53 @@ FASTDDSGEN_SOURCE="$HOME/fastdds-python/src/fastddsgen" \
 ```
 
 ## 4. 使用 GUI
+
+### 4.1 地图点击导航
+
+地图导航窗口需要直接连接 ROS 2，订阅持久化 `/map`，通过 TF 获取
+`map -> base_footprint`，并调用 Nav2 `/navigate_to_pose` action。因此应在 NVIDIA
+Spark 本机、带 X11 转发的 SSH 会话，或能够加入同一 ROS 2 Domain 的 Ubuntu 上位机运行。
+
+仿真时先启动定位和 Nav2：
+
+```bash
+ros2 launch robot320_localization_bringup robot320_simulation.launch.py \
+  mode:=localization \
+  map:=$PWD/maps/patrol_test.yaml \
+  navigation:=true gui:=false
+```
+
+然后启动地图导航 GUI：
+
+```bash
+./scripts/uv_run.sh desktop robot320_navigation_gui \
+  --domain-id 20 --use-sim-time
+```
+
+实车运行时去掉 `--use-sim-time`。操作顺序：
+
+1. 等待右上角显示“Nav2 已连接”，地图中出现蓝色机器人标记。
+2. 在空闲区域按下鼠标左键确定目标位置。
+3. 拖动鼠标设置目标车头朝向，松开鼠标。
+4. 检查右侧 X、Y、朝向，点击“发送目标，开始自动导航”。
+5. GUI 持续显示剩余距离、预计时间和最终结果；“取消当前导航”可随时终止。
+
+地图采用 ROS `OccupancyGrid` 坐标原点、分辨率和旋转信息进行换算，目标消息的
+`frame_id` 使用地图实际 frame。GUI 不会自行绕过 Nav2 安全检查：目标能否接受及能否
+到达仍由全局代价地图、规划器、控制器和行为树决定。
+
+如果地图可见但机器人不显示，检查：
+
+```bash
+ros2 run tf2_ros tf2_echo map base_footprint
+ros2 action info /navigate_to_pose
+ros2 topic echo /map --once
+```
+
+地图导航功能目前要求 ROS 2 后端。Windows/macOS 的 standalone Fast DDS 模式仍可使用
+原有坐标输入和遥控界面，但不会传输体积较大的完整栅格地图。
+
+### 4.2 综合遥控面板
 
 ```bash
 ./scripts/uv_run.sh desktop robot320_remote_gui \

@@ -22,6 +22,7 @@ Ubuntu GUI -------> rclpy -------+                              ROS/Nav2/CAN
 | `livox_ros_driver2` | 项目内使用的 Livox MID-360s 驱动 |
 | `mid360_preprocess` | 点云高度裁剪和体素降采样 |
 | `robot320_localization_bringup` | 底盘、雷达、Cartographer 的统一 launch |
+| `patrol_robot_description` | 基础三维模型、Gazebo 仿真和差速控制演示 |
 
 Python 环境由根目录 `pyproject.toml`、`uv.lock` 和 `scripts/uv_*.sh` 管理；ROS 2 C++
 包仍由 colcon 构建。
@@ -70,6 +71,25 @@ rosdep install --from-paths . --ignore-src -r -y
 `nuc` profile 固定使用 `/usr/bin/python3` 并允许 system site packages，使 uv 环境能读取
 apt 安装的 `rclpy`。`uv_run.sh nuc` 会加载 ROS 2 和仓库的 `install/setup.bash`。
 
+## Gazebo 仿真
+
+在 ROS 2 Jazzy + Gazebo Harmonic 设备上启动无界面仿真和自动巡航：
+
+```bash
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+ros2 launch patrol_robot_description patrol_robot_sim.launch.py demo:=true
+```
+
+模型和手动 `/cmd_vel` 控制方法见
+[`patrol_robot_description/README.md`](./patrol_robot_description/README.md)。
+
+NVIDIA Isaac Sim 6 后端：
+
+```bash
+./patrol_robot_description/scripts/run_isaac_sim.sh --demo
+```
+
 ## 测试
 
 ```bash
@@ -86,3 +106,4 @@ apt 安装的 `rclpy`。`uv_run.sh nuc` 会加载 ROS 2 和仓库的 `install/se
 - [MID-360s 建图与定位](./robot320_localization_bringup/README.md)
 - [共享消息和 ROS 2 String 类型](./robot320_interfaces/README.md)
 - [Livox 驱动集成](./livox_ros_driver2/README.md)
+- [基础模型与 Gazebo 仿真](./patrol_robot_description/README.md)

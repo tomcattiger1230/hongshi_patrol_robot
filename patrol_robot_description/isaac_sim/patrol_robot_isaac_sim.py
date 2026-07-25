@@ -1,0 +1,347 @@
+"""Run the primitive patrol robot in Isaac Sim with ROS 2 control."""
+
+from __future__ import annotations
+
+import argparse
+import signal
+import subprocess
+import sys
+import tempfile
+import traceback
+from pathlib import Path
+
+from isaacsim import SimulationApp
+
+
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--gui", action="store_true", help="Show the Isaac Sim window.")
+    parser.add_argument(
+        "--demo",
+        action="store_true",
+        help="Drive a repeating forward-and-turn pattern.",
+    )
+    parser.add_argument(
+        "--test-seconds",
+        type=float,
+        default=0.0,
+        help="Stop automatically after this many simulated seconds.",
+    )
+    parser.add_argument("--cmd-vel-topic", default="/cmd_vel")
+    parser.add_argument("--odom-topic", default="/odom")
+    args, kit_args = parser.parse_known_args()
+    # SimulationApp forwards sys.argv to Kit. Remove this script's options so
+    # Kit does not interpret --test-seconds as its own shutdown timer.
+    sys.argv = [sys.argv[0], *kit_args]
+    return args
+
+
+ARGS = _parse_args()
+SIMULATION_APP = SimulationApp({"headless": not ARGS.gui})
+
+import isaacsim.core.experimental.utils.app as app_utils
+import isaacsim.core.experimental.utils.stage as stage_utils
+import numpy as np
+import omni.kit.app
+import rclpy
+from geometry_msgs.msg import TransformStamped, Twist
+from nav_msgs.msg import Odometry
+from pxr import Gf, UsdGeom, UsdLux, UsdPhysics
+from rclpy.node import Node
+from rclpy.signals import SignalHandlerOptions
+from rosgraph_msgs.msg import Clock
+from sensor_msgs.msg import JointState
+from tf2_msgs.msg import TFMessage
+
+from isaacsim.asset.importer.urdf.impl import URDFImporter, URDFImporterConfig
+from isaacsim.core.simulation_manager import SimulationManager
+from isaacsim.robot.experimental.wheeled_robots.controllers import (
+    DifferentialController,
+)
+from isaacsim.robot.experimental.wheeled_robots.robots import WheeledRobot
+
+
+WHEEL_RADIUS = 0.10
+WHEEL_SEPARATION = 0.46
+PHYSICS_DT = 1.0 / 60.0
+
+
+def _package_share() -> Path:
+    script_path = Path(__file__).resolve()
+    package_share = script_path.parent.parent
+    if not (package_share / "urdf").is_dir():
+        raise RuntimeError(f"Cannot locate package share directory from {script_path}")
+    return package_share
+
+
+def _generate_urdf(output_dir: Path) -> Path:
+    xacro_path = _package_share() / "urdf" / "patrol_robot.urdf.xacro"
+    urdf_path = output_dir / "patrol_robot.urdf"
+    completed = subprocess.run(
+        ["xacro", str(xacro_path)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    urdf_path.write_text(completed.stdout, encoding="utf-8")
+    return urdf_path
+
+
+def _import_robot(urdf_path: Path, output_dir: Path) -> Path:
+    config = URDFImporterConfig(
+        urdf_path=str(urdf_path),
+        usd_path=str(output_dir),
+        merge_fixed_joints=True,
+        fix_base=False,
+        joint_drive_type="force",
+        joint_target_type={
+            "left_wheel_joint": "velocity",
+            "right_wheel_joint": "velocity",
+        },
+        override_joint_stiffness={
+            "left_wheel_joint": 0.0,
+            "right_wheel_joint": 0.0,
+        },
+        override_joint_damping={
+            "left_wheel_joint": 4.0,
+            "right_wheel_joint": 4.0,
+        },
+        run_asset_transformer=False,
+    )
+    usd_path = URDFImporter(config).import_urdf()
+    if not usd_path:
+        raise RuntimeError("Isaac Sim URDF importer did not return a USD path")
+    return Path(usd_path)
+
+
+def _add_static_box(
+    stage,
+    path: str,
+    size: tuple[float, float, float],
+    position: tuple[float, float, float],
+    color: tuple[float, float, float],
+) -> None:
+    cube = UsdGeom.Cube.Define(stage, path)
+    cube.GetSizeAttr().Set(1.0)
+    cube.GetDisplayColorAttr().Set([Gf.Vec3f(*color)])
+    xform = UsdGeom.Xformable(cube)
+    xform.AddTranslateOp().Set(Gf.Vec3d(*position))
+    xform.AddScaleOp().Set(Gf.Vec3f(*size))
+    UsdPhysics.CollisionAPI.Apply(cube.GetPrim())
+
+
+def _build_scene(robot_usd: Path) -> WheeledRobot:
+    stage = stage_utils.create_new_stage()
+    stage_utils.set_stage_up_axis("Z")
+    stage_utils.set_stage_units(meters_per_unit=1.0)
+
+    world = UsdGeom.Xform.Define(stage, "/World")
+    stage.SetDefaultPrim(world.GetPrim())
+
+    _add_static_box(
+        stage,
+        "/World/Ground",
+        (30.0, 30.0, 0.10),
+        (0.0, 0.0, -0.05),
+        (0.30, 0.34, 0.40),
+    )
+    _add_static_box(
+        stage,
+        "/World/InspectionBox",
+        (0.8, 0.8, 0.8),
+        (2.2, 1.4, 0.4),
+        (0.85, 0.30, 0.12),
+    )
+    _add_static_box(
+        stage,
+        "/World/InspectionColumn",
+        (0.8, 0.8, 1.2),
+        (-2.0, 1.8, 0.6),
+        (0.18, 0.65, 0.35),
+    )
+
+    light = UsdLux.DistantLight.Define(stage, "/World/Sun")
+    light.CreateIntensityAttr(1800.0)
+    light.CreateAngleAttr(0.5)
+    UsdGeom.Xformable(light).AddRotateXYZOp().Set(Gf.Vec3f(35.0, -25.0, 20.0))
+
+    return WheeledRobot(
+        paths="/World/PatrolRobot",
+        wheel_dof_names=["left_wheel_joint", "right_wheel_joint"],
+        usd_path=str(robot_usd),
+        positions=[0.0, 0.0, 0.02],
+    )
+
+
+def _stamp(seconds: float):
+    whole_seconds = int(seconds)
+    nanoseconds = int((seconds - whole_seconds) * 1e9)
+    return whole_seconds, nanoseconds
+
+
+class IsaacRosInterface(Node):
+    """Translate ROS 2 velocity commands and publish Isaac Sim state."""
+
+    def __init__(self) -> None:
+        super().__init__("patrol_robot_isaac_sim")
+        self.linear_x = 0.0
+        self.angular_z = 0.0
+        self._last_command_wall_ns = 0
+        self.create_subscription(Twist, ARGS.cmd_vel_topic, self._on_twist, 10)
+        self._odom = self.create_publisher(Odometry, ARGS.odom_topic, 10)
+        self._joint_states = self.create_publisher(JointState, "/joint_states", 10)
+        self._tf = self.create_publisher(TFMessage, "/tf", 10)
+        self._clock_publisher = self.create_publisher(Clock, "/clock", 10)
+
+    def _on_twist(self, message: Twist) -> None:
+        self.linear_x = float(message.linear.x)
+        self.angular_z = float(message.angular.z)
+        self._last_command_wall_ns = self.get_clock().now().nanoseconds
+
+    def demo_command(self, simulation_time: float) -> tuple[float, float]:
+        phase = simulation_time % 6.4
+        if phase < 4.0:
+            return 0.35, 0.0
+        return 0.0, 0.65
+
+    def command(self, simulation_time: float) -> tuple[float, float]:
+        if ARGS.demo and self._last_command_wall_ns == 0:
+            return self.demo_command(simulation_time)
+        return self.linear_x, self.angular_z
+
+    def publish_state(
+        self,
+        simulation_time: float,
+        position: np.ndarray,
+        orientation_wxyz: np.ndarray,
+        joint_positions: np.ndarray,
+        linear_x: float,
+        angular_z: float,
+    ) -> None:
+        sec, nanosec = _stamp(simulation_time)
+
+        clock = Clock()
+        clock.clock.sec = sec
+        clock.clock.nanosec = nanosec
+        self._clock_publisher.publish(clock)
+
+        odom = Odometry()
+        odom.header.stamp = clock.clock
+        odom.header.frame_id = "odom"
+        odom.child_frame_id = "base_footprint"
+        odom.pose.pose.position.x = float(position[0])
+        odom.pose.pose.position.y = float(position[1])
+        odom.pose.pose.position.z = float(position[2])
+        odom.pose.pose.orientation.w = float(orientation_wxyz[0])
+        odom.pose.pose.orientation.x = float(orientation_wxyz[1])
+        odom.pose.pose.orientation.y = float(orientation_wxyz[2])
+        odom.pose.pose.orientation.z = float(orientation_wxyz[3])
+        odom.twist.twist.linear.x = linear_x
+        odom.twist.twist.angular.z = angular_z
+        self._odom.publish(odom)
+
+        joint_state = JointState()
+        joint_state.header.stamp = clock.clock
+        joint_state.name = ["left_wheel_joint", "right_wheel_joint"]
+        joint_state.position = [float(value) for value in joint_positions]
+        self._joint_states.publish(joint_state)
+
+        transform = TransformStamped()
+        transform.header = odom.header
+        transform.child_frame_id = odom.child_frame_id
+        transform.transform.translation.x = odom.pose.pose.position.x
+        transform.transform.translation.y = odom.pose.pose.position.y
+        transform.transform.translation.z = odom.pose.pose.position.z
+        transform.transform.rotation = odom.pose.pose.orientation
+        self._tf.publish(TFMessage(transforms=[transform]))
+
+
+def main() -> None:
+    stop_requested = False
+
+    def request_stop(_signum, _frame) -> None:
+        nonlocal stop_requested
+        stop_requested = True
+
+    signal.signal(signal.SIGINT, request_stop)
+    signal.signal(signal.SIGTERM, request_stop)
+
+    temporary_dir = tempfile.TemporaryDirectory(prefix="patrol_robot_isaac_")
+    ros_node = None
+    try:
+        work_dir = Path(temporary_dir.name)
+        robot_usd = _import_robot(_generate_urdf(work_dir), work_dir)
+        robot = _build_scene(robot_usd)
+        controller = DifferentialController(
+            wheel_radius=WHEEL_RADIUS,
+            wheel_base=WHEEL_SEPARATION,
+        )
+
+        SimulationManager.setup_simulation(dt=PHYSICS_DT, device="cpu")
+        physics_scene = SimulationManager.get_physics_scenes()[0]
+        physics_scene.set_enabled_gpu_dynamics(False)
+        app_utils.play()
+        app_utils.update_app(steps=10)
+
+        rclpy.init(signal_handler_options=SignalHandlerOptions.NO)
+        ros_node = IsaacRosInterface()
+        simulation_time = 0.0
+        publish_every = 3
+        step = 0
+        print(
+            "PATROL_ISAAC_READY "
+            f"cmd_vel={ARGS.cmd_vel_topic} odom={ARGS.odom_topic}",
+            flush=True,
+        )
+
+        while not stop_requested and (not ARGS.gui or SIMULATION_APP.is_running()):
+            SIMULATION_APP.update()
+            rclpy.spin_once(ros_node, timeout_sec=0.0)
+            linear_x, angular_z = ros_node.command(simulation_time)
+            wheel_velocities = controller.forward([linear_x, angular_z])
+            robot.apply_wheel_actions(wheel_velocities)
+
+            if step % publish_every == 0:
+                positions, orientations = robot.get_world_poses()
+                joint_positions = robot.get_dof_positions(
+                    dof_indices=robot._resolve_wheel_dof_indices()
+                )
+                ros_node.publish_state(
+                    simulation_time,
+                    positions.numpy()[0],
+                    orientations.numpy()[0],
+                    joint_positions.numpy().reshape(-1),
+                    linear_x,
+                    angular_z,
+                )
+
+            simulation_time += PHYSICS_DT
+            step += 1
+            if ARGS.test_seconds > 0.0 and simulation_time >= ARGS.test_seconds:
+                break
+
+        robot.apply_wheel_actions(np.zeros(2, dtype=np.float32))
+        positions, _ = robot.get_world_poses()
+        final_position = positions.numpy()[0]
+        print(
+            "PATROL_ISAAC_FINAL "
+            f"x={final_position[0]:.3f} y={final_position[1]:.3f} "
+            f"z={final_position[2]:.3f}",
+            flush=True,
+        )
+    except BaseException:
+        print("PATROL_ISAAC_ERROR", flush=True)
+        traceback.print_exc()
+        raise
+    finally:
+        if ros_node is not None:
+            ros_node.destroy_node()
+        if rclpy.ok():
+            rclpy.shutdown()
+        app_utils.stop()
+        temporary_dir.cleanup()
+        SIMULATION_APP.close()
+
+
+if __name__ == "__main__":
+    main()

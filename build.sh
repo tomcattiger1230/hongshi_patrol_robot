@@ -11,6 +11,7 @@ readonly DEFAULT_PACKAGES=(
   mobile_platform
   robot320_localization_bringup
   remote_control
+  patrol_robot_description
 )
 
 if ! command -v colcon >/dev/null 2>&1; then

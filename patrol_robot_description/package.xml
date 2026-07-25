@@ -3,7 +3,7 @@
 <package format="3">
   <name>patrol_robot_description</name>
   <version>0.1.0</version>
-  <description>Simple primitive-based patrol robot model and Gazebo simulation.</description>
+  <description>Primitive roboQ-320 Ackermann model for Gazebo and Isaac Sim.</description>
   <maintainer email="hongshi-agent@example.com">Hongshi Agent Contributors</maintainer>
   <license>MIT</license>
 

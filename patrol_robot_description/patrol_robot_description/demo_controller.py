@@ -23,9 +23,9 @@ class PatrolDemoController(Node):
         super().__init__("patrol_demo_controller")
         self.declare_parameter("cmd_vel_topic", "/cmd_vel")
         self.declare_parameter("linear_speed", 0.35)
-        self.declare_parameter("angular_speed", 0.65)
+        self.declare_parameter("angular_speed", 0.149)
         self.declare_parameter("forward_duration", 4.0)
-        self.declare_parameter("turn_duration", 2.4)
+        self.declare_parameter("turn_duration", 10.55)
 
         topic = str(self.get_parameter("cmd_vel_topic").value)
         linear_speed = float(self.get_parameter("linear_speed").value)
@@ -35,7 +35,7 @@ class PatrolDemoController(Node):
 
         self._motions = (
             Motion(forward_duration, linear_speed, 0.0),
-            Motion(turn_duration, 0.0, angular_speed),
+            Motion(turn_duration, linear_speed, angular_speed),
         )
         self._motion_index = 0
         self._motion_started_ns = self.get_clock().now().nanoseconds

@@ -1,7 +1,11 @@
 # Patrol Robot Description
 
 这是一个面向 ROS 2 Jazzy 和 Gazebo Harmonic 的最小巡检机器人仿真包。机器人只使用
-box、cylinder 和 sphere 构造，采用 Gazebo `DiffDrive` 插件控制。
+box、cylinder 和 sphere 构造，采用前轮 EPS 转向、后桥驱动的 Ackermann/自行车模型。
+
+模型依据 roboQ-320 配置清单设置：轴距 700 mm、前后轮距 825 mm、车轮直径
+430 mm、最小转弯半径 2350 mm、机械最大转角 35°。仿真控制转角限制为约
+16.6°，以满足 2.35 m 的自行车模型最小转弯半径。
 
 ## 编译
 
@@ -37,8 +41,12 @@ ros2 launch patrol_robot_description patrol_robot_sim.launch.py gui:=true
 
 ```bash
 ros2 topic pub --rate 10 /cmd_vel geometry_msgs/msg/Twist \
-  "{linear: {x: 0.3}, angular: {z: 0.4}}"
+  "{linear: {x: 0.3}, angular: {z: 0.12}}"
 ```
+
+`angular.z` 是期望横摆角速度。车辆不能原地旋转；控制器按
+`steering = atan(wheel_base * angular.z / linear.x)` 换算前轮转角，并按
+2.35 m 最小转弯半径限幅。当 `linear.x` 为零时，`angular.z` 不会产生运动。
 
 停止：
 

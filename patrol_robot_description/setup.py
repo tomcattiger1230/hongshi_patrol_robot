@@ -22,7 +22,7 @@ setup(
     zip_safe=True,
     maintainer="Hongshi Agent Contributors",
     maintainer_email="hongshi-agent@example.com",
-    description="Primitive-based patrol robot model and Gazebo simulation",
+    description="Primitive roboQ-320 Ackermann model for Gazebo and Isaac Sim",
     license="MIT",
     entry_points={
         "console_scripts": [

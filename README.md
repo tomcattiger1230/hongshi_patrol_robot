@@ -22,7 +22,7 @@ Ubuntu GUI -------> rclpy -------+                              ROS/Nav2/CAN
 | `livox_ros_driver2` | 项目内使用的 Livox MID-360s 驱动 |
 | `mid360_preprocess` | 点云高度裁剪和体素降采样 |
 | `robot320_localization_bringup` | 底盘、雷达、Cartographer 的统一 launch |
-| `patrol_robot_description` | 基础三维模型、Gazebo 仿真和差速控制演示 |
+| `patrol_robot_description` | roboQ-320 三维模型、Gazebo/Isaac Sim 自行车模型仿真 |
 
 Python 环境由根目录 `pyproject.toml`、`uv.lock` 和 `scripts/uv_*.sh` 管理；ROS 2 C++
 包仍由 colcon 构建。

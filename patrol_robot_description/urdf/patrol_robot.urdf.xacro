@@ -1,8 +1,13 @@
 <?xml version="1.0"?>
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="patrol_robot">
-  <xacro:property name="wheel_radius" value="0.10"/>
-  <xacro:property name="wheel_width" value="0.06"/>
-  <xacro:property name="wheel_separation" value="0.46"/>
+  <!-- roboQ-320 dimensions from the vehicle configuration sheet. -->
+  <xacro:property name="wheel_radius" value="0.215"/>
+  <xacro:property name="wheel_width" value="0.135"/>
+  <xacro:property name="wheel_base" value="0.70"/>
+  <xacro:property name="track_width" value="0.825"/>
+  <xacro:property name="steering_joint_limit" value="${radians(35.0)}"/>
+  <!-- Bicycle-model limit atan(wheel_base / minimum_turning_radius). -->
+  <xacro:property name="steering_control_limit" value="${atan2(wheel_base, 2.35)}"/>
   <!--
     MID-360 installation in base_footprint coordinates. The measured vehicle
     envelope is 1.53 m long and 0.78 m wide: 0.365 m to the front,
@@ -30,30 +35,30 @@
   <joint name="base_footprint_joint" type="fixed">
     <parent link="base_footprint"/>
     <child link="base_link"/>
-    <origin xyz="0 0 0.18"/>
+    <origin xyz="0 0 0.29"/>
   </joint>
 
   <link name="base_link">
     <visual>
       <geometry>
-        <box size="0.58 0.40 0.16"/>
+        <box size="1.54 0.70 0.34"/>
       </geometry>
       <material name="body_blue"/>
     </visual>
     <collision>
       <geometry>
-        <box size="0.58 0.40 0.16"/>
+        <box size="1.54 0.70 0.34"/>
       </geometry>
     </collision>
     <inertial>
-      <mass value="18.0"/>
-      <inertia ixx="0.2784" ixy="0.0" ixz="0.0"
-               iyy="0.5424" iyz="0.0" izz="0.7200"/>
+      <mass value="100.0"/>
+      <inertia ixx="7.2708" ixy="0.0" ixz="0.0"
+               iyy="20.7267" iyz="0.0" izz="26.0708"/>
     </inertial>
   </link>
 
-  <xacro:macro name="drive_wheel" params="side y">
-    <link name="${side}_wheel_link">
+  <xacro:macro name="wheel_link" params="name">
+    <link name="${name}">
       <visual>
         <origin rpy="${pi / 2.0} 0 0"/>
         <geometry>
@@ -68,46 +73,54 @@
         </geometry>
       </collision>
       <inertial>
-        <mass value="1.2"/>
-        <inertia ixx="0.0036" ixy="0.0" ixz="0.0"
-                 iyy="0.0060" iyz="0.0" izz="0.0036"/>
+        <mass value="2.3"/>
+        <inertia ixx="0.0272" ixy="0.0" ixz="0.0"
+                 iyy="0.0532" iyz="0.0" izz="0.0272"/>
       </inertial>
     </link>
-    <joint name="${side}_wheel_joint" type="continuous">
+  </xacro:macro>
+
+  <xacro:macro name="rear_wheel" params="side y">
+    <xacro:wheel_link name="rear_${side}_wheel_link"/>
+    <joint name="rear_${side}_wheel_joint" type="continuous">
       <parent link="base_link"/>
-      <child link="${side}_wheel_link"/>
-      <origin xyz="0 ${y} -0.08"/>
+      <child link="rear_${side}_wheel_link"/>
+      <origin xyz="${-wheel_base / 2.0} ${y} -0.075"/>
       <axis xyz="0 1 0"/>
       <dynamics damping="0.05" friction="0.02"/>
     </joint>
   </xacro:macro>
 
-  <xacro:drive_wheel side="left" y="${wheel_separation / 2.0}"/>
-  <xacro:drive_wheel side="right" y="${-wheel_separation / 2.0}"/>
+  <xacro:macro name="front_wheel" params="side y">
+    <link name="front_${side}_steering_link">
+      <inertial>
+        <mass value="0.2"/>
+        <inertia ixx="0.0002" ixy="0.0" ixz="0.0"
+                 iyy="0.0002" iyz="0.0" izz="0.0002"/>
+      </inertial>
+    </link>
+    <joint name="front_${side}_steering_joint" type="revolute">
+      <parent link="base_link"/>
+      <child link="front_${side}_steering_link"/>
+      <origin xyz="${wheel_base / 2.0} ${y} -0.075"/>
+      <axis xyz="0 0 1"/>
+      <limit lower="${-steering_joint_limit}" upper="${steering_joint_limit}"
+             effort="500.0" velocity="${radians(25.0)}"/>
+      <dynamics damping="2.0" friction="0.2"/>
+    </joint>
+    <xacro:wheel_link name="front_${side}_wheel_link"/>
+    <joint name="front_${side}_wheel_joint" type="continuous">
+      <parent link="front_${side}_steering_link"/>
+      <child link="front_${side}_wheel_link"/>
+      <axis xyz="0 1 0"/>
+      <dynamics damping="0.05" friction="0.02"/>
+    </joint>
+  </xacro:macro>
 
-  <link name="caster_link">
-    <visual>
-      <geometry>
-        <sphere radius="0.045"/>
-      </geometry>
-      <material name="silver"/>
-    </visual>
-    <collision>
-      <geometry>
-        <sphere radius="0.045"/>
-      </geometry>
-    </collision>
-    <inertial>
-      <mass value="0.3"/>
-      <inertia ixx="0.00024" ixy="0.0" ixz="0.0"
-               iyy="0.00024" iyz="0.0" izz="0.00024"/>
-    </inertial>
-  </link>
-  <joint name="caster_joint" type="fixed">
-    <parent link="base_link"/>
-    <child link="caster_link"/>
-    <origin xyz="-0.22 0 -0.135"/>
-  </joint>
+  <xacro:front_wheel side="left" y="${track_width / 2.0}"/>
+  <xacro:front_wheel side="right" y="${-track_width / 2.0}"/>
+  <xacro:rear_wheel side="left" y="${track_width / 2.0}"/>
+  <xacro:rear_wheel side="right" y="${-track_width / 2.0}"/>
 
   <link name="front_bumper_link">
     <visual>
@@ -125,26 +138,26 @@
   <joint name="front_bumper_joint" type="fixed">
     <parent link="base_link"/>
     <child link="front_bumper_link"/>
-    <origin xyz="0.32 0 -0.02"/>
+    <origin xyz="0.77 0 -0.02"/>
   </joint>
 
   <link name="mast_link">
     <visual>
       <geometry>
-        <cylinder radius="0.045" length="1.13"/>
+        <cylinder radius="0.045" length="0.93"/>
       </geometry>
       <material name="silver"/>
     </visual>
     <collision>
       <geometry>
-        <cylinder radius="0.045" length="1.13"/>
+        <cylinder radius="0.045" length="0.93"/>
       </geometry>
     </collision>
   </link>
   <joint name="mast_joint" type="fixed">
     <parent link="base_link"/>
     <child link="mast_link"/>
-    <origin xyz="${mid360_x} ${mid360_y} 0.645"/>
+    <origin xyz="${mid360_x} ${mid360_y} 0.635"/>
   </joint>
 
   <link name="sensor_head_link">
@@ -163,7 +176,7 @@
   <joint name="sensor_head_joint" type="fixed">
     <parent link="mast_link"/>
     <child link="sensor_head_link"/>
-    <origin xyz="0 0 0.565"/>
+    <origin xyz="0 0 0.465"/>
   </joint>
 
   <link name="lidar_link">
@@ -180,18 +193,16 @@
     <origin xyz="0 0 0.11"/>
   </joint>
 
-  <gazebo reference="left_wheel_link">
-    <mu1>1.0</mu1>
-    <mu2>1.0</mu2>
-  </gazebo>
-  <gazebo reference="right_wheel_link">
-    <mu1>1.0</mu1>
-    <mu2>1.0</mu2>
-  </gazebo>
-  <gazebo reference="caster_link">
-    <mu1>0.02</mu1>
-    <mu2>0.02</mu2>
-  </gazebo>
+  <xacro:macro name="wheel_friction" params="link">
+    <gazebo reference="${link}">
+      <mu1>1.0</mu1>
+      <mu2>1.0</mu2>
+    </gazebo>
+  </xacro:macro>
+  <xacro:wheel_friction link="front_left_wheel_link"/>
+  <xacro:wheel_friction link="front_right_wheel_link"/>
+  <xacro:wheel_friction link="rear_left_wheel_link"/>
+  <xacro:wheel_friction link="rear_right_wheel_link"/>
   <gazebo reference="lidar_link">
     <sensor name="mid360s" type="gpu_lidar">
       <always_on>true</always_on>
@@ -224,12 +235,22 @@
   </gazebo>
 
   <gazebo>
-    <plugin filename="gz-sim-diff-drive-system"
-            name="gz::sim::systems::DiffDrive">
-      <left_joint>left_wheel_joint</left_joint>
-      <right_joint>right_wheel_joint</right_joint>
-      <wheel_separation>${wheel_separation}</wheel_separation>
+    <plugin filename="gz-sim-ackermann-steering-system"
+            name="gz::sim::systems::AckermannSteering">
+      <!-- The real vehicle has a single motor and rear differential. -->
+      <left_joint>rear_left_wheel_joint</left_joint>
+      <right_joint>rear_right_wheel_joint</right_joint>
+      <left_steering_joint>front_left_steering_joint</left_steering_joint>
+      <right_steering_joint>front_right_steering_joint</right_steering_joint>
+      <kingpin_width>${track_width}</kingpin_width>
+      <wheel_base>${wheel_base}</wheel_base>
+      <wheel_separation>${track_width}</wheel_separation>
       <wheel_radius>${wheel_radius}</wheel_radius>
+      <steering_limit>${steering_control_limit}</steering_limit>
+      <min_velocity>-5.5556</min_velocity>
+      <max_velocity>5.5556</max_velocity>
+      <min_acceleration>-2.0</min_acceleration>
+      <max_acceleration>2.0</max_acceleration>
       <odom_publish_frequency>50</odom_publish_frequency>
       <topic>/cmd_vel</topic>
       <odom_topic>/odom</odom_topic>
@@ -239,8 +260,12 @@
     </plugin>
     <plugin filename="gz-sim-joint-state-publisher-system"
             name="gz::sim::systems::JointStatePublisher">
-      <joint_name>left_wheel_joint</joint_name>
-      <joint_name>right_wheel_joint</joint_name>
+      <joint_name>front_left_steering_joint</joint_name>
+      <joint_name>front_right_steering_joint</joint_name>
+      <joint_name>front_left_wheel_joint</joint_name>
+      <joint_name>front_right_wheel_joint</joint_name>
+      <joint_name>rear_left_wheel_joint</joint_name>
+      <joint_name>rear_right_wheel_joint</joint_name>
       <topic>/joint_states</topic>
     </plugin>
   </gazebo>

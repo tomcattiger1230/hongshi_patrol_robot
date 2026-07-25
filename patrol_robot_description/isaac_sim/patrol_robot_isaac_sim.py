@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import math
 import signal
 import subprocess
 import sys
@@ -56,16 +57,37 @@ from tf2_msgs.msg import TFMessage
 from isaacsim.asset.importer.urdf.impl import URDFImporter, URDFImporterConfig
 from isaacsim.core.simulation_manager import SimulationManager
 from isaacsim.robot.experimental.wheeled_robots.controllers import (
-    DifferentialController,
+    AckermannController,
 )
 from isaacsim.robot.experimental.wheeled_robots.robots import WheeledRobot
 from isaacsim.sensors.experimental.rtx import Lidar, LidarSensor
 
 
-WHEEL_RADIUS = 0.10
-WHEEL_SEPARATION = 0.46
+WHEEL_RADIUS = 0.215
+WHEEL_BASE = 0.70
+TRACK_WIDTH = 0.825
+MINIMUM_TURNING_RADIUS = 2.35
+MAX_STEERING_ANGLE = math.atan(WHEEL_BASE / MINIMUM_TURNING_RADIUS)
+MAX_LINEAR_SPEED = 20.0 / 3.6
 PHYSICS_DT = 1.0 / 60.0
 MID360_POSITION = np.array([0.40, 0.0, 1.50])
+STEERING_DOF_NAMES = [
+    "front_left_steering_joint",
+    "front_right_steering_joint",
+]
+FRONT_WHEEL_DOF_NAMES = [
+    "front_left_wheel_joint",
+    "front_right_wheel_joint",
+]
+REAR_WHEEL_DOF_NAMES = [
+    "rear_left_wheel_joint",
+    "rear_right_wheel_joint",
+]
+JOINT_STATE_NAMES = [
+    *STEERING_DOF_NAMES,
+    *FRONT_WHEEL_DOF_NAMES,
+    *REAR_WHEEL_DOF_NAMES,
+]
 
 
 def _package_share() -> Path:
@@ -97,16 +119,28 @@ def _import_robot(urdf_path: Path, output_dir: Path) -> Path:
         fix_base=False,
         joint_drive_type="force",
         joint_target_type={
-            "left_wheel_joint": "velocity",
-            "right_wheel_joint": "velocity",
+            "front_left_steering_joint": "position",
+            "front_right_steering_joint": "position",
+            "front_left_wheel_joint": "none",
+            "front_right_wheel_joint": "none",
+            "rear_left_wheel_joint": "velocity",
+            "rear_right_wheel_joint": "velocity",
         },
         override_joint_stiffness={
-            "left_wheel_joint": 0.0,
-            "right_wheel_joint": 0.0,
+            "front_left_steering_joint": 5000.0,
+            "front_right_steering_joint": 5000.0,
+            "front_left_wheel_joint": 0.0,
+            "front_right_wheel_joint": 0.0,
+            "rear_left_wheel_joint": 0.0,
+            "rear_right_wheel_joint": 0.0,
         },
         override_joint_damping={
-            "left_wheel_joint": 4.0,
-            "right_wheel_joint": 4.0,
+            "front_left_steering_joint": 200.0,
+            "front_right_steering_joint": 200.0,
+            "front_left_wheel_joint": 0.05,
+            "front_right_wheel_joint": 0.05,
+            "rear_left_wheel_joint": 10.0,
+            "rear_right_wheel_joint": 10.0,
         },
         run_asset_transformer=False,
     )
@@ -169,7 +203,7 @@ def _build_scene(robot_usd: Path) -> WheeledRobot:
 
     return WheeledRobot(
         paths="/World/PatrolRobot",
-        wheel_dof_names=["left_wheel_joint", "right_wheel_joint"],
+        wheel_dof_names=REAR_WHEEL_DOF_NAMES,
         usd_path=str(robot_usd),
         positions=[0.0, 0.0, 0.02],
     )
@@ -198,6 +232,21 @@ def _create_mid360s_lidar() -> LidarSensor:
     return sensor
 
 
+def _bicycle_command(
+    linear_x: float, angular_z: float
+) -> tuple[float, float, float]:
+    """Convert cmd_vel to a bounded bicycle steering angle and realized yaw rate."""
+    linear_x = float(np.clip(linear_x, -MAX_LINEAR_SPEED, MAX_LINEAR_SPEED))
+    if abs(linear_x) < 1e-4:
+        return 0.0, 0.0, 0.0
+    steering_angle = math.atan(WHEEL_BASE * angular_z / linear_x)
+    steering_angle = float(
+        np.clip(steering_angle, -MAX_STEERING_ANGLE, MAX_STEERING_ANGLE)
+    )
+    realized_angular_z = linear_x * math.tan(steering_angle) / WHEEL_BASE
+    return linear_x, steering_angle, realized_angular_z
+
+
 def _stamp(seconds: float):
     whole_seconds = int(seconds)
     nanoseconds = int((seconds - whole_seconds) * 1e9)
@@ -224,10 +273,10 @@ class IsaacRosInterface(Node):
         self._last_command_wall_ns = self.get_clock().now().nanoseconds
 
     def demo_command(self, simulation_time: float) -> tuple[float, float]:
-        phase = simulation_time % 6.4
+        phase = simulation_time % 14.55
         if phase < 4.0:
             return 0.35, 0.0
-        return 0.0, 0.65
+        return 0.35, 0.149
 
     def command(self, simulation_time: float) -> tuple[float, float]:
         if ARGS.demo and self._last_command_wall_ns == 0:
@@ -267,7 +316,7 @@ class IsaacRosInterface(Node):
 
         joint_state = JointState()
         joint_state.header.stamp = clock.clock
-        joint_state.name = ["left_wheel_joint", "right_wheel_joint"]
+        joint_state.name = JOINT_STATE_NAMES
         joint_state.position = [float(value) for value in joint_positions]
         self._joint_states.publish(joint_state)
 
@@ -302,9 +351,15 @@ def main() -> None:
         robot_usd = _import_robot(_generate_urdf(work_dir), work_dir)
         robot = _build_scene(robot_usd)
         lidar_sensor = _create_mid360s_lidar()
-        controller = DifferentialController(
-            wheel_radius=WHEEL_RADIUS,
-            wheel_base=WHEEL_SEPARATION,
+        controller = AckermannController(
+            wheel_base=WHEEL_BASE,
+            track_width=TRACK_WIDTH,
+            front_wheel_radius=WHEEL_RADIUS,
+            back_wheel_radius=WHEEL_RADIUS,
+            max_wheel_velocity=MAX_LINEAR_SPEED / WHEEL_RADIUS,
+            max_wheel_rotation_angle=MAX_STEERING_ANGLE,
+            max_acceleration=2.0,
+            max_steering_angle_velocity=math.radians(25.0),
         )
 
         SimulationManager.setup_simulation(dt=PHYSICS_DT, device="cpu")
@@ -312,6 +367,12 @@ def main() -> None:
         physics_scene.set_enabled_gpu_dynamics(False)
         app_utils.play()
         app_utils.update_app(steps=10)
+        steering_dof_indices = (
+            robot.get_dof_indices(STEERING_DOF_NAMES).numpy().tolist()
+        )
+        joint_state_dof_indices = (
+            robot.get_dof_indices(JOINT_STATE_NAMES).numpy().tolist()
+        )
 
         rclpy.init(signal_handler_options=SignalHandlerOptions.NO)
         ros_node = IsaacRosInterface()
@@ -328,14 +389,27 @@ def main() -> None:
         while not stop_requested and (not ARGS.gui or SIMULATION_APP.is_running()):
             SIMULATION_APP.update()
             rclpy.spin_once(ros_node, timeout_sec=0.0)
-            linear_x, angular_z = ros_node.command(simulation_time)
-            wheel_velocities = controller.forward([linear_x, angular_z])
-            robot.apply_wheel_actions(wheel_velocities)
+            requested_linear_x, requested_angular_z = ros_node.command(
+                simulation_time
+            )
+            linear_x, steering_angle, angular_z = _bicycle_command(
+                requested_linear_x, requested_angular_z
+            )
+            steering_positions, wheel_velocities = controller.forward(
+                [steering_angle, math.radians(25.0), linear_x, 2.0, PHYSICS_DT]
+            )
+            robot.set_dof_position_targets(
+                np.asarray(steering_positions, dtype=np.float32),
+                dof_indices=steering_dof_indices,
+            )
+            robot.apply_wheel_actions(
+                np.asarray(wheel_velocities[2:], dtype=np.float32)
+            )
 
             if step % publish_every == 0:
                 positions, orientations = robot.get_world_poses()
                 joint_positions = robot.get_dof_positions(
-                    dof_indices=robot._resolve_wheel_dof_indices()
+                    dof_indices=joint_state_dof_indices
                 )
                 ros_node.publish_state(
                     simulation_time,
@@ -352,6 +426,10 @@ def main() -> None:
                 break
 
         robot.apply_wheel_actions(np.zeros(2, dtype=np.float32))
+        robot.set_dof_position_targets(
+            np.zeros(2, dtype=np.float32),
+            dof_indices=steering_dof_indices,
+        )
         lidar_sensor.detach_writer("RtxLidarROS2PublishPointCloud")
         positions, _ = robot.get_world_poses()
         final_position = positions.numpy()[0]

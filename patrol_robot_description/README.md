@@ -63,6 +63,10 @@ Gazebo 和 Isaac Sim 都在 `lidar_link` 上安装仿真雷达，并将点云统
 `/livox/lidar`（`sensor_msgs/msg/PointCloud2`）。Gazebo 使用 GPU LiDAR，设置为
 360° 水平视场、约 59° 垂直视场、0.1–70 m 量程和 10 Hz。
 
+雷达中心在 `base_footprint` 坐标系中的安装位置为
+`xyz="0.40 0.00 1.50"`：高度 150 cm，距车体前端 36.5 cm、后端 116.5 cm，
+左右居中并距两侧各约 39 cm。
+
 Isaac Sim 6 没有内置 Livox MID-360 扫描模板，因此使用 RTX `Example_Rotary`
 模板，并覆盖量程、安装位置和输出坐标系。这适合验证避障、点云管线及 ROS 2
 接口，但扫描线分布和 Livox 非重复扫描模式并不等同于真实 MID-360。需要验证

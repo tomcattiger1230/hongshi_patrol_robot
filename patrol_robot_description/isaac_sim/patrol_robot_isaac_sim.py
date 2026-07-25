@@ -65,6 +65,7 @@ from isaacsim.sensors.experimental.rtx import Lidar, LidarSensor
 WHEEL_RADIUS = 0.10
 WHEEL_SEPARATION = 0.46
 PHYSICS_DT = 1.0 / 60.0
+MID360_POSITION = np.array([0.40, 0.0, 1.50])
 
 
 def _package_share() -> Path:
@@ -180,7 +181,7 @@ def _create_mid360s_lidar() -> LidarSensor:
         path="/World/PatrolRobot/mid360s_lidar",
         config="Example_Rotary",
         tick_rate=10.0,
-        translations=np.array([-0.08, 0.0, 0.83]),
+        translations=MID360_POSITION,
         aux_output_level="FULL",
         attributes={
             "omni:sensor:Core:nearRangeM": 0.10,

@@ -3,6 +3,14 @@
   <xacro:property name="wheel_radius" value="0.10"/>
   <xacro:property name="wheel_width" value="0.06"/>
   <xacro:property name="wheel_separation" value="0.46"/>
+  <!--
+    MID-360 installation in base_footprint coordinates. The measured vehicle
+    envelope is 1.53 m long and 0.78 m wide: 0.365 m to the front,
+    1.165 m to the rear, and 0.39 m to either side.
+  -->
+  <xacro:property name="mid360_x" value="0.40"/>
+  <xacro:property name="mid360_y" value="0.0"/>
+  <xacro:property name="mid360_z" value="1.50"/>
 
   <material name="body_blue">
     <color rgba="0.08 0.32 0.70 1.0"/>
@@ -123,20 +131,20 @@
   <link name="mast_link">
     <visual>
       <geometry>
-        <cylinder radius="0.045" length="0.42"/>
+        <cylinder radius="0.045" length="1.13"/>
       </geometry>
       <material name="silver"/>
     </visual>
     <collision>
       <geometry>
-        <cylinder radius="0.045" length="0.42"/>
+        <cylinder radius="0.045" length="1.13"/>
       </geometry>
     </collision>
   </link>
   <joint name="mast_joint" type="fixed">
     <parent link="base_link"/>
     <child link="mast_link"/>
-    <origin xyz="-0.08 0 0.29"/>
+    <origin xyz="${mid360_x} ${mid360_y} 0.645"/>
   </joint>
 
   <link name="sensor_head_link">
@@ -155,7 +163,7 @@
   <joint name="sensor_head_joint" type="fixed">
     <parent link="mast_link"/>
     <child link="sensor_head_link"/>
-    <origin xyz="0 0 0.25"/>
+    <origin xyz="0 0 0.565"/>
   </joint>
 
   <link name="lidar_link">

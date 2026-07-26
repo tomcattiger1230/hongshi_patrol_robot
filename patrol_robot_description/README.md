@@ -96,6 +96,9 @@ Isaac Sim 安装在默认的 `~/isaacsim` 时，启动无界面仿真：
 ./patrol_robot_description/scripts/run_isaac_sim.sh
 ```
 
+脚本使用 Isaac Sim 6 内置的 Python 3.12 Jazzy ROS 库和 Cyclone DDS，不应在同一终端
+预先 source ROS 2 Lyrical。Lyrical 的 SLAM/Nav2 应在另一个终端启动。
+
 启动自动巡航：
 
 ```bash

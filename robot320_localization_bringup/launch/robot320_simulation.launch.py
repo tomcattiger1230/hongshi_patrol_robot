@@ -10,14 +10,16 @@ from launch.actions import (
     SetEnvironmentVariable,
     TimerAction,
 )
-from launch.conditions import IfCondition
+from launch.conditions import IfCondition, UnlessCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import (
+    Command,
     EqualsSubstitution,
     LaunchConfiguration,
     PathJoinSubstitution,
 )
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
 
 
@@ -35,6 +37,7 @@ def generate_launch_description() -> LaunchDescription:
     exploration = LaunchConfiguration("exploration")
     rviz = LaunchConfiguration("rviz")
     use_sim_time = LaunchConfiguration("use_sim_time")
+    gazebo = LaunchConfiguration("gazebo")
     nav2_params = str(localization_share / "config" / "nav2_ackermann.yaml")
 
     simulator = IncludeLaunchDescription(
@@ -45,6 +48,33 @@ def generate_launch_description() -> LaunchDescription:
             "gui": LaunchConfiguration("gui"),
             "demo": LaunchConfiguration("demo"),
         }.items(),
+        condition=IfCondition(gazebo),
+    )
+    external_state_publisher = Node(
+        package="robot_state_publisher",
+        executable="robot_state_publisher",
+        name="robot320_external_state_publisher",
+        output="screen",
+        parameters=[
+            {
+                "robot_description": ParameterValue(
+                    Command(
+                        [
+                            "xacro",
+                            " ",
+                            str(
+                                description_share
+                                / "urdf"
+                                / "patrol_robot.urdf.xacro"
+                            ),
+                        ]
+                    ),
+                    value_type=str,
+                ),
+                "use_sim_time": use_sim_time,
+            }
+        ],
+        condition=UnlessCondition(gazebo),
     )
 
     cloud_filter = Node(
@@ -194,8 +224,17 @@ def generate_launch_description() -> LaunchDescription:
             ),
             DeclareLaunchArgument("gui", default_value="false"),
             DeclareLaunchArgument("demo", default_value="false"),
+            DeclareLaunchArgument(
+                "gazebo",
+                default_value="true",
+                description=(
+                    "Start Gazebo; set false when Isaac Sim publishes "
+                    "clock, odometry, TF, joint states, and lidar."
+                ),
+            ),
             DeclareLaunchArgument("use_sim_time", default_value="true"),
             simulator,
+            external_state_publisher,
             cloud_filter,
             cloud_to_scan,
             mapping,

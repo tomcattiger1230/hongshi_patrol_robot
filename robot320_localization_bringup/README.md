@@ -79,6 +79,35 @@ ros2 launch robot320_localization_bringup robot320_simulation.launch.py \
 `~/Develop/ROS2_ws/navigation_lyrical_ws/install/slam_toolbox`。只 source
 `/opt/ros/lyrical` 或项目工作区并不能保证源码构建的 `slam_toolbox` 进入包索引。
 
+### 使用 Isaac Sim 自动建图
+
+Isaac Sim 与 Gazebo 提供相同的 ROS 2 基础接口。Isaac Sim 6 使用其内置的 Python 3.12
+Jazzy Bridge；SLAM Toolbox 和 Nav2 继续在外部 ROS 2 Lyrical 进程中运行，两边通过
+Cyclone DDS 交换标准消息，避免把 Python 3.14 的 Lyrical `rclpy` 加载到 Isaac Sim
+进程。
+
+终端 1 启动 Isaac Sim：
+
+```bash
+cd ~/Develop/ROS2_ws/patrol_ws
+src/hongshi_patrol_robot/patrol_robot_description/scripts/run_isaac_sim.sh
+```
+
+终端 2 启动点云投影、SLAM、Nav2、自动探索和 RViz，不再启动 Gazebo：
+
+```bash
+cd ~/Develop/ROS2_ws/patrol_ws
+source src/hongshi_patrol_robot/scripts/source_lyrical_sim.sh
+source install/setup.bash
+
+ros2 launch robot320_localization_bringup robot320_simulation.launch.py \
+  gazebo:=false mode:=mapping navigation:=true exploration:=true \
+  rviz:=true gui:=false
+```
+
+启动后确认 `/clock`、`/odom`、`/livox/lidar`、`/scan` 和 `/map` 均存在。地图保存方式
+与 Gazebo 完全相同。
+
 前沿探索器每两秒检查 `/map` 的“已知自由区/未知区”边界，过滤不满足车体安全间距
 的候选点，然后通过 `NavigateToPose` 让 Smac Hybrid + MPPI Ackermann 自动驶向下一个
 候选点。规划器使用 Reeds-Shepp 曲线，必要时允许最高 0.20 m/s 的短距离倒车，以满足

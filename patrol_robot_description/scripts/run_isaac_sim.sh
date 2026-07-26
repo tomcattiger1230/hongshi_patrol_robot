@@ -23,9 +23,11 @@ fi
 
 # Generate the URDF in a separate Lyrical shell before configuring Isaac's
 # Python 3.12 process. Lyrical's xacro entry point requires Python 3.14.
-URDF_PATH="$(mktemp "${TMPDIR:-/tmp}/patrol_robot_isaac_urdf.XXXXXX")"
+URDF_DIR="$(mktemp -d "${TMPDIR:-/tmp}/patrol_robot_isaac_urdf.XXXXXX")"
+readonly URDF_PATH="${URDF_DIR}/patrol_robot.urdf"
 cleanup() {
   rm -f -- "${URDF_PATH}"
+  rmdir -- "${URDF_DIR}"
 }
 trap cleanup EXIT
 (

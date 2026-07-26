@@ -38,7 +38,7 @@
           <geometry>
             <plane>
               <normal>0 0 1</normal>
-              <size>30 30</size>
+              <size>36 32</size>
             </plane>
           </geometry>
           <surface>
@@ -54,7 +54,7 @@
           <geometry>
             <plane>
               <normal>0 0 1</normal>
-              <size>30 30</size>
+              <size>36 32</size>
             </plane>
           </geometry>
           <material>
@@ -67,7 +67,7 @@
 
     <model name="inspection_box">
       <static>true</static>
-      <pose>2.2 1.4 1.10 0 0 0</pose>
+      <pose>6.0 4.0 1.10 0 0 0</pose>
       <link name="link">
         <collision name="collision">
           <geometry>
@@ -88,7 +88,7 @@
 
     <model name="inspection_tank">
       <static>true</static>
-      <pose>-2.0 1.8 1.20 0 0 0</pose>
+      <pose>-4.0 5.0 1.20 0 0 0</pose>
       <link name="link">
         <collision name="collision">
           <geometry>
@@ -110,13 +110,13 @@
     <!-- Asymmetric perimeter walls give SLAM stable long-range features. -->
     <model name="north_wall">
       <static>true</static>
-      <pose>0 6 1.25 0 0 0</pose>
+      <pose>0 12 1.25 0 0 0</pose>
       <link name="link">
         <collision name="collision">
-          <geometry><box><size>14 0.15 2.5</size></box></geometry>
+          <geometry><box><size>28 0.15 2.5</size></box></geometry>
         </collision>
         <visual name="visual">
-          <geometry><box><size>14 0.15 2.5</size></box></geometry>
+          <geometry><box><size>28 0.15 2.5</size></box></geometry>
           <material>
             <ambient>0.62 0.65 0.70 1</ambient>
             <diffuse>0.72 0.75 0.80 1</diffuse>
@@ -127,13 +127,13 @@
 
     <model name="south_wall">
       <static>true</static>
-      <pose>0 -6 1.25 0 0 0</pose>
+      <pose>0 -12 1.25 0 0 0</pose>
       <link name="link">
         <collision name="collision">
-          <geometry><box><size>14 0.15 2.5</size></box></geometry>
+          <geometry><box><size>28 0.15 2.5</size></box></geometry>
         </collision>
         <visual name="visual">
-          <geometry><box><size>14 0.15 2.5</size></box></geometry>
+          <geometry><box><size>28 0.15 2.5</size></box></geometry>
           <material>
             <ambient>0.62 0.65 0.70 1</ambient>
             <diffuse>0.72 0.75 0.80 1</diffuse>
@@ -144,13 +144,13 @@
 
     <model name="east_wall">
       <static>true</static>
-      <pose>7 0 1.25 0 0 0</pose>
+      <pose>14 0 1.25 0 0 0</pose>
       <link name="link">
         <collision name="collision">
-          <geometry><box><size>0.15 12 2.5</size></box></geometry>
+          <geometry><box><size>0.15 24 2.5</size></box></geometry>
         </collision>
         <visual name="visual">
-          <geometry><box><size>0.15 12 2.5</size></box></geometry>
+          <geometry><box><size>0.15 24 2.5</size></box></geometry>
           <material>
             <ambient>0.62 0.65 0.70 1</ambient>
             <diffuse>0.72 0.75 0.80 1</diffuse>
@@ -161,13 +161,13 @@
 
     <model name="west_wall">
       <static>true</static>
-      <pose>-7 0 1.25 0 0 0</pose>
+      <pose>-14 0 1.25 0 0 0</pose>
       <link name="link">
         <collision name="collision">
-          <geometry><box><size>0.15 12 2.5</size></box></geometry>
+          <geometry><box><size>0.15 24 2.5</size></box></geometry>
         </collision>
         <visual name="visual">
-          <geometry><box><size>0.15 12 2.5</size></box></geometry>
+          <geometry><box><size>0.15 24 2.5</size></box></geometry>
           <material>
             <ambient>0.62 0.65 0.70 1</ambient>
             <diffuse>0.72 0.75 0.80 1</diffuse>
@@ -179,13 +179,13 @@
     <!-- Interior walls form wide, Ackermann-drivable passages. -->
     <model name="north_corridor_wall">
       <static>true</static>
-      <pose>1.5 3.3 1.10 0 0 0</pose>
+      <pose>4.0 7.0 1.10 0 0 0</pose>
       <link name="link">
         <collision name="collision">
-          <geometry><box><size>5.0 0.18 2.2</size></box></geometry>
+          <geometry><box><size>9.0 0.18 2.2</size></box></geometry>
         </collision>
         <visual name="visual">
-          <geometry><box><size>5.0 0.18 2.2</size></box></geometry>
+          <geometry><box><size>9.0 0.18 2.2</size></box></geometry>
           <material>
             <ambient>0.20 0.42 0.72 1</ambient>
             <diffuse>0.24 0.50 0.84 1</diffuse>
@@ -196,13 +196,13 @@
 
     <model name="west_corridor_wall">
       <static>true</static>
-      <pose>-3.5 -1.5 1.10 0 0 0</pose>
+      <pose>-7.0 -2.0 1.10 0 0 0</pose>
       <link name="link">
         <collision name="collision">
-          <geometry><box><size>0.18 4.0 2.2</size></box></geometry>
+          <geometry><box><size>0.18 7.0 2.2</size></box></geometry>
         </collision>
         <visual name="visual">
-          <geometry><box><size>0.18 4.0 2.2</size></box></geometry>
+          <geometry><box><size>0.18 7.0 2.2</size></box></geometry>
           <material>
             <ambient>0.20 0.42 0.72 1</ambient>
             <diffuse>0.24 0.50 0.84 1</diffuse>
@@ -211,9 +211,64 @@
       </link>
     </model>
 
+    <model name="east_corridor_wall">
+      <static>true</static>
+      <pose>8.0 3.0 1.10 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.18 7.0 2.2</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.18 7.0 2.2</size></box></geometry>
+          <material>
+            <ambient>0.20 0.42 0.72 1</ambient>
+            <diffuse>0.24 0.50 0.84 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="south_corridor_wall">
+      <static>true</static>
+      <pose>2.0 -6.5 1.10 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>8.0 0.18 2.2</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>8.0 0.18 2.2</size></box></geometry>
+          <material>
+            <ambient>0.20 0.42 0.72 1</ambient>
+            <diffuse>0.24 0.50 0.84 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="central_tank">
+      <static>true</static>
+      <pose>1.0 -1.0 1.25 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <cylinder><radius>0.60</radius><length>2.5</length></cylinder>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <cylinder><radius>0.60</radius><length>2.5</length></cylinder>
+          </geometry>
+          <material>
+            <ambient>0.45 0.25 0.65 1</ambient>
+            <diffuse>0.55 0.32 0.75 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
     <model name="pallet_stack">
       <static>true</static>
-      <pose>3.5 -2.5 1.00 0 0 0.25</pose>
+      <pose>8.0 -5.0 1.00 0 0 0.25</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>1.2 0.9 2.0</size></box></geometry>
@@ -230,7 +285,7 @@
 
     <model name="low_crate">
       <static>true</static>
-      <pose>-1.5 -3.6 0.90 0 0 -0.2</pose>
+      <pose>-2.0 -7.0 0.90 0 0 -0.2</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.8 1.2 1.8</size></box></geometry>

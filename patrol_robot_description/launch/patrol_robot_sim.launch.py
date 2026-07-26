@@ -155,12 +155,12 @@ def generate_launch_description() -> LaunchDescription:
             ),
             DeclareLaunchArgument(
                 "spawn_x",
-                default_value="-4.8",
+                default_value="-10.5",
                 description="Robot initial X position in the world.",
             ),
             DeclareLaunchArgument(
                 "spawn_y",
-                default_value="-4.5",
+                default_value="-8.5",
                 description="Robot initial Y position in the world.",
             ),
             DeclareLaunchArgument(

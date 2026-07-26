@@ -75,7 +75,11 @@ ros2 launch robot320_localization_bringup robot320_simulation.launch.py \
 
 前沿探索器每两秒检查 `/map` 的“已知自由区/未知区”边界，过滤不满足车体安全间距
 的候选点，然后通过 `NavigateToPose` 让 Smac Hybrid + MPPI Ackermann 自动驶向下一个
-候选点。连续没有候选点时表示自动探索完成。任何时候可用 `Ctrl-C` 停车并保存地图：
+候选点。规划器使用 Reeds-Shepp 曲线，必要时允许最高 0.20 m/s 的短距离倒车，以满足
+2.35 m 最小转弯半径。连续没有候选点时表示自动探索完成。
+
+保持建图 launch 运行，在第二个终端保存地图；确认 YAML 和 PGM 都已生成后，再回到
+第一个终端按 `Ctrl-C` 停车：
 
 ```bash
 mkdir -p maps
@@ -136,6 +140,12 @@ ros2 topic info /clock --verbose
 ```
 
 `Publisher count` 必须为 1。切换仿真 launch 前应先 `Ctrl-C` 关闭旧的 Gazebo。
+项目 launch 直接托管 `gz-sim-main`，正常退出时会一并终止 Gazebo，避免旧世界继续
+发布较大的 `/clock` 后导致新世界出现 `moved backwards in time` 和 `TF_OLD_DATA`。
+
+ROS 2 Lyrical 的 Nav2 使用 `geometry_msgs/msg/TwistStamped` 发布 `/cmd_vel`。Gazebo、
+Isaac Sim 和实车通信网关已经统一适配该类型；若手工接入其他控制节点，不要再在同名
+话题上发布旧的 `geometry_msgs/msg/Twist`。
 
 ## 3. 网络与雷达外参
 

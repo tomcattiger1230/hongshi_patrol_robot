@@ -17,7 +17,15 @@ from launch_ros.parameter_descriptions import ParameterValue
 def _gz_sim_main() -> str:
     """Resolve the vendor binary so launch owns Gazebo instead of a Ruby wrapper."""
     vendor_prefix = Path(get_package_prefix("gz_sim_vendor"))
-    candidates = list((vendor_prefix / "libexec" / "gz").glob("sim*/gz-sim-main"))
+    search_roots = (
+        vendor_prefix / "libexec" / "gz",
+        vendor_prefix / "opt" / "gz_sim_vendor" / "libexec" / "gz",
+    )
+    candidates = [
+        candidate
+        for root in search_roots
+        for candidate in root.glob("sim*/gz-sim-main")
+    ]
     if not candidates:
         raise RuntimeError(
             f"Could not find gz-sim-main below Gazebo vendor prefix {vendor_prefix}"

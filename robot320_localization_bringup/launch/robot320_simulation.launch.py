@@ -8,6 +8,7 @@ from launch.actions import (
     DeclareLaunchArgument,
     IncludeLaunchDescription,
     SetEnvironmentVariable,
+    TimerAction,
 )
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
@@ -199,7 +200,9 @@ def generate_launch_description() -> LaunchDescription:
             cloud_to_scan,
             mapping,
             localization,
-            nav2,
+            # Give Gazebo, the robot TF tree, and SLAM/AMCL time to initialize
+            # before Nav2's lifecycle manager starts configuring its costmaps.
+            TimerAction(period=5.0, actions=[nav2]),
             frontier_explorer,
             rviz_node,
         ]

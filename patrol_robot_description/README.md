@@ -37,8 +37,10 @@ ros2 launch patrol_robot_description patrol_robot_sim.launch.py demo:=true
 ros2 launch patrol_robot_description patrol_robot_sim.launch.py gui:=true
 ```
 
-场景包含外围墙、宽通道、箱体、托盘堆、低矮障碍和圆柱罐。需要同时验证
-SLAM Toolbox、AMCL 和 Nav2 时，使用
+场景包含外围墙、宽通道、高箱体、托盘堆和圆柱罐。所有主要障碍物高度均不低于
+1.8 m，能够覆盖安装高度为 1.5 m 的 MID-360s 水平扫描面。机器人默认从场景左下方
+`(-4.8, -4.5)` 的无碰撞区域生成，也可以通过 `spawn_x`、`spawn_y` 和
+`spawn_yaw` launch 参数覆盖。需要同时验证 SLAM Toolbox、AMCL 和 Nav2 时，使用
 `robot320_localization_bringup/launch/robot320_simulation.launch.py`，具体命令见
 该包 README。
 

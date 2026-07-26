@@ -204,75 +204,75 @@ def _build_scene(robot_usd: Path) -> WheeledRobot:
     _add_static_box(
         stage,
         "/World/InspectionBox",
-        (0.8, 0.8, 0.8),
-        (2.2, 1.4, 0.4),
+        (0.8, 0.8, 2.2),
+        (2.2, 1.4, 1.1),
         (0.85, 0.30, 0.12),
     )
     _add_static_cylinder(
         stage,
         "/World/InspectionTank",
         0.45,
-        1.2,
-        (-2.0, 1.8, 0.6),
+        2.4,
+        (-2.0, 1.8, 1.2),
         (0.18, 0.65, 0.35),
     )
     wall_color = (0.72, 0.75, 0.80)
     _add_static_box(
         stage,
         "/World/NorthWall",
-        (14.0, 0.15, 1.5),
-        (0.0, 6.0, 0.75),
+        (14.0, 0.15, 2.5),
+        (0.0, 6.0, 1.25),
         wall_color,
     )
     _add_static_box(
         stage,
         "/World/SouthWall",
-        (14.0, 0.15, 1.5),
-        (0.0, -6.0, 0.75),
+        (14.0, 0.15, 2.5),
+        (0.0, -6.0, 1.25),
         wall_color,
     )
     _add_static_box(
         stage,
         "/World/EastWall",
-        (0.15, 12.0, 1.5),
-        (7.0, 0.0, 0.75),
+        (0.15, 12.0, 2.5),
+        (7.0, 0.0, 1.25),
         wall_color,
     )
     _add_static_box(
         stage,
         "/World/WestWall",
-        (0.15, 12.0, 1.5),
-        (-7.0, 0.0, 0.75),
+        (0.15, 12.0, 2.5),
+        (-7.0, 0.0, 1.25),
         wall_color,
     )
     corridor_color = (0.24, 0.50, 0.84)
     _add_static_box(
         stage,
         "/World/NorthCorridorWall",
-        (5.0, 0.18, 1.2),
-        (1.5, 3.3, 0.6),
+        (5.0, 0.18, 2.2),
+        (1.5, 3.3, 1.1),
         corridor_color,
     )
     _add_static_box(
         stage,
         "/World/WestCorridorWall",
-        (0.18, 4.0, 1.2),
-        (-3.5, -1.5, 0.6),
+        (0.18, 4.0, 2.2),
+        (-3.5, -1.5, 1.1),
         corridor_color,
     )
     _add_static_box(
         stage,
         "/World/PalletStack",
-        (1.2, 0.9, 1.0),
-        (3.5, -2.5, 0.5),
+        (1.2, 0.9, 2.0),
+        (3.5, -2.5, 1.0),
         (0.78, 0.52, 0.20),
         yaw=0.25,
     )
     _add_static_box(
         stage,
         "/World/LowCrate",
-        (0.8, 1.2, 0.6),
-        (-1.5, -3.6, 0.3),
+        (0.8, 1.2, 1.8),
+        (-1.5, -3.6, 0.9),
         (0.82, 0.72, 0.16),
         yaw=-0.2,
     )
@@ -286,7 +286,7 @@ def _build_scene(robot_usd: Path) -> WheeledRobot:
         paths="/World/PatrolRobot",
         wheel_dof_names=REAR_WHEEL_DOF_NAMES,
         usd_path=str(robot_usd),
-        positions=[0.0, 0.0, 0.02],
+        positions=[-4.8, -4.5, 0.02],
     )
 
 

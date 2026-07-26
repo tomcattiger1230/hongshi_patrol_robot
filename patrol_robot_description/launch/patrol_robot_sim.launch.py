@@ -20,6 +20,9 @@ def generate_launch_description() -> LaunchDescription:
 
     gui = LaunchConfiguration("gui")
     demo = LaunchConfiguration("demo")
+    spawn_x = LaunchConfiguration("spawn_x")
+    spawn_y = LaunchConfiguration("spawn_y")
+    spawn_yaw = LaunchConfiguration("spawn_yaw")
     robot_description = ParameterValue(
         Command(["xacro", " ", model]),
         value_type=str,
@@ -66,8 +69,14 @@ def generate_launch_description() -> LaunchDescription:
             "patrol_robot",
             "-topic",
             "robot_description",
+            "-x",
+            spawn_x,
+            "-y",
+            spawn_y,
             "-z",
             "0.02",
+            "-Y",
+            spawn_yaw,
         ],
     )
     bridge = Node(
@@ -105,6 +114,21 @@ def generate_launch_description() -> LaunchDescription:
                 "demo",
                 default_value="false",
                 description="Run the repeating autonomous motion demo.",
+            ),
+            DeclareLaunchArgument(
+                "spawn_x",
+                default_value="-4.8",
+                description="Robot initial X position in the world.",
+            ),
+            DeclareLaunchArgument(
+                "spawn_y",
+                default_value="-4.5",
+                description="Robot initial Y position in the world.",
+            ),
+            DeclareLaunchArgument(
+                "spawn_yaw",
+                default_value="0.0",
+                description="Robot initial yaw angle in radians.",
             ),
             gazebo_server,
             gazebo_gui,

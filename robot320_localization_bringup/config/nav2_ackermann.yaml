@@ -376,7 +376,9 @@ collision_monitor:
     FootprintApproach:
       type: polygon
       action_type: approach
-      footprint_topic: /local_costmap/published_footprint
+      # Collision envelope is 0.28 m longer and 0.115 m wider than the
+      # physical footprint, leaving room for the heavy chassis to stop.
+      points: "[[1.05, 0.55], [1.05, -0.55], [-1.05, -0.55], [-1.05, 0.55]]"
       # Begin limiting the command early enough to stop the 180 kg chassis
       # before its front corners reach a wall.
       time_before_collision: 2.0

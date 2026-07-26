@@ -138,7 +138,7 @@ def generate_launch_description() -> LaunchDescription:
             {
                 "use_sim_time": use_sim_time,
                 "min_frontier_size": 8,
-                "clearance_radius": 0.95,
+                "clearance_radius": 1.25,
                 "goal_timeout": 90.0,
             }
         ],

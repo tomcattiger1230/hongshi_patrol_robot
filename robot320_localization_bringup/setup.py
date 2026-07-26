@@ -14,6 +14,7 @@ setup(
         (f"share/{package_name}", ["package.xml"]),
         (f"share/{package_name}/launch", glob("launch/*.launch.py")),
         (f"share/{package_name}/config", glob("config/*")),
+        (f"share/{package_name}/behavior_trees", glob("behavior_trees/*")),
         (f"share/{package_name}/rviz", glob("rviz/*")),
     ],
     install_requires=["setuptools"],

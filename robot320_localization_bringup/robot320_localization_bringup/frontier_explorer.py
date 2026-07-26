@@ -28,7 +28,7 @@ class FrontierExplorer(Node):
         self.declare_parameter("map_frame", "map")
         self.declare_parameter("robot_frame", "base_footprint")
         self.declare_parameter("min_frontier_size", 8)
-        self.declare_parameter("clearance_radius", 0.95)
+        self.declare_parameter("clearance_radius", 1.25)
         self.declare_parameter("goal_timeout", 90.0)
         self.declare_parameter("retry_radius", 1.0)
 

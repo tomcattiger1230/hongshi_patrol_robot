@@ -7,6 +7,7 @@ import math
 import signal
 import sys
 import tempfile
+import time
 import traceback
 from pathlib import Path
 
@@ -29,6 +30,12 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--cmd-vel-topic", default="/cmd_vel")
     parser.add_argument("--odom-topic", default="/odom")
+    parser.add_argument(
+        "--realtime-factor",
+        type=float,
+        default=1.0,
+        help="Maximum simulated seconds per wall second; use 0 for unthrottled.",
+    )
     parser.add_argument(
         "--urdf-path",
         type=Path,
@@ -465,6 +472,7 @@ def main() -> None:
         rclpy.init(signal_handler_options=SignalHandlerOptions.NO)
         ros_node = IsaacRosInterface()
         simulation_time = 0.0
+        wall_start = time.monotonic()
         publish_every = 3
         step = 0
         print(
@@ -510,6 +518,11 @@ def main() -> None:
 
             simulation_time += PHYSICS_DT
             step += 1
+            if ARGS.realtime_factor > 0.0:
+                wall_deadline = wall_start + simulation_time / ARGS.realtime_factor
+                wall_delay = wall_deadline - time.monotonic()
+                if wall_delay > 0.0:
+                    time.sleep(wall_delay)
             if ARGS.test_seconds > 0.0 and simulation_time >= ARGS.test_seconds:
                 break
 

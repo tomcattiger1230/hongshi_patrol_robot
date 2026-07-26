@@ -100,7 +100,9 @@ controller_server:
       vy_std: 0.0
       wz_std: 0.08
       vx_max: 0.50
-      vx_min: 0.00
+      # Reeds-Shepp plans may contain short reversing manoeuvres when the
+      # 2.35 m turning circle cannot reach a nearby frontier by driving forward.
+      vx_min: -0.20
       vy_max: 0.0
       wz_max: 0.22
       ax_max: 0.30
@@ -280,7 +282,7 @@ planner_server:
       max_iterations: 1000000
       max_on_approach_iterations: 1000
       max_planning_time: 3.0
-      motion_model_for_search: "DUBIN"
+      motion_model_for_search: "REEDS_SHEPP"
       angle_quantization_bins: 72
       analytic_expansion_ratio: 3.5
       analytic_expansion_max_length: 12.0

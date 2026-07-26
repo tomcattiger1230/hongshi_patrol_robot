@@ -1,13 +1,6 @@
 #!/usr/bin/env sh
 # Source the complete ROS 2 Lyrical simulation overlay in bash or zsh.
 
-case "$0" in
-  *source_lyrical_sim.sh)
-    echo "error: run this with 'source scripts/source_lyrical_sim.sh'" >&2
-    exit 2
-    ;;
-esac
-
 robot320_nav_ws="${ROBOT320_NAV_WS:-${HOME}/Develop/ROS2_ws/navigation_lyrical_ws}"
 robot320_patrol_ws="${ROBOT320_PATROL_WS:-${HOME}/Develop/ROS2_ws/patrol_ws}"
 

@@ -2,21 +2,39 @@
 
 from pathlib import Path
 
-from ament_index_python.packages import get_package_share_directory
+from ament_index_python.packages import (
+    get_package_prefix,
+    get_package_share_directory,
+)
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+from launch.actions import DeclareLaunchArgument, ExecuteProcess, Shutdown
 from launch.conditions import IfCondition, UnlessCondition
-from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import Command, LaunchConfiguration
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 
 
+def _gz_sim_main() -> str:
+    """Resolve the vendor binary so launch owns Gazebo instead of a Ruby wrapper."""
+    vendor_prefix = Path(get_package_prefix("gz_sim_vendor"))
+    candidates = list((vendor_prefix / "libexec" / "gz").glob("sim*/gz-sim-main"))
+    if not candidates:
+        raise RuntimeError(
+            f"Could not find gz-sim-main below Gazebo vendor prefix {vendor_prefix}"
+        )
+
+    def major_version(path: Path) -> int:
+        version = path.parent.name.removeprefix("sim")
+        return int(version) if version.isdigit() else -1
+
+    return str(max(candidates, key=major_version))
+
+
 def generate_launch_description() -> LaunchDescription:
     package_share = Path(get_package_share_directory("patrol_robot_description"))
-    ros_gz_share = Path(get_package_share_directory("ros_gz_sim"))
     world = str(package_share / "worlds" / "patrol_test_world.sdf")
     model = str(package_share / "urdf" / "patrol_robot.urdf.xacro")
+    gz_sim_main = _gz_sim_main()
 
     gui = LaunchConfiguration("gui")
     demo = LaunchConfiguration("demo")
@@ -29,24 +47,18 @@ def generate_launch_description() -> LaunchDescription:
         value_type=str,
     )
 
-    gazebo_server = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(
-            str(ros_gz_share / "launch" / "gz_sim.launch.py")
-        ),
-        launch_arguments={
-            "gz_args": f"-r -s -v 3 {world}",
-            "on_exit_shutdown": "true",
-        }.items(),
+    gazebo_server = ExecuteProcess(
+        cmd=[gz_sim_main, "-r", "-s", "-v", "3", world],
+        name="gz_sim_server",
+        output="screen",
+        on_exit=Shutdown(reason="Gazebo server exited"),
         condition=UnlessCondition(gui),
     )
-    gazebo_gui = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(
-            str(ros_gz_share / "launch" / "gz_sim.launch.py")
-        ),
-        launch_arguments={
-            "gz_args": f"-r -v 3 {world}",
-            "on_exit_shutdown": "true",
-        }.items(),
+    gazebo_gui = ExecuteProcess(
+        cmd=[gz_sim_main, "-r", "-v", "3", world],
+        name="gz_sim_gui",
+        output="screen",
+        on_exit=Shutdown(reason="Gazebo exited"),
         condition=IfCondition(gui),
     )
 

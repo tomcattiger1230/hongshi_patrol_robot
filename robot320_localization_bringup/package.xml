@@ -9,6 +9,8 @@
 
   <buildtool_depend>ament_python</buildtool_depend>
 
+  <exec_depend>action_msgs</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
   <exec_depend>mobile_platform</exec_depend>
   <exec_depend>livox_ros_driver2</exec_depend>
   <exec_depend>mid360_preprocess</exec_depend>
@@ -20,8 +22,12 @@
   <exec_depend>nav2_bringup</exec_depend>
   <exec_depend>nav2_map_server</exec_depend>
   <exec_depend>nav2_mppi_controller</exec_depend>
+  <exec_depend>nav2_rviz_plugins</exec_depend>
   <exec_depend>nav2_smac_planner</exec_depend>
+  <exec_depend>nav_msgs</exec_depend>
   <exec_depend>patrol_robot_description</exec_depend>
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>rviz2</exec_depend>
   <exec_depend>tf2_ros</exec_depend>
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>

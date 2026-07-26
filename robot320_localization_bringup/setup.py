@@ -14,6 +14,7 @@ setup(
         (f"share/{package_name}", ["package.xml"]),
         (f"share/{package_name}/launch", glob("launch/*.launch.py")),
         (f"share/{package_name}/config", glob("config/*")),
+        (f"share/{package_name}/rviz", glob("rviz/*")),
     ],
     install_requires=["setuptools"],
     zip_safe=True,
@@ -21,4 +22,10 @@ setup(
     maintainer_email="hongshi-agent@example.com",
     description="Robot320 MID-360 SLAM, localization, and Nav2 bringup",
     license="MIT",
+    entry_points={
+        "console_scripts": [
+            "frontier_explorer = "
+            "robot320_localization_bringup.frontier_explorer:main",
+        ],
+    },
 )

@@ -27,6 +27,8 @@ def generate_launch_description() -> LaunchDescription:
     mode = LaunchConfiguration("mode")
     map_file = LaunchConfiguration("map")
     navigation = LaunchConfiguration("navigation")
+    exploration = LaunchConfiguration("exploration")
+    rviz = LaunchConfiguration("rviz")
     use_sim_time = LaunchConfiguration("use_sim_time")
     nav2_params = str(localization_share / "config" / "nav2_ackermann.yaml")
 
@@ -122,6 +124,33 @@ def generate_launch_description() -> LaunchDescription:
         }.items(),
         condition=IfCondition(navigation),
     )
+    frontier_explorer = Node(
+        package="robot320_localization_bringup",
+        executable="frontier_explorer",
+        name="frontier_explorer",
+        output="screen",
+        parameters=[
+            {
+                "use_sim_time": use_sim_time,
+                "min_frontier_size": 8,
+                "clearance_radius": 0.95,
+                "goal_timeout": 90.0,
+            }
+        ],
+        condition=IfCondition(exploration),
+    )
+    rviz_node = Node(
+        package="rviz2",
+        executable="rviz2",
+        name="robot320_navigation_rviz",
+        output="screen",
+        arguments=[
+            "-d",
+            str(localization_share / "rviz" / "robot320_navigation.rviz"),
+        ],
+        parameters=[{"use_sim_time": use_sim_time}],
+        condition=IfCondition(rviz),
+    )
 
     return LaunchDescription(
         [
@@ -141,6 +170,16 @@ def generate_launch_description() -> LaunchDescription:
                 default_value="false",
                 description="Start Smac Hybrid and MPPI Ackermann Nav2.",
             ),
+            DeclareLaunchArgument(
+                "exploration",
+                default_value="false",
+                description="Send autonomous frontier goals while mapping.",
+            ),
+            DeclareLaunchArgument(
+                "rviz",
+                default_value="false",
+                description="Start the map/navigation RViz configuration.",
+            ),
             DeclareLaunchArgument("gui", default_value="false"),
             DeclareLaunchArgument("demo", default_value="false"),
             DeclareLaunchArgument("use_sim_time", default_value="true"),
@@ -150,5 +189,7 @@ def generate_launch_description() -> LaunchDescription:
             mapping,
             localization,
             nav2,
+            frontier_explorer,
+            rviz_node,
         ]
     )

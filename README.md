@@ -1,6 +1,6 @@
 # Hongshi Patrol Robot
 
-Robot320 巡检机器人项目。NUC 运行 Ubuntu 24.04、ROS 2 Jazzy、底盘驱动、MID-360s
+Robot320 巡检机器人项目。当前仿真平台运行 Ubuntu 26.04、ROS 2 Lyrical、底盘驱动、MID-360s
 定位并对接 Nav2；同网段上位机运行 PySide6 GUI。Ubuntu 上位机自动使用 ROS 2，
 Windows/macOS 使用 standalone Fast DDS，两者共享 ROS 2 `std_msgs/String` JSON 协议。
 
@@ -49,7 +49,7 @@ binding 和生成的 `Robot320String` 必须使用相同操作系统、CPU 架�
 
 ## NUC 快速开始
 
-NUC 的系统镜像默认已安装 ROS 2 Jazzy。通信网关使用 `rclpy`，由 ROS 2 RMW 处理 DDS，
+NUC 的系统镜像默认已安装 ROS 2。通信网关使用 `rclpy`，由 ROS 2 RMW 处理 DDS，
 不需要 Fast-DDS-python 或项目生成类型。首次构建：
 
 ```bash
@@ -73,12 +73,13 @@ apt 安装的 `rclpy`。`uv_run.sh nuc` 会加载 ROS 2 和仓库的 `install/se
 
 ## Gazebo 仿真
 
-在 ROS 2 Jazzy + Gazebo Harmonic 设备上启动无界面仿真和自动巡航：
+在 ROS 2 Lyrical + Gazebo 设备上启动仿真和项目专用 RViz：
 
 ```bash
-source /opt/ros/jazzy/setup.bash
+source /opt/ros/lyrical/setup.bash
 source install/setup.bash
-ros2 launch patrol_robot_description patrol_robot_sim.launch.py demo:=true
+ros2 launch patrol_robot_description patrol_robot_sim.launch.py \
+  gui:=true rviz:=true
 ```
 
 模型、手动 `/cmd_vel` 控制和 `/livox/lidar` 仿真点云说明见
@@ -94,7 +95,7 @@ NVIDIA Isaac Sim 6 后端：
 
 ```bash
 ros2 launch robot320_localization_bringup robot320_simulation.launch.py \
-  mode:=mapping demo:=true
+  mode:=mapping navigation:=true exploration:=true rviz:=true gui:=true
 ```
 
 通过地图鼠标点击发布 Nav2 目标：

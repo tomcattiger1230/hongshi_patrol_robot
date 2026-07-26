@@ -1,4 +1,4 @@
-# Robot320 Nav2 baseline for ROS 2 Jazzy.
+# Robot320 Nav2 baseline for ROS 2 Lyrical.
 #
 # The footprint assumes base_footprint is at the geometric center of the 1.54 x
 # 0.87 m chassis. Keep Nav2 disabled until this assumption and /odom are

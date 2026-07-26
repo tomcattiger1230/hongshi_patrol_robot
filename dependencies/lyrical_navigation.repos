@@ -1,0 +1,41 @@
+repositories:
+  BehaviorTree.CPP:
+    type: git
+    url: https://github.com/BehaviorTree/BehaviorTree.CPP.git
+    version: edf12f109c92c9ac509ce71973cd4b18268a885a
+  backward_ros:
+    type: git
+    url: https://github.com/pal-robotics/backward_ros.git
+    version: 3c71c9f184223f885459ad67a223eb36a5ca347f
+  bond_core:
+    type: git
+    url: https://github.com/ros/bond_core.git
+    version: 44cc20e678f80f8279d2344045e2193540f3988c
+  diagnostics:
+    type: git
+    url: https://github.com/ros/diagnostics.git
+    version: 81b53fad4dfdd5169d7db4aa77b60602e4b46d86
+  geographic_info:
+    type: git
+    url: https://github.com/ros-geographic-info/geographic_info.git
+    version: 6ad4ef3fcdc7cfbb50689a873cb9607758f601a4
+  navigation2:
+    type: git
+    url: https://github.com/ros-navigation/navigation2.git
+    version: 6037e4b0b5501a88bd8238d7e63f36eda588fe58
+  osrf_pycommon:
+    type: git
+    url: https://github.com/osrf/osrf_pycommon.git
+    version: 5fcd6fa0c71693a6b625ca973b3b2ff9fbd2c648
+  point_cloud_transport_plugins:
+    type: git
+    url: https://github.com/ros-perception/point_cloud_transport_plugins.git
+    version: 5e55a9491f86ba064a97570a1d961258cde6799f
+  robot_localization:
+    type: git
+    url: https://github.com/cra-ros-pkg/robot_localization.git
+    version: 7dfb6aa97b2082185d2fac3420888ae8474bfc1a
+  slam_toolbox:
+    type: git
+    url: https://github.com/SteveMacenski/slam_toolbox.git
+    version: 6953058b8994c7e750277fd8f39b984453abf63c

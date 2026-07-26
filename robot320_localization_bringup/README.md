@@ -30,21 +30,26 @@ Nav2 Smac Hybrid + MPPI Ackermann -> /cmd_vel -> EPS/后桥控制
 
 ## 1. 依赖与构建
 
-- Ubuntu 24.04、ROS 2 Jazzy
+- Ubuntu 26.04、ROS 2 Lyrical
 - `slam_toolbox`、`pointcloud_to_laserscan`、Navigation2
 - PCL、`pcl_conversions`、`tf2_ros`
 - Livox SDK2
 - NUC 系统镜像自带的 ROS 2 通讯环境
 
+Lyrical 当前没有完整的 Navigation2 二进制包，先用仓库内锁定的源码清单构建独立
+underlay，再构建机器人工作区：
+
 ```bash
-sudo apt install \
-  ros-jazzy-slam-toolbox \
-  ros-jazzy-pointcloud-to-laserscan \
-  ros-jazzy-navigation2 \
-  ros-jazzy-nav2-bringup
-rosdep install --from-paths . --ignore-src -r -y
-./scripts/uv_setup.sh nuc
-./scripts/uv_run.sh nuc ./build.sh
+source /opt/ros/lyrical/setup.bash
+cd ~/Develop/ROS2_ws/patrol_ws/src/hongshi_patrol_robot
+./scripts/setup_lyrical_navigation.sh \
+  ~/Develop/ROS2_ws/navigation_lyrical_ws
+
+source ~/Develop/ROS2_ws/navigation_lyrical_ws/install/setup.bash
+cd ~/Develop/ROS2_ws/patrol_ws
+rosdep install --from-paths src --ignore-src -r -y
+colcon build --symlink-install
+source install/setup.bash
 ```
 
 NUC uv profile 使用 `/usr/bin/python3` 和 system site packages，以读取 apt 安装的 ROS 2
@@ -55,29 +60,48 @@ NUC uv profile 使用 `/usr/bin/python3` 和 system site packages，以读取 ap
 Gazebo 和 Isaac Sim 场景包含外围墙、宽通道、箱体、托盘堆、低矮障碍和圆柱罐。
 通道为 2.35 m 最小转弯半径的自行车底盘保留了转弯空间。
 
-启动 Gazebo、MID-360 点云投影和 SLAM Toolbox：
+### 自动 SLAM 建图
+
+启动 Gazebo、MID-360 点云投影、SLAM Toolbox、Nav2 和前沿探索器：
 
 ```bash
-source /opt/ros/jazzy/setup.bash
+source /opt/ros/lyrical/setup.bash
+source ~/Develop/ROS2_ws/navigation_lyrical_ws/install/setup.bash
 source install/setup.bash
 ros2 launch robot320_localization_bringup robot320_simulation.launch.py \
-  mode:=mapping gui:=false demo:=true
+  mode:=mapping navigation:=true exploration:=true rviz:=true gui:=true
 ```
 
-建图时建议手动低速完整绕场一周。保存二维地图：
+前沿探索器每两秒检查 `/map` 的“已知自由区/未知区”边界，过滤不满足车体安全间距
+的候选点，然后通过 `NavigateToPose` 让 Smac Hybrid + MPPI Ackermann 自动驶向下一个
+候选点。连续没有候选点时表示自动探索完成。任何时候可用 `Ctrl-C` 停车并保存地图：
 
 ```bash
 mkdir -p maps
 ros2 run nav2_map_server map_saver_cli -f maps/patrol_test
 ```
 
-使用保存的地图启动 AMCL 和 Nav2：
+如果要人工遥控建图，使用 `exploration:=false navigation:=false`，再通过 `/cmd_vel`
+低速绕场；不要同时启用 `demo:=true`，它会与 Nav2 竞争控制命令。
+
+### 自动导航
+
+使用保存的地图启动 AMCL、Nav2 和专用 RViz：
 
 ```bash
 ros2 launch robot320_localization_bringup robot320_simulation.launch.py \
   mode:=localization \
   map:=$PWD/maps/patrol_test.yaml \
-  navigation:=true gui:=false
+  navigation:=true exploration:=false rviz:=true gui:=true
+```
+
+在 RViz 中先用 “2D Pose Estimate” 给出粗略初始位姿；粒子云收敛后用
+“Nav2 Goal” 点击目标点并拖动指定最终朝向。也可以启动项目 GUI：
+
+```bash
+cd ~/Develop/ROS2_ws/patrol_ws/src/hongshi_patrol_robot
+./scripts/uv_run.sh desktop robot320_navigation_gui \
+  --domain-id 20 --use-sim-time
 ```
 
 定位启动后可通过地图导航 GUI、RViz 的 “2D Pose Estimate” 或 `/initialpose` 设置粗略
@@ -86,6 +110,31 @@ ros2 launch robot320_localization_bringup robot320_simulation.launch.py \
 动态障碍波束跳过、最多 5000 粒子和随机位姿恢复注入，以改善复杂场景和“机器人被搬动”
 后的恢复能力。
 不要同时启用 `demo:=true` 和 `navigation:=true`，否则两个节点会竞争 `/cmd_vel`。
+
+### RViz 频闪
+
+不要直接运行裸 `rviz2`，它会加载 `~/.rviz2/default.rviz` 中旧的 Seer 配置。该配置
+使用 `/lidar/points`、`base_footprint` 固定坐标系，并将点云 `Decay Time` 设为零，
+10 Hz 的 MID-360 帧会被逐帧替换，看起来像高频闪烁。上述 launch 会加载项目专用配置：
+
+- 建图/导航固定坐标系为 `map`，纯仿真模型为 `odom`；
+- 点云话题为 `/livox/lidar`，QoS 为 Best Effort；
+- 点云保留 0.5–0.75 秒，并给 RViz 设置 `use_sim_time:=true`。
+
+只看模型与雷达时可运行：
+
+```bash
+ros2 launch patrol_robot_description patrol_robot_sim.launch.py \
+  rviz:=true gui:=true
+```
+
+若仍频闪，先确认只有一个仿真时钟：
+
+```bash
+ros2 topic info /clock --verbose
+```
+
+`Publisher count` 必须为 1。切换仿真 launch 前应先 `Ctrl-C` 关闭旧的 Gazebo。
 
 ## 3. 网络与雷达外参
 

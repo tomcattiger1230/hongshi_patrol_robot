@@ -209,7 +209,7 @@
       <update_rate>10</update_rate>
       <visualize>false</visualize>
       <topic>/livox/lidar_scan</topic>
-      <gz_frame_id>lidar_link</gz_frame_id>
+      <frame_id>lidar_link</frame_id>
       <lidar>
         <scan>
           <horizontal>

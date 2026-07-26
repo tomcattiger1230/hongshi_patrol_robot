@@ -20,6 +20,7 @@ def generate_launch_description() -> LaunchDescription:
 
     gui = LaunchConfiguration("gui")
     demo = LaunchConfiguration("demo")
+    rviz = LaunchConfiguration("rviz")
     spawn_x = LaunchConfiguration("spawn_x")
     spawn_y = LaunchConfiguration("spawn_y")
     spawn_yaw = LaunchConfiguration("spawn_yaw")
@@ -102,6 +103,18 @@ def generate_launch_description() -> LaunchDescription:
         parameters=[{"use_sim_time": True}],
         condition=IfCondition(demo),
     )
+    rviz_node = Node(
+        package="rviz2",
+        executable="rviz2",
+        name="patrol_sim_rviz",
+        output="screen",
+        arguments=[
+            "-d",
+            str(package_share / "rviz" / "patrol_sim.rviz"),
+        ],
+        parameters=[{"use_sim_time": True}],
+        condition=IfCondition(rviz),
+    )
 
     return LaunchDescription(
         [
@@ -114,6 +127,11 @@ def generate_launch_description() -> LaunchDescription:
                 "demo",
                 default_value="false",
                 description="Run the repeating autonomous motion demo.",
+            ),
+            DeclareLaunchArgument(
+                "rviz",
+                default_value="false",
+                description="Start RViz with the simulation-time configuration.",
             ),
             DeclareLaunchArgument(
                 "spawn_x",
@@ -136,5 +154,6 @@ def generate_launch_description() -> LaunchDescription:
             spawn_robot,
             bridge,
             demo_controller,
+            rviz_node,
         ]
     )

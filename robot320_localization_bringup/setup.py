@@ -27,6 +27,8 @@ setup(
         "console_scripts": [
             "frontier_explorer = "
             "robot320_localization_bringup.frontier_explorer:main",
+            "scan_restamper = "
+            "robot320_localization_bringup.scan_restamper:main",
         ],
     },
 )

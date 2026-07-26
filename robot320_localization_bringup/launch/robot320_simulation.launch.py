@@ -105,7 +105,20 @@ def generate_launch_description() -> LaunchDescription:
         ],
         remappings=[
             ("cloud_in", "/livox/lidar"),
-            ("scan", "/scan"),
+            ("scan", "/scan_raw"),
+        ],
+    )
+    scan_restamper = Node(
+        package="robot320_localization_bringup",
+        executable="scan_restamper",
+        name="scan_restamper",
+        output="screen",
+        parameters=[
+            {
+                "use_sim_time": use_sim_time,
+                "input_topic": "/scan_raw",
+                "output_topic": "/scan",
+            }
         ],
     )
 
@@ -237,6 +250,7 @@ def generate_launch_description() -> LaunchDescription:
             external_state_publisher,
             cloud_filter,
             cloud_to_scan,
+            scan_restamper,
             mapping,
             localization,
             # Give Gazebo, the robot TF tree, and SLAM/AMCL time to initialize

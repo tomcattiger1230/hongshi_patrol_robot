@@ -94,6 +94,9 @@ NVIDIA Isaac Sim 6 后端：
 带障碍物的 Gazebo SLAM/导航仿真：
 
 ```bash
+cd ~/Develop/ROS2_ws/patrol_ws
+source src/hongshi_patrol_robot/scripts/source_lyrical_sim.sh
+
 ros2 launch robot320_localization_bringup robot320_simulation.launch.py \
   mode:=mapping navigation:=true exploration:=true rviz:=true gui:=true
 ```

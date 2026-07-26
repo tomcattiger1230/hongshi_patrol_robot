@@ -66,12 +66,17 @@ Gazebo 和 Isaac Sim 场景包含外围墙、宽通道、箱体、托盘堆、�
 启动 Gazebo、MID-360 点云投影、SLAM Toolbox、Nav2 和前沿探索器：
 
 ```bash
-source /opt/ros/lyrical/setup.bash
-source ~/Develop/ROS2_ws/navigation_lyrical_ws/install/setup.bash
-source install/setup.bash
+cd ~/Develop/ROS2_ws/patrol_ws
+source src/hongshi_patrol_robot/scripts/source_lyrical_sim.sh
+ros2 pkg prefix slam_toolbox
+
 ros2 launch robot320_localization_bringup robot320_simulation.launch.py \
   mode:=mapping navigation:=true exploration:=true rviz:=true gui:=true
 ```
+
+检查命令应输出
+`~/Develop/ROS2_ws/navigation_lyrical_ws/install/slam_toolbox`。只 source
+`/opt/ros/lyrical` 或项目工作区并不能保证源码构建的 `slam_toolbox` 进入包索引。
 
 前沿探索器每两秒检查 `/map` 的“已知自由区/未知区”边界，过滤不满足车体安全间距
 的候选点，然后通过 `NavigateToPose` 让 Smac Hybrid + MPPI Ackermann 自动驶向下一个

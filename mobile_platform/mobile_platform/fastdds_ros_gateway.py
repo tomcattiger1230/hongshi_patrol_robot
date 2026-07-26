@@ -29,7 +29,7 @@ from robot320_interfaces.messages import (
 try:
     import rclpy
     from action_msgs.msg import GoalStatus
-    from geometry_msgs.msg import Twist
+    from geometry_msgs.msg import Twist, TwistStamped
     from nav2_msgs.action import NavigateToPose
     from rclpy.action import ActionClient
     from rclpy.node import Node
@@ -37,7 +37,8 @@ try:
 except ImportError as exc:  # pragma: no cover - evaluated on the NUC.
     rclpy = None
     Node = object
-    GoalStatus = Twist = NavigateToPose = ActionClient = Bool = String = None
+    GoalStatus = Twist = TwistStamped = NavigateToPose = ActionClient = None
+    Bool = String = None
     _ROS_IMPORT_ERROR = exc
 else:
     _ROS_IMPORT_ERROR = None
@@ -158,7 +159,9 @@ class Robot320FastDDSRosGateway(Node):
         self.create_subscription(
             String, f"{self.topic_prefix}/lift/status", self._on_lift_status, 10
         )
-        self.create_subscription(Twist, nav_cmd_vel_topic, self._on_nav_cmd_vel, 10)
+        self.create_subscription(
+            TwistStamped, nav_cmd_vel_topic, self._on_nav_cmd_vel, 10
+        )
         self.nav_client = ActionClient(self, NavigateToPose, nav_action)
 
         self.create_timer(0.05, self._poll_commands)
@@ -378,11 +381,11 @@ class Robot320FastDDSRosGateway(Node):
         self._navigation.stamp = time.time()
         return True
 
-    def _on_nav_cmd_vel(self, msg: Twist) -> None:
+    def _on_nav_cmd_vel(self, msg: TwistStamped) -> None:
         """Relay Nav2 velocity output to the Robot320 chassis command topic."""
         if not self._nav_velocity_enabled:
             return
-        self.cmd_vel_pub.publish(msg)
+        self.cmd_vel_pub.publish(msg.twist)
 
     def _send_lift_command(self, command: RobotCommand) -> None:
         msg = String()

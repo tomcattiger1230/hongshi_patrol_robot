@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import rclpy
-from geometry_msgs.msg import Twist
+from geometry_msgs.msg import TwistStamped
 from rclpy.node import Node
 
 
@@ -17,7 +17,7 @@ class Motion:
 
 
 class PatrolDemoController(Node):
-    """Drive a rounded square while exposing all motion as regular cmd_vel."""
+    """Drive a rounded square using the stamped velocity interface in Lyrical."""
 
     def __init__(self) -> None:
         super().__init__("patrol_demo_controller")
@@ -39,7 +39,7 @@ class PatrolDemoController(Node):
         )
         self._motion_index = 0
         self._motion_started_ns = self.get_clock().now().nanoseconds
-        self._publisher = self.create_publisher(Twist, topic, 10)
+        self._publisher = self.create_publisher(TwistStamped, topic, 10)
         self._timer = self.create_timer(0.05, self._tick)
         self.get_logger().info(f"Publishing patrol demo commands on {topic}")
 
@@ -52,13 +52,16 @@ class PatrolDemoController(Node):
             self._motion_started_ns = now_ns
             motion = self._motions[self._motion_index]
 
-        command = Twist()
-        command.linear.x = motion.linear_x
-        command.angular.z = motion.angular_z
+        command = TwistStamped()
+        command.header.stamp = self.get_clock().now().to_msg()
+        command.twist.linear.x = motion.linear_x
+        command.twist.angular.z = motion.angular_z
         self._publisher.publish(command)
 
     def stop(self) -> None:
-        self._publisher.publish(Twist())
+        command = TwistStamped()
+        command.header.stamp = self.get_clock().now().to_msg()
+        self._publisher.publish(command)
 
 
 def main(args: list[str] | None = None) -> None:

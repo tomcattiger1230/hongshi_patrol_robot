@@ -45,7 +45,7 @@ import isaacsim.core.experimental.utils.stage as stage_utils
 import numpy as np
 import omni.kit.app
 import rclpy
-from geometry_msgs.msg import TransformStamped, Twist
+from geometry_msgs.msg import TransformStamped, TwistStamped
 from nav_msgs.msg import Odometry
 from pxr import Gf, UsdGeom, UsdLux, UsdPhysics
 from rclpy.node import Node
@@ -342,15 +342,17 @@ class IsaacRosInterface(Node):
         self.linear_x = 0.0
         self.angular_z = 0.0
         self._last_command_wall_ns = 0
-        self.create_subscription(Twist, ARGS.cmd_vel_topic, self._on_twist, 10)
+        self.create_subscription(
+            TwistStamped, ARGS.cmd_vel_topic, self._on_twist, 10
+        )
         self._odom = self.create_publisher(Odometry, ARGS.odom_topic, 10)
         self._joint_states = self.create_publisher(JointState, "/joint_states", 10)
         self._tf = self.create_publisher(TFMessage, "/tf", 10)
         self._clock_publisher = self.create_publisher(Clock, "/clock", 10)
 
-    def _on_twist(self, message: Twist) -> None:
-        self.linear_x = float(message.linear.x)
-        self.angular_z = float(message.angular.z)
+    def _on_twist(self, message: TwistStamped) -> None:
+        self.linear_x = float(message.twist.linear.x)
+        self.angular_z = float(message.twist.angular.z)
         self._last_command_wall_ns = self.get_clock().now().nanoseconds
 
     def demo_command(self, simulation_time: float) -> tuple[float, float]:

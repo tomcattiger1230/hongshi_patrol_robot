@@ -26,6 +26,11 @@ class _String:
         self.data = ""
 
 
+class _StampedTwist:
+    def __init__(self, twist):
+        self.twist = twist
+
+
 class _Node:
     def __init__(self):
         self.publishers = {}
@@ -80,11 +85,12 @@ def test_nav_velocity_relay_is_closed_immediately_on_cancel():
     gateway._navigation = NavigationStatus(state="sending", goal_id="pending-goal")
 
     marker = object()
-    gateway._on_nav_cmd_vel(marker)
+    stamped = _StampedTwist(marker)
+    gateway._on_nav_cmd_vel(stamped)
     assert gateway.cmd_vel_pub.messages == [marker]
 
     assert gateway._request_nav_cancel() is True
-    gateway._on_nav_cmd_vel(marker)
+    gateway._on_nav_cmd_vel(stamped)
     assert gateway.cmd_vel_pub.messages == [marker]
     assert gateway._navigation.state == "canceling"
 

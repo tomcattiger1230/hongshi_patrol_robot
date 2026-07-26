@@ -28,6 +28,7 @@ sudo apt-get install -y \
   python3-typeshed \
   python3-vcstool \
   python3-zmq \
+  ros-lyrical-rmw-cyclonedds-cpp \
   zlib1g-dev
 
 mkdir -p "${navigation_workspace}/src"

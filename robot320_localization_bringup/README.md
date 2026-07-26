@@ -37,7 +37,8 @@ Nav2 Smac Hybrid + MPPI Ackermann -> /cmd_vel -> EPS/后桥控制
 - NUC 系统镜像自带的 ROS 2 通讯环境
 
 Lyrical 当前没有完整的 Navigation2 二进制包，先用仓库内锁定的源码清单构建独立
-underlay，再构建机器人工作区：
+underlay，再构建机器人工作区。安装脚本同时安装 Cyclone DDS；仿真 launch 会自动选择
+`rmw_cyclonedds_cpp`，避开该版本 Fast DDS 在多生命周期节点启动时的进程继承卡顿：
 
 ```bash
 source /opt/ros/lyrical/setup.bash

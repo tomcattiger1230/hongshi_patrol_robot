@@ -4,7 +4,11 @@ from pathlib import Path
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+from launch.actions import (
+    DeclareLaunchArgument,
+    IncludeLaunchDescription,
+    SetEnvironmentVariable,
+)
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import (
@@ -154,6 +158,13 @@ def generate_launch_description() -> LaunchDescription:
 
     return LaunchDescription(
         [
+            # Lyrical's Fast DDS launch adapter can leak its participant sockets
+            # into lifecycle-managed child processes. Cyclone DDS avoids the
+            # resulting startup stall and remains DDS-compatible with peers.
+            SetEnvironmentVariable(
+                "RMW_IMPLEMENTATION",
+                "rmw_cyclonedds_cpp",
+            ),
             DeclareLaunchArgument(
                 "mode",
                 default_value="mapping",

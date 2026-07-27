@@ -50,7 +50,7 @@ def generate_launch_description() -> LaunchDescription:
             "set_initial_pose": "true",
             # Isaac RTX lidar frames can be more than one simulated second
             # apart on Spark. Keep the real-robot safety timeout unchanged.
-            "source_timeout": "5.0",
+            "source_timeout": "30.0",
         },
         convert_types=True,
     )

@@ -117,6 +117,7 @@ def generate_launch_description() -> LaunchDescription:
                 "use_sim_time": use_sim_time,
                 "input_topic": "/scan_raw",
                 "output_topic": "/scan",
+                "frame_id": "lidar_link",
             }
         ],
     )

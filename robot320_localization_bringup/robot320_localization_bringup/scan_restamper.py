@@ -13,11 +13,15 @@ class ScanRestamper(Node):
         super().__init__("scan_restamper")
         self.declare_parameter("input_topic", "/scan_raw")
         self.declare_parameter("output_topic", "/scan")
+        self.declare_parameter("frame_id", "")
         input_topic = (
             self.get_parameter("input_topic").get_parameter_value().string_value
         )
         output_topic = (
             self.get_parameter("output_topic").get_parameter_value().string_value
+        )
+        self._frame_id = (
+            self.get_parameter("frame_id").get_parameter_value().string_value
         )
         self._publisher = self.create_publisher(LaserScan, output_topic, 10)
         self.create_subscription(
@@ -29,6 +33,11 @@ class ScanRestamper(Node):
 
     def _on_scan(self, scan: LaserScan) -> None:
         scan.header.stamp = self.get_clock().now().to_msg()
+        if self._frame_id:
+            # Gazebo Harmonic scopes GPU lidar frame names by model and sensor.
+            # The scan coordinates still use the URDF sensor axes, so expose the
+            # stable ROS frame consumed by SLAM, Nav2, and Isaac Sim.
+            scan.header.frame_id = self._frame_id
         self._publisher.publish(scan)
 
 
@@ -42,4 +51,3 @@ def main(args=None) -> None:
     finally:
         node.destroy_node()
         rclpy.shutdown()
-

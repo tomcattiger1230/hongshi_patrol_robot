@@ -43,7 +43,12 @@ def generate_launch_description() -> LaunchDescription:
             localization_share / "config" / "nav2_ackermann.yaml"
         ),
         root_key="",
-        param_rewrites={"use_sim_time": use_sim_time},
+        param_rewrites={
+            "use_sim_time": use_sim_time,
+            # Both simulators spawn at the map origin. Publishing this initial
+            # estimate lets AMCL establish map->odom before Nav2 activates.
+            "set_initial_pose": "true",
+        },
         convert_types=True,
     )
 

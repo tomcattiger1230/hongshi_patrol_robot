@@ -33,6 +33,10 @@ amcl:
     recovery_alpha_fast: 0.10
     recovery_alpha_slow: 0.001
     save_pose_rate: 1.0
+    # Simulation launch rewrites this to true because both simulators spawn at
+    # the saved map origin. Keep false for the real robot and use the GUI's
+    # initial-pose/relocalization controls.
+    set_initial_pose: false
     update_min_d: 0.10
     update_min_a: 0.05
     resample_interval: 1

@@ -27,6 +27,10 @@ Ubuntu GUI -------> rclpy -------+                              ROS/Nav2/CAN
 Python 环境由根目录 `pyproject.toml`、`uv.lock` 和 `scripts/uv_*.sh` 管理；ROS 2 C++
 包仍由 colcon 构建。
 
+当前 `192.168.3.113`、ROS 2 Jazzy 平台的 Gazebo/Isaac Sim 建图、地图保存、GUI
+导航和故障排查命令统一见
+[`SIMULATION_SLAM_NAVIGATION_DEBUG_GUIDE.md`](./SIMULATION_SLAM_NAVIGATION_DEBUG_GUIDE.md)。
+
 ## 上位机快速开始
 
 Ubuntu 上位机默认和 NUC 一样已安装 ROS 2。安装
@@ -121,6 +125,7 @@ ros2 launch robot320_localization_bringup robot320_simulation.launch.py \
 
 ## 详细文档
 
+- [Gazebo/Isaac Sim SLAM、导航与 GUI 调试手册](./SIMULATION_SLAM_NAVIGATION_DEBUG_GUIDE.md)
 - [上位机与 Windows/macOS Fast DDS 安装](./remote_control/README.md)
 - [NUC 底盘和 ROS 2 通信网关](./mobile_platform/README.md)
 - [MID-360s 建图与定位](./robot320_localization_bringup/README.md)

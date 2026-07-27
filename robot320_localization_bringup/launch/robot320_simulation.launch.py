@@ -16,6 +16,7 @@ from launch.substitutions import (
     EqualsSubstitution,
     LaunchConfiguration,
     PathJoinSubstitution,
+    PythonExpression,
 )
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
@@ -51,6 +52,13 @@ def generate_launch_description() -> LaunchDescription:
             # Isaac RTX lidar frames can be more than one simulated second
             # apart on Spark. Keep the real-robot safety timeout unchanged.
             "source_timeout": "30.0",
+            "cmd_vel_out_topic": PythonExpression(
+                [
+                    "'/cmd_vel' if '",
+                    gazebo,
+                    "' == 'true' else '/cmd_vel_collision'",
+                ]
+            ),
         },
         convert_types=True,
     )
@@ -141,6 +149,30 @@ def generate_launch_description() -> LaunchDescription:
                 "self_filter_y_abs": 0.485,
             }
         ],
+    )
+    isaac_cmd_vel_relay = Node(
+        package="robot320_localization_bringup",
+        executable="cmd_vel_relay",
+        name="isaac_cmd_vel_relay",
+        output="screen",
+        parameters=[
+            {
+                "use_sim_time": use_sim_time,
+                "input_topic": "/cmd_vel_smoothed",
+                "output_topic": "/cmd_vel",
+            }
+        ],
+        condition=IfCondition(
+            PythonExpression(
+                [
+                    "'",
+                    navigation,
+                    "' == 'true' and '",
+                    gazebo,
+                    "' == 'false'",
+                ]
+            )
+        ),
     )
 
     mapping = IncludeLaunchDescription(
@@ -265,6 +297,7 @@ def generate_launch_description() -> LaunchDescription:
             cloud_filter,
             cloud_to_scan,
             scan_restamper,
+            isaac_cmd_vel_relay,
             mapping,
             localization,
             # Give Gazebo, the robot TF tree, and SLAM/AMCL time to initialize

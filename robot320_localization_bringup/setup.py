@@ -29,6 +29,8 @@ setup(
             "robot320_localization_bringup.frontier_explorer:main",
             "scan_restamper = "
             "robot320_localization_bringup.scan_restamper:main",
+            "cmd_vel_relay = "
+            "robot320_localization_bringup.cmd_vel_relay:main",
         ],
     },
 )

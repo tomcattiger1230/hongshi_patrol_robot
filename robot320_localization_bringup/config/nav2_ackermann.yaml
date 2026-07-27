@@ -196,7 +196,11 @@ local_costmap:
     ros__parameters:
       update_frequency: 8.0
       publish_frequency: 2.0
-      global_frame: odom
+      # Using map for the rolling costmap avoids extrapolating a path stamped
+      # by the controller through a lower-rate SLAM/AMCL map->odom transform.
+      # This is important for Isaac RTX lidar, whose scan cadence can be much
+      # lower than the physics clock on embedded GPUs.
+      global_frame: map
       robot_base_frame: base_footprint
       rolling_window: true
       width: 8

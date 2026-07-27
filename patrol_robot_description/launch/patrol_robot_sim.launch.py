@@ -1,5 +1,6 @@
 """Launch the primitive patrol robot in Gazebo Harmonic."""
 
+import shutil
 from pathlib import Path
 
 from ament_index_python.packages import (
@@ -14,8 +15,8 @@ from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 
 
-def _gz_sim_main() -> str:
-    """Resolve the vendor binary so launch owns Gazebo instead of a Ruby wrapper."""
+def _gz_sim_command() -> list[str]:
+    """Prefer the vendor binary and fall back to the Gazebo CLI."""
     vendor_prefix = Path(get_package_prefix("gz_sim_vendor"))
     search_roots = (
         vendor_prefix / "libexec" / "gz",
@@ -27,22 +28,23 @@ def _gz_sim_main() -> str:
         for candidate in root.glob("sim*/gz-sim-main")
     ]
     if not candidates:
-        raise RuntimeError(
-            f"Could not find gz-sim-main below Gazebo vendor prefix {vendor_prefix}"
-        )
+        gz = shutil.which("gz")
+        if gz:
+            return [gz, "sim"]
+        raise RuntimeError("Could not find either gz-sim-main or the gz CLI")
 
     def major_version(path: Path) -> int:
         version = path.parent.name.removeprefix("sim")
         return int(version) if version.isdigit() else -1
 
-    return str(max(candidates, key=major_version))
+    return [str(max(candidates, key=major_version))]
 
 
 def generate_launch_description() -> LaunchDescription:
     package_share = Path(get_package_share_directory("patrol_robot_description"))
     world = str(package_share / "worlds" / "patrol_test_world.sdf")
     model = str(package_share / "urdf" / "patrol_robot.urdf.xacro")
-    gz_sim_main = _gz_sim_main()
+    gz_sim_command = _gz_sim_command()
 
     gui = LaunchConfiguration("gui")
     demo = LaunchConfiguration("demo")
@@ -56,14 +58,14 @@ def generate_launch_description() -> LaunchDescription:
     )
 
     gazebo_server = ExecuteProcess(
-        cmd=[gz_sim_main, "-r", "-s", "-v", "3", world],
+        cmd=[*gz_sim_command, "-r", "-s", "-v", "3", world],
         name="gz_sim_server",
         output="screen",
         on_exit=Shutdown(reason="Gazebo server exited"),
         condition=UnlessCondition(gui),
     )
     gazebo_gui = ExecuteProcess(
-        cmd=[gz_sim_main, "-r", "-v", "3", world],
+        cmd=[*gz_sim_command, "-r", "-v", "3", world],
         name="gz_sim_gui",
         output="screen",
         on_exit=Shutdown(reason="Gazebo exited"),

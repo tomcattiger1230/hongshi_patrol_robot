@@ -48,6 +48,9 @@ def generate_launch_description() -> LaunchDescription:
             # Both simulators spawn at the map origin. Publishing this initial
             # estimate lets AMCL establish map->odom before Nav2 activates.
             "set_initial_pose": "true",
+            # Isaac RTX lidar frames can be more than one simulated second
+            # apart on Spark. Keep the real-robot safety timeout unchanged.
+            "source_timeout": "5.0",
         },
         convert_types=True,
     )

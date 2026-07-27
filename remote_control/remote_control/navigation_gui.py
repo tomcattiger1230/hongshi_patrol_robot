@@ -580,7 +580,8 @@ if QApplication is not None:
 
             goal = NavigateToPose.Goal()
             goal.pose.header.frame_id = frame_id or self.map_frame
-            goal.pose.header.stamp = self.node.get_clock().now().to_msg()
+            # Use the latest available TF. In simulation, stamping with "now"
+            # can be a few milliseconds newer than slam_toolbox's map->odom.
             goal.pose.pose.position.x = x_m
             goal.pose.pose.position.y = y_m
             goal.pose.pose.orientation.z = math.sin(yaw_rad / 2.0)

@@ -140,7 +140,8 @@ class FrontierExplorer(Node):
         )
         target = PoseStamped()
         target.header.frame_id = map_frame
-        target.header.stamp = self.get_clock().now().to_msg()
+        # A zero stamp asks Nav2 for the latest transform. This avoids a small
+        # future-extrapolation race between simulation /clock and map->odom.
         target.pose.position.x = goal_x
         target.pose.position.y = goal_y
         target.pose.orientation.z = math.sin(yaw / 2.0)

@@ -144,9 +144,11 @@ def generate_launch_description() -> LaunchDescription:
                 "frame_id": "lidar_link",
                 "sensor_x": 0.40,
                 "sensor_y": 0.0,
-                "self_filter_x_min": -0.82,
-                "self_filter_x_max": 0.82,
-                "self_filter_y_abs": 0.485,
+                # RTX rays include the imported wheels and body outside the
+                # nominal navigation footprint. Use the full swept envelope.
+                "self_filter_x_min": -1.50,
+                "self_filter_x_max": 1.50,
+                "self_filter_y_abs": 1.00,
             }
         ],
     )

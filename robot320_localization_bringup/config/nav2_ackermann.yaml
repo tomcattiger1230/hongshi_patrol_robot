@@ -209,22 +209,15 @@ local_costmap:
       transform_tolerance: 0.5
       footprint: "[[0.77, 0.435], [0.77, -0.435], [-0.77, -0.435], [-0.77, 0.435]]"
       footprint_padding: 0.05
-      plugins: ["voxel_layer", "inflation_layer"]
-      voxel_layer:
-        plugin: "nav2_costmap_2d::VoxelLayer"
+      plugins: ["obstacle_layer", "inflation_layer"]
+      obstacle_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
         enabled: true
         footprint_clearing_enabled: true
-        publish_voxel_map: false
-        origin_z: 0.0
-        z_resolution: 0.10
-        z_voxels: 16
-        min_obstacle_height: 0.05
-        max_obstacle_height: 1.60
-        mark_threshold: 0
-        observation_sources: points
-        points:
-          topic: /filtered_points
-          data_type: "PointCloud2"
+        observation_sources: scan
+        scan:
+          topic: /scan
+          data_type: "LaserScan"
           transport_type: "raw"
           clearing: true
           marking: true
@@ -232,8 +225,6 @@ local_costmap:
           obstacle_max_range: 8.0
           raytrace_min_range: 0.30
           raytrace_max_range: 10.0
-          min_obstacle_height: 0.05
-          max_obstacle_height: 1.60
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 3.0
@@ -259,10 +250,10 @@ global_costmap:
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
         enabled: true
-        observation_sources: points
-        points:
-          topic: /filtered_points
-          data_type: "PointCloud2"
+        observation_sources: scan
+        scan:
+          topic: /scan
+          data_type: "LaserScan"
           transport_type: "raw"
           clearing: true
           marking: true
@@ -270,8 +261,6 @@ global_costmap:
           obstacle_max_range: 8.0
           raytrace_min_range: 0.30
           raytrace_max_range: 10.0
-          min_obstacle_height: 0.05
-          max_obstacle_height: 1.60
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 3.0

@@ -66,7 +66,7 @@ ros2 topic pub --once /cmd_vel geometry_msgs/msg/Twist "{}"
 
 | 话题 | 类型 | 方向 |
 |---|---|---|
-| `/cmd_vel` | `geometry_msgs/msg/Twist` | ROS 2 → Gazebo |
+| `/cmd_vel` | `geometry_msgs/msg/Twist` | ROS 2 → Gazebo / Isaac Sim |
 | `/odom` | `nav_msgs/msg/Odometry` | Gazebo → ROS 2 |
 | `/joint_states` | `sensor_msgs/msg/JointState` | Gazebo → ROS 2 |
 | `/tf` | `tf2_msgs/msg/TFMessage` | Gazebo → ROS 2 |

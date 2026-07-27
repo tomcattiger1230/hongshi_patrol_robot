@@ -183,9 +183,9 @@ ros2 topic info /clock --verbose
 项目 launch 直接托管 `gz-sim-main`，正常退出时会一并终止 Gazebo，避免旧世界继续
 发布较大的 `/clock` 后导致新世界出现 `moved backwards in time` 和 `TF_OLD_DATA`。
 
-ROS 2 Lyrical 的 Nav2 使用 `geometry_msgs/msg/TwistStamped` 发布 `/cmd_vel`。Gazebo、
-Isaac Sim 和实车通信网关已经统一适配该类型；若手工接入其他控制节点，不要再在同名
-话题上发布旧的 `geometry_msgs/msg/Twist`。
+ROS 2 Jazzy 的 Nav2 使用 `geometry_msgs/msg/Twist` 发布 `/cmd_vel`。Gazebo、
+Isaac Sim 和示例控制器已经统一适配该类型；同一 ROS 图中不要在 `/cmd_vel` 上混用
+`Twist` 与 `TwistStamped`。
 
 ## 3. 网络与雷达外参
 

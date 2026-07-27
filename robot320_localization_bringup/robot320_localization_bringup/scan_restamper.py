@@ -1,5 +1,7 @@
 """Restamp simulated laser scans after expensive point-cloud projection."""
 
+import math
+
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
@@ -14,6 +16,11 @@ class ScanRestamper(Node):
         self.declare_parameter("input_topic", "/scan_raw")
         self.declare_parameter("output_topic", "/scan")
         self.declare_parameter("frame_id", "")
+        self.declare_parameter("sensor_x", 0.0)
+        self.declare_parameter("sensor_y", 0.0)
+        self.declare_parameter("self_filter_x_min", 0.0)
+        self.declare_parameter("self_filter_x_max", 0.0)
+        self.declare_parameter("self_filter_y_abs", 0.0)
         input_topic = (
             self.get_parameter("input_topic").get_parameter_value().string_value
         )
@@ -22,6 +29,17 @@ class ScanRestamper(Node):
         )
         self._frame_id = (
             self.get_parameter("frame_id").get_parameter_value().string_value
+        )
+        self._sensor_x = float(self.get_parameter("sensor_x").value)
+        self._sensor_y = float(self.get_parameter("sensor_y").value)
+        self._self_filter_x_min = float(
+            self.get_parameter("self_filter_x_min").value
+        )
+        self._self_filter_x_max = float(
+            self.get_parameter("self_filter_x_max").value
+        )
+        self._self_filter_y_abs = float(
+            self.get_parameter("self_filter_y_abs").value
         )
         self._publisher = self.create_publisher(LaserScan, output_topic, 10)
         self.create_subscription(
@@ -38,6 +56,21 @@ class ScanRestamper(Node):
             # The scan coordinates still use the URDF sensor axes, so expose the
             # stable ROS frame consumed by SLAM, Nav2, and Isaac Sim.
             scan.header.frame_id = self._frame_id
+        if (
+            self._self_filter_x_max > self._self_filter_x_min
+            and self._self_filter_y_abs > 0.0
+        ):
+            for index, distance in enumerate(scan.ranges):
+                if not math.isfinite(distance):
+                    continue
+                angle = scan.angle_min + index * scan.angle_increment
+                base_x = self._sensor_x + distance * math.cos(angle)
+                base_y = self._sensor_y + distance * math.sin(angle)
+                if (
+                    self._self_filter_x_min <= base_x <= self._self_filter_x_max
+                    and abs(base_y) <= self._self_filter_y_abs
+                ):
+                    scan.ranges[index] = math.inf
         self._publisher.publish(scan)
 
 

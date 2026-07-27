@@ -134,6 +134,11 @@ def generate_launch_description() -> LaunchDescription:
                 "input_topic": "/scan_raw",
                 "output_topic": "/scan",
                 "frame_id": "lidar_link",
+                "sensor_x": 0.40,
+                "sensor_y": 0.0,
+                "self_filter_x_min": -0.82,
+                "self_filter_x_max": 0.82,
+                "self_filter_y_abs": 0.485,
             }
         ],
     )

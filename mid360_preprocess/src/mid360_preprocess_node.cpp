@@ -30,18 +30,21 @@ public:
 private:
     void cloudCallback(const sensor_msgs::msg::PointCloud2::SharedPtr msg)
     {
-        pcl::PointCloud<pcl::PointXYZI>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZI>());
+        // Navigation only needs geometry. Isaac RTX point clouds do not carry
+        // an intensity field, so use PointXYZ for both real and simulated
+        // clouds instead of logging a conversion warning for every frame.
+        pcl::PointCloud<pcl::PointXYZ>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZ>());
         pcl::fromROSMsg(*msg, *cloud);
 
         // 1. 直通滤波：去除地面和天花板
-        pcl::PassThrough<pcl::PointXYZI> pass;
+        pcl::PassThrough<pcl::PointXYZ> pass;
         pass.setInputCloud(cloud);
         pass.setFilterFieldName("z");
         pass.setFilterLimits(min_z_, max_z_);
         pass.filter(*cloud);
 
         // 2. 体素滤波：降采样
-        pcl::VoxelGrid<pcl::PointXYZI> voxel;
+        pcl::VoxelGrid<pcl::PointXYZ> voxel;
         voxel.setInputCloud(cloud);
         const auto leaf = static_cast<float>(voxel_size_);
         voxel.setLeafSize(leaf, leaf, leaf);

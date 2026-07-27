@@ -176,6 +176,9 @@ ros2 launch robot320_localization_bringup robot320_simulation.launch.py \
   --domain-id 20 --use-sim-time
 ```
 
+本机仿真默认 ROS domain 为 0，此时把上述参数改为 `--domain-id 0`。GUI、仿真器和
+Nav2 必须使用同一个 domain ID。
+
 实车运行时去掉 `--use-sim-time`。操作顺序：
 
 1. 等待右上角显示“Nav2 已连接”。

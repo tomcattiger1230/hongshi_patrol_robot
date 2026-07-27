@@ -144,6 +144,9 @@ cd ~/Develop/ROS2_ws/patrol_ws/src/hongshi_patrol_robot
   --domain-id 20 --use-sim-time
 ```
 
+本机仿真若未设置 `ROS_DOMAIN_ID`，使用 `--domain-id 0`；GUI 的 domain ID 必须与
+Gazebo/Isaac Sim 和 Nav2 进程一致。
+
 定位启动后可通过地图导航 GUI、RViz 的 “2D Pose Estimate” 或 `/initialpose` 设置粗略
 初始位姿。完全不知道位置时，可在 GUI 中启动 AMCL 全局重定位；机器人随后应低速走
 大弧线或 S 形路径，使 MID-360 获得不同视角并让粒子分布收敛。当前 AMCL 配置启用了

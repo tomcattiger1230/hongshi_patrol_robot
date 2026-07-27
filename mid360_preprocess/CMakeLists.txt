@@ -24,7 +24,6 @@ ament_target_dependencies(mid360_preprocess_node
 )
 
 target_link_libraries(mid360_preprocess_node
-  PRIVATE
   ${PCL_LIBRARIES}
 )
 

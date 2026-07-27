@@ -20,6 +20,7 @@ from launch.substitutions import (
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
+from nav2_common.launch import RewrittenYaml
 
 
 def generate_launch_description() -> LaunchDescription:
@@ -37,7 +38,14 @@ def generate_launch_description() -> LaunchDescription:
     rviz = LaunchConfiguration("rviz")
     use_sim_time = LaunchConfiguration("use_sim_time")
     gazebo = LaunchConfiguration("gazebo")
-    nav2_params = str(localization_share / "config" / "nav2_ackermann.yaml")
+    nav2_params = RewrittenYaml(
+        source_file=str(
+            localization_share / "config" / "nav2_ackermann.yaml"
+        ),
+        root_key="",
+        param_rewrites={"use_sim_time": use_sim_time},
+        convert_types=True,
+    )
 
     simulator = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(

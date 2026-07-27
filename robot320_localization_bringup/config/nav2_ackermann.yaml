@@ -117,11 +117,10 @@ controller_server:
       transform_tolerance: 0.5
       temperature: 0.3
       gamma: 0.015
-      motion_model: "ackermann"
+      motion_model: "Ackermann"
       visualize: false
       regenerate_noises: true
-      ackermann:
-        plugin: "mppi::AckermannMotionModel"
+      AckermannConstraints:
         min_turning_r: 2.35
       TrajectoryVisualizer:
         trajectory_step: 5

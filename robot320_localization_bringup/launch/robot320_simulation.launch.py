@@ -7,7 +7,6 @@ from launch import LaunchDescription
 from launch.actions import (
     DeclareLaunchArgument,
     IncludeLaunchDescription,
-    SetEnvironmentVariable,
     TimerAction,
 )
 from launch.conditions import IfCondition, UnlessCondition
@@ -202,13 +201,6 @@ def generate_launch_description() -> LaunchDescription:
 
     return LaunchDescription(
         [
-            # Lyrical's Fast DDS launch adapter can leak its participant sockets
-            # into lifecycle-managed child processes. Cyclone DDS avoids the
-            # resulting startup stall and remains DDS-compatible with peers.
-            SetEnvironmentVariable(
-                "RMW_IMPLEMENTATION",
-                "rmw_cyclonedds_cpp",
-            ),
             DeclareLaunchArgument(
                 "mode",
                 default_value="mapping",

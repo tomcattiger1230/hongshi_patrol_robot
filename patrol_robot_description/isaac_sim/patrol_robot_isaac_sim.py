@@ -354,6 +354,7 @@ class IsaacRosInterface(Node):
         self.linear_x = 0.0
         self.angular_z = 0.0
         self._last_command_wall_ns = 0
+        self._odom_origin_xy: np.ndarray | None = None
         self.create_subscription(
             Twist, ARGS.cmd_vel_topic, self._on_twist, 10
         )
@@ -388,6 +389,9 @@ class IsaacRosInterface(Node):
         angular_z: float,
     ) -> None:
         sec, nanosec = _stamp(simulation_time)
+        if self._odom_origin_xy is None:
+            self._odom_origin_xy = np.asarray(position[:2], dtype=float).copy()
+        odom_xy = np.asarray(position[:2], dtype=float) - self._odom_origin_xy
 
         clock = Clock()
         clock.clock.sec = sec
@@ -398,9 +402,11 @@ class IsaacRosInterface(Node):
         odom.header.stamp = clock.clock
         odom.header.frame_id = "odom"
         odom.child_frame_id = "base_footprint"
-        odom.pose.pose.position.x = float(position[0])
-        odom.pose.pose.position.y = float(position[1])
-        odom.pose.pose.position.z = float(position[2])
+        # Odom is local to the spawn pose, matching Gazebo and the convention
+        # expected by saved-map localization.
+        odom.pose.pose.position.x = float(odom_xy[0])
+        odom.pose.pose.position.y = float(odom_xy[1])
+        odom.pose.pose.position.z = 0.0
         odom.pose.pose.orientation.w = float(orientation_wxyz[0])
         odom.pose.pose.orientation.x = float(orientation_wxyz[1])
         odom.pose.pose.orientation.y = float(orientation_wxyz[2])

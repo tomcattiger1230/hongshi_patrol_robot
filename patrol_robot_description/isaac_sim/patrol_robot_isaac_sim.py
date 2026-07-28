@@ -32,6 +32,12 @@ def _parse_args() -> argparse.Namespace:
         help="Stop automatically after this many simulated seconds.",
     )
     parser.add_argument("--cmd-vel-topic", default="/cmd_vel")
+    parser.add_argument(
+        "--command-timeout",
+        type=float,
+        default=0.6,
+        help="Brake if cmd_vel is silent for this many wall-clock seconds.",
+    )
     parser.add_argument("--odom-topic", default="/odom")
     parser.add_argument(
         "--realtime-factor",
@@ -372,7 +378,7 @@ class IsaacRosInterface(Node):
         super().__init__("patrol_robot_isaac_sim")
         self.linear_x = 0.0
         self.angular_z = 0.0
-        self._last_command_wall_ns = 0
+        self._last_command_monotonic_ns = 0
         self._odom_origin_xy: np.ndarray | None = None
         self.create_subscription(
             Twist, ARGS.cmd_vel_topic, self._on_twist, 10
@@ -385,7 +391,7 @@ class IsaacRosInterface(Node):
     def _on_twist(self, message: Twist) -> None:
         self.linear_x = float(message.linear.x)
         self.angular_z = float(message.angular.z)
-        self._last_command_wall_ns = self.get_clock().now().nanoseconds
+        self._last_command_monotonic_ns = time.monotonic_ns()
 
     def demo_command(self, simulation_time: float) -> tuple[float, float]:
         phase = simulation_time % 14.55
@@ -394,8 +400,15 @@ class IsaacRosInterface(Node):
         return 0.35, 0.149
 
     def command(self, simulation_time: float) -> tuple[float, float]:
-        if ARGS.demo and self._last_command_wall_ns == 0:
+        if ARGS.demo and self._last_command_monotonic_ns == 0:
             return self.demo_command(simulation_time)
+        if (
+            self._last_command_monotonic_ns
+            and time.monotonic_ns() - self._last_command_monotonic_ns
+            > int(ARGS.command_timeout * 1e9)
+        ):
+            self.linear_x = 0.0
+            self.angular_z = 0.0
         return self.linear_x, self.angular_z
 
     def publish_state(

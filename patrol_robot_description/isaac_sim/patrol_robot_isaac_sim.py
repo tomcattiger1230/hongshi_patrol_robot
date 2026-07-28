@@ -304,9 +304,11 @@ def _build_scene(robot_usd: Path) -> WheeledRobot:
 
 def _create_mid360s_lidar() -> LidarSensor:
     """Create an RTX lidar with a MID-360-like range and ROS 2 output."""
+    # Create the OmniLidar prim directly instead of referencing NVIDIA's
+    # Example_Rotary asset. The generic schema is bundled with Isaac Sim, so
+    # this also works when the simulator host cannot reach the asset server.
     lidar = Lidar.create(
         path="/World/PatrolRobot/mid360s_lidar",
-        config="Example_Rotary",
         tick_rate=10.0,
         translations=MID360_POSITION,
         aux_output_level="FULL",

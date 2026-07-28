@@ -13,6 +13,9 @@ slam_toolbox:
     scan_topic: /scan
     mode: mapping
     use_map_saver: true
+    # Rewritten by robot320_simulation.launch.py in continuing mode.
+    map_file_name: ""
+    map_start_at_dock: false
 
     throttle_scans: 1
     transform_publish_period: 0.02

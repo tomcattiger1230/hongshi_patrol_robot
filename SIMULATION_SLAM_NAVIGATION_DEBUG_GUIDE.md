@@ -104,6 +104,41 @@ pkill -f robot320_navigation_gui || true
 pgrep -af 'gz sim|parameter_bridge|patrol_robot_isaac_sim|robot320_simulation'
 ```
 
+### 2.1 默认持久续建模式
+
+`robot320_simulation.launch.py` 默认使用 `mode:=continuing`。默认文件前缀是：
+
+```text
+$HOME/robot320_maps/patrol_current
+```
+
+存在 `.posegraph` 和 `.data` 时，SLAM Toolbox 会加载旧图并继续添加扫描、闭环优化和
+扩建 `/map`；不存在时会从空白地图建立第一份持久图。运行期间每 30 秒自动更新：
+
+```text
+patrol_current.posegraph
+patrol_current.data
+patrol_current.yaml
+patrol_current.pgm
+```
+
+默认持续建图和导航：
+
+```bash
+ros2 launch robot320_localization_bringup robot320_simulation.launch.py \
+  gazebo:=true mode:=continuing navigation:=true exploration:=true \
+  rviz:=true gui:=true
+```
+
+需要立即保存时：
+
+```bash
+ros2 service call /robot320/save_persistent_map std_srvs/srv/Trigger '{}'
+```
+
+可以用 `persistent_map:=/absolute/path/map_prefix` 更换文件前缀。YAML/PGM 只有栅格
+图像，无法恢复历史雷达扫描和图优化约束；续建必须同时保留 `.posegraph` 和 `.data`。
+
 ## 3. Gazebo 自动建图
 
 ### 3.1 启动
@@ -153,8 +188,8 @@ ros2 action info /navigate_to_pose
 - `/bt_navigator` 为 `active [3]`；
 - `/navigate_to_pose` 存在 action server。
 
-这里的“接近实时地图保持”指地图随最新雷达数据持续更新，不是磁盘文件自动保存。磁盘
-地图仍需按下一节显式保存。
+`mapping` 和默认 `continuing` 模式下，地图随最新雷达数据持续更新。`continuing`
+还会每 30 秒自动持久化；显式 `mapping` 模式仍需按下一节手动保存。
 
 ### 3.3 保存地图
 

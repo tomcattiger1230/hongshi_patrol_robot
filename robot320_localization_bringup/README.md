@@ -62,9 +62,37 @@ Gazebo 和 Isaac Sim 使用一致的约 28 × 24 m 可探索区域，包含外�
 箱体、托盘堆、低矮障碍和圆柱罐，面积约为旧场景的四倍。通道为 2.35 m 最小转弯
 半径的自行车底盘保留了转弯空间。
 
+### 默认持续建图
+
+默认 `mode:=continuing`。它从
+`$HOME/robot320_maps/patrol_current.posegraph` 和 `.data` 恢复完整 SLAM 状态，继续
+接收扫描、闭环优化和扩建 `/map`。运行期间每 30 秒自动更新：
+
+```text
+$HOME/robot320_maps/patrol_current.posegraph
+$HOME/robot320_maps/patrol_current.data
+$HOME/robot320_maps/patrol_current.yaml
+$HOME/robot320_maps/patrol_current.pgm
+```
+
+首次运行找不到 pose graph 时会从空白地图建立基线。已有 YAML/PGM 无法转换回历史扫描
+和约束；只有 SLAM Toolbox 序列化的 pose graph 能用于续建。
+
+```bash
+ros2 launch robot320_localization_bringup robot320_simulation.launch.py \
+  mode:=continuing navigation:=true exploration:=true rviz:=true gui:=true
+```
+
+需要立即保存时：
+
+```bash
+ros2 service call /robot320/save_persistent_map std_srvs/srv/Trigger '{}'
+```
+
 ### 自动 SLAM 建图
 
-启动 Gazebo、MID-360 点云投影、SLAM Toolbox、Nav2 和前沿探索器：
+显式 `mode:=mapping` 会忽略旧 pose graph，从空白地图启动 Gazebo、MID-360 点云
+投影、SLAM Toolbox、Nav2 和前沿探索器：
 
 ```bash
 cd ~/Develop/ROS2_ws/patrol_ws
@@ -113,6 +141,7 @@ ros2 launch robot320_localization_bringup robot320_simulation.launch.py \
 候选点。规划器使用 Reeds-Shepp 曲线，必要时允许最高 0.20 m/s 的短距离倒车，以满足
 2.35 m 最小转弯半径。连续没有候选点时表示自动探索完成。
 
+`continuing` 模式会自动保存 pose graph、YAML 和 PGM。使用显式 `mode:=mapping` 时，
 保持建图 launch 运行，在第二个终端保存地图；确认 YAML 和 PGM 都已生成后，再回到
 第一个终端按 `Ctrl-C` 停车：
 

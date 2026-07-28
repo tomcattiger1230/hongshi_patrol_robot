@@ -102,8 +102,12 @@ cd ~/Develop/ROS2_ws/patrol_ws
 source src/hongshi_patrol_robot/scripts/source_lyrical_sim.sh
 
 ros2 launch robot320_localization_bringup robot320_simulation.launch.py \
-  mode:=mapping navigation:=true exploration:=true rviz:=true gui:=true
+  mode:=continuing navigation:=true exploration:=true rviz:=true gui:=true
 ```
+
+`continuing` 是默认模式：从 `$HOME/robot320_maps/patrol_current` 加载完整 SLAM pose
+graph，持续扩建 `/map`，并每 30 秒自动更新 pose graph、YAML 和 PGM。首次找不到
+pose graph 时会创建新图；传统 `mode:=localization` 只加载静态地图。
 
 通过地图鼠标点击发布 Nav2 目标：
 

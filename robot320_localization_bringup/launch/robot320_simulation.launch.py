@@ -1,5 +1,6 @@
 """Launch the obstacle scene with MID-360 projection, SLAM, and Nav2."""
 
+import os
 from pathlib import Path
 
 from ament_index_python.packages import get_package_share_directory
@@ -8,12 +9,15 @@ from launch.actions import (
     DeclareLaunchArgument,
     GroupAction,
     IncludeLaunchDescription,
+    LogInfo,
+    OpaqueFunction,
     TimerAction,
 )
 from launch.conditions import IfCondition, UnlessCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import (
     Command,
+    EnvironmentVariable,
     EqualsSubstitution,
     LaunchConfiguration,
     PathJoinSubstitution,
@@ -23,6 +27,81 @@ from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
 from nav2_common.launch import RewrittenYaml
+
+
+def _mapping_actions(context, *, localization_share, use_sim_time):
+    mode = LaunchConfiguration("mode").perform(context)
+    if mode not in ("mapping", "continuing"):
+        return []
+
+    prefix = os.path.abspath(
+        os.path.expanduser(LaunchConfiguration("persistent_map").perform(context))
+    )
+    has_posegraph = Path(f"{prefix}.posegraph").is_file() and Path(
+        f"{prefix}.data"
+    ).is_file()
+    continuing = mode == "continuing"
+    load_existing = continuing and has_posegraph
+    slam_params = RewrittenYaml(
+        source_file=str(
+            localization_share / "config" / "slam_toolbox_mapping.yaml"
+        ),
+        root_key="",
+        param_rewrites={
+            "map_file_name": prefix if load_existing else "",
+            "map_start_at_dock": "true" if load_existing else "false",
+        },
+        convert_types=True,
+    )
+
+    if load_existing:
+        status = f"Continuing persistent SLAM map: {prefix}"
+    elif continuing:
+        status = (
+            "No serialized pose graph found; starting a new persistent map at "
+            f"{prefix}. It will be loaded automatically on the next run."
+        )
+    else:
+        status = "Starting a new non-persistent mapping session"
+
+    actions = [
+        LogInfo(msg=status),
+        IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(
+                PathJoinSubstitution(
+                    [
+                        FindPackageShare("slam_toolbox"),
+                        "launch",
+                        "online_async_launch.py",
+                    ]
+                )
+            ),
+            launch_arguments={
+                "slam_params_file": slam_params,
+                "use_sim_time": use_sim_time,
+                "autostart": "true",
+            }.items(),
+        ),
+    ]
+    if continuing:
+        actions.append(
+            Node(
+                package="robot320_localization_bringup",
+                executable="persistent_map_manager",
+                name="persistent_map_manager",
+                output="screen",
+                parameters=[
+                    {
+                        "use_sim_time": use_sim_time,
+                        "map_prefix": prefix,
+                        "save_interval": LaunchConfiguration(
+                            "persistent_save_interval"
+                        ),
+                    }
+                ],
+            )
+        )
+    return actions
 
 
 def generate_launch_description() -> LaunchDescription:
@@ -193,24 +272,12 @@ def generate_launch_description() -> LaunchDescription:
         ),
     )
 
-    mapping = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(
-            PathJoinSubstitution(
-                [
-                    FindPackageShare("slam_toolbox"),
-                    "launch",
-                    "online_async_launch.py",
-                ]
-            )
-        ),
-        launch_arguments={
-            "slam_params_file": str(
-                localization_share / "config" / "slam_toolbox_mapping.yaml"
-            ),
+    mapping = OpaqueFunction(
+        function=_mapping_actions,
+        kwargs={
+            "localization_share": localization_share,
             "use_sim_time": use_sim_time,
-            "autostart": "true",
-        }.items(),
-        condition=IfCondition(EqualsSubstitution(mode, "mapping")),
+        },
     )
 
     localization = IncludeLaunchDescription(
@@ -275,14 +342,35 @@ def generate_launch_description() -> LaunchDescription:
         [
             DeclareLaunchArgument(
                 "mode",
-                default_value="mapping",
-                choices=["mapping", "localization"],
-                description="Use SLAM Toolbox mapping or map-server plus AMCL.",
+                default_value="continuing",
+                choices=["continuing", "mapping", "localization"],
+                description=(
+                    "Continue the persistent SLAM pose graph by default, "
+                    "start a fresh map, or use static map-server plus AMCL."
+                ),
             ),
             DeclareLaunchArgument(
                 "map",
                 default_value="",
                 description="Map YAML required when mode is localization.",
+            ),
+            DeclareLaunchArgument(
+                "persistent_map",
+                default_value=PathJoinSubstitution(
+                    [
+                        EnvironmentVariable("HOME"),
+                        "robot320_maps",
+                        "patrol_current",
+                    ]
+                ),
+                description=(
+                    "File prefix for persistent .posegraph/.data/.yaml/.pgm."
+                ),
+            ),
+            DeclareLaunchArgument(
+                "persistent_save_interval",
+                default_value="30.0",
+                description="Seconds between persistent pose-graph saves.",
             ),
             DeclareLaunchArgument(
                 "navigation",

@@ -33,6 +33,8 @@ setup(
             "robot320_localization_bringup.cmd_vel_relay:main",
             "keyboard_teleop = "
             "robot320_localization_bringup.keyboard_teleop:main",
+            "persistent_map_manager = "
+            "robot320_localization_bringup.persistent_map_manager:main",
         ],
     },
 )

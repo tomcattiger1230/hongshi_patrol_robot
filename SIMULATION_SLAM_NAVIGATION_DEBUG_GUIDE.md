@@ -205,6 +205,28 @@ ros2 action send_goal /navigate_to_pose nav2_msgs/action/NavigateToPose \
 目标应落在已知自由区，并为阿克曼转向预留足够空间。距离过短、目标紧贴墙面或要求车辆
 原地掉头时，Nav2 可能正确地判定无可行路径。
 
+### 4.1 使用键盘手动引导建图
+
+需要人工控制扫描路线时，必须关闭 Nav2 和自动探索，避免多个节点同时发布
+`/cmd_vel`：
+
+```bash
+ros2 launch robot320_localization_bringup robot320_simulation.launch.py \
+  gazebo:=true mode:=mapping navigation:=false exploration:=false \
+  rviz:=true gui:=true
+```
+
+在另一个已 source 的交互终端运行：
+
+```bash
+ros2 run robot320_localization_bringup keyboard_teleop
+```
+
+键位为 `W/S` 前进和倒车、`A/D` 左右转向、`R` 回正、空格停车、`Q` 退出，也支持
+方向键。松开运动键 `0.8 s` 后节点自动停车。按 `Ctrl-C` 或终端异常退出时也会连续
+发布停车指令。自行车模型不能原地转向，推荐沿场景外围走大环线，再逐步覆盖内部通道，
+避免驶入没有足够空间退出的死角。
+
 ## 5. Isaac Sim 自动建图
 
 Isaac Sim 和外部 ROS 节点分别在两个终端运行。必须先看到 Isaac 端就绪，再启动 SLAM。

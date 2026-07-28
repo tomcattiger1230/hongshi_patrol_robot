@@ -122,7 +122,29 @@ ros2 run nav2_map_server map_saver_cli -f maps/patrol_test
 ```
 
 如果要人工遥控建图，使用 `exploration:=false navigation:=false`，再通过 `/cmd_vel`
-低速绕场；不要同时启用 `demo:=true`，它会与 Nav2 竞争控制命令。
+低速绕场；不要同时启用 `demo:=true`，它会与键盘节点竞争控制命令。
+
+终端 1 启动手动建图（Gazebo）：
+
+```bash
+ros2 launch robot320_localization_bringup robot320_simulation.launch.py \
+  gazebo:=true mode:=mapping navigation:=false exploration:=false \
+  rviz:=true gui:=true
+```
+
+终端 2 必须在可交互终端中启动键盘遥控：
+
+```bash
+ros2 run robot320_localization_bringup keyboard_teleop
+```
+
+按住 `W/S` 前进或倒车，按住 `A/D` 左右转向，`R` 回正，空格立即停车，
+`Q` 或 `Ctrl-C` 停车并退出。方向键也可使用。节点按 `2.35 m` 最小转弯半径计算角
+速度，默认前进 `0.35 m/s`、倒车 `0.20 m/s`；松开按键超过 `0.8 s` 会自动发布停车
+指令。自行车底盘不能原地转向，应保持低速行驶并通过大弧线覆盖场景。
+
+Isaac Sim 手动建图时，终端 1 先运行 `run_isaac_sim.sh`，外部 mapping launch 改为
+`gazebo:=false`，键盘命令不变。
 
 ### 自动导航
 

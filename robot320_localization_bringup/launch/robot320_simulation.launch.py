@@ -70,6 +70,9 @@ def generate_launch_description() -> LaunchDescription:
         launch_arguments={
             "gui": LaunchConfiguration("gui"),
             "demo": LaunchConfiguration("demo"),
+            # This launch starts the navigation RViz below. Do not also start
+            # patrol_sim.rviz through a leaked parent `rviz` configuration.
+            "rviz": "false",
         }.items(),
         condition=IfCondition(gazebo),
     )

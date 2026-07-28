@@ -209,7 +209,8 @@
       <update_rate>10</update_rate>
       <visualize>false</visualize>
       <topic>/livox/lidar_scan</topic>
-      <frame_id>lidar_link</frame_id>
+      <!-- Gazebo Sim uses gz_frame_id for the transport message header. -->
+      <gz_frame_id>lidar_link</gz_frame_id>
       <lidar>
         <scan>
           <horizontal>

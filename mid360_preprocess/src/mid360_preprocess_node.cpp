@@ -12,6 +12,7 @@ public:
     {
         const auto input_topic = this->declare_parameter<std::string>("input_topic", "/livox/lidar");
         const auto output_topic = this->declare_parameter<std::string>("output_topic", "/filtered_points");
+        output_frame_ = this->declare_parameter<std::string>("output_frame", "");
         min_z_ = this->declare_parameter<double>("min_z", -0.2);
         max_z_ = this->declare_parameter<double>("max_z", 2.5);
         voxel_size_ = this->declare_parameter<double>("voxel_size", 0.05);
@@ -24,7 +25,10 @@ public:
         // 发布处理后的点云
         pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>(output_topic, rclcpp::QoS(10));
 
-        RCLCPP_INFO(this->get_logger(), "Mid360 Preprocess Node Started");
+        RCLCPP_INFO(
+            this->get_logger(),
+            "Mid360 Preprocess Node Started (output frame: %s)",
+            output_frame_.empty() ? "<input frame>" : output_frame_.c_str());
     }
 
 private:
@@ -54,11 +58,20 @@ private:
         sensor_msgs::msg::PointCloud2 output;
         pcl::toROSMsg(*cloud, output);
         output.header = msg->header;
+        if (!output_frame_.empty()) {
+            // Gazebo may publish its scoped sensor path (for example
+            // patrol_robot/base_footprint/mid360s) instead of the URDF link
+            // name. The points are already expressed in the lidar sensor
+            // coordinates, so normalizing only the header makes the cloud
+            // match the robot_state_publisher TF tree.
+            output.header.frame_id = output_frame_;
+        }
         pub_->publish(output);
     }
 
     rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr sub_;
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pub_;
+    std::string output_frame_;
     double min_z_;
     double max_z_;
     double voxel_size_;

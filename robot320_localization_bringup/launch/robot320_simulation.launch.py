@@ -110,6 +110,9 @@ def generate_launch_description() -> LaunchDescription:
                 "use_sim_time": use_sim_time,
                 "input_topic": "/livox/lidar",
                 "output_topic": "/filtered_points",
+                # Gazebo can expose a scoped sensor path as the PointCloud2
+                # frame. Normalize it to the URDF/TF lidar link for RViz.
+                "output_frame": "lidar_link",
                 "min_z": -1.35,
                 "max_z": -0.10,
                 "voxel_size": 0.05,

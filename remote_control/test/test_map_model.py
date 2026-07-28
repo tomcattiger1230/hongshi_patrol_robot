@@ -11,6 +11,7 @@ from remote_control.map_model import (
     pose_uncertainty,
     project_laser_scan,
     scan_alignment_score,
+    save_map_yaml,
 )
 
 
@@ -124,6 +125,26 @@ def test_load_map_yaml_reads_pgm_and_flips_image_rows(tmp_path):
     assert snapshot.geometry.origin_x == pytest.approx(-1.0)
     assert snapshot.geometry.origin_yaw == pytest.approx(0.25)
     assert snapshot.data == (0, -1, 100, -1)
+
+
+def test_save_map_yaml_round_trips_trinary_snapshot(tmp_path):
+    original = map_snapshot(
+        width=3,
+        height=2,
+        resolution=0.05,
+        origin_x=-1.5,
+        origin_y=2.25,
+        origin_yaw=0.1,
+        data=[0, 100, -1, -1, 0, 100],
+    )
+
+    yaml_path, pgm_path = save_map_yaml(original, tmp_path / "saved_map")
+    restored = load_map_yaml(yaml_path)
+
+    assert yaml_path.name == "saved_map.yaml"
+    assert pgm_path.is_file()
+    assert restored.geometry == original.geometry
+    assert restored.data == original.data
 
 
 def test_project_laser_scan_uses_sensor_map_transform_and_filters_ranges():

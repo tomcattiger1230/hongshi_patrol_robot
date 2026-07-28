@@ -6,6 +6,7 @@ from pathlib import Path
 import time
 
 import rclpy
+from rcl_interfaces.msg import SetParametersResult
 from rclpy.node import Node
 from slam_toolbox.srv import SaveMap, SerializePoseGraph
 from std_srvs.srv import Trigger
@@ -39,6 +40,7 @@ class PersistentMapManager(Node):
         self._busy = False
         self._started_at = time.monotonic()
         self._last_save = self._started_at
+        self.add_on_set_parameters_callback(self._on_parameters)
         self.create_timer(1.0, self._tick)
         self.create_service(
             Trigger, "/robot320/save_persistent_map", self._save_service
@@ -47,6 +49,29 @@ class PersistentMapManager(Node):
             f"Persistent SLAM output: {self._prefix} "
             f"(every {self._interval:.0f} s)"
         )
+
+    def _on_parameters(self, parameters) -> SetParametersResult:
+        for parameter in parameters:
+            if parameter.name != "map_prefix":
+                continue
+            if self._busy:
+                return SetParametersResult(
+                    successful=False,
+                    reason="A persistent map save is currently running",
+                )
+            prefix = str(parameter.value).strip()
+            if not prefix:
+                return SetParametersResult(
+                    successful=False,
+                    reason="map_prefix must not be empty",
+                )
+            self._prefix = str(Path(prefix).expanduser().resolve())
+            Path(self._prefix).parent.mkdir(parents=True, exist_ok=True)
+            self._last_save = time.monotonic()
+            self.get_logger().info(
+                f"Persistent SLAM output changed to: {self._prefix}"
+            )
+        return SetParametersResult(successful=True)
 
     def _services_ready(self) -> bool:
         return (

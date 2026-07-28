@@ -19,6 +19,7 @@ from .map_model import (
     pose_uncertainty,
     project_laser_scan,
     scan_alignment_score,
+    save_map_yaml,
     yaw_from_quaternion,
 )
 
@@ -47,6 +48,7 @@ try:
     from PySide6.QtWidgets import (
         QApplication,
         QDoubleSpinBox,
+        QFileDialog,
         QFormLayout,
         QFrame,
         QGraphicsPixmapItem,
@@ -56,6 +58,7 @@ try:
         QHBoxLayout,
         QLabel,
         QMainWindow,
+        QMessageBox,
         QPushButton,
         QScrollArea,
         QSizePolicy,
@@ -71,10 +74,12 @@ try:
     from action_msgs.msg import GoalStatus
     from geometry_msgs.msg import PoseWithCovarianceStamped
     from nav2_msgs.action import NavigateToPose
+    from nav2_msgs.srv import LoadMap
     from nav_msgs.msg import OccupancyGrid, Path as NavPath
     from rclpy.action import ActionClient
     from rclpy.executors import SingleThreadedExecutor
     from rclpy.parameter import Parameter
+    from rclpy.parameter_client import AsyncParameterClient
     from rclpy.qos import (
         DurabilityPolicy,
         QoSProfile,
@@ -88,12 +93,20 @@ try:
 except ImportError as exc:  # pragma: no cover - depends on ROS 2 installation.
     rclpy = None
     DeserializePoseGraph = None
+    SaveMap = None
+    SerializePoseGraph = None
     _ROS_IMPORT_ERROR = exc
 else:
     try:
-        from slam_toolbox.srv import DeserializePoseGraph
+        from slam_toolbox.srv import (
+            DeserializePoseGraph,
+            SaveMap,
+            SerializePoseGraph,
+        )
     except ImportError:  # pragma: no cover - optional outside SLAM hosts.
         DeserializePoseGraph = None
+        SaveMap = None
+        SerializePoseGraph = None
     _ROS_IMPORT_ERROR = None
 
 
@@ -453,6 +466,7 @@ if QApplication is not None:
         local_trajectory_received = Signal(object)
         localization_backend_changed = Signal(str)
         relocalization_changed = Signal(str)
+        map_operation_changed = Signal(str)
         error = Signal(str)
 
         def __init__(
@@ -481,6 +495,10 @@ if QApplication is not None:
             self.global_localization_client = None
             self.nomotion_update_client = None
             self.slam_deserialize_client = None
+            self.slam_serialize_client = None
+            self.slam_save_map_client = None
+            self.map_server_load_client = None
+            self.map_manager_parameter_client = None
             self.goal_handle = None
             self._owns_rclpy = False
             self._last_tf_emit_ns = 0
@@ -573,6 +591,22 @@ if QApplication is not None:
                         DeserializePoseGraph,
                         "/slam_toolbox/deserialize_map",
                     )
+                    self.slam_serialize_client = self.node.create_client(
+                        SerializePoseGraph,
+                        "/slam_toolbox/serialize_map",
+                    )
+                    self.slam_save_map_client = self.node.create_client(
+                        SaveMap,
+                        "/slam_toolbox/save_map",
+                    )
+                self.map_server_load_client = self.node.create_client(
+                    LoadMap,
+                    "/map_server/load_map",
+                )
+                self.map_manager_parameter_client = AsyncParameterClient(
+                    self.node,
+                    "persistent_map_manager",
+                )
                 self.tf_buffer = Buffer()
                 self.tf_listener = TransformListener(
                     self.tf_buffer,
@@ -765,6 +799,172 @@ if QApplication is not None:
                     )
                     for x_m, y_m in points
                 )
+            )
+
+        @Slot(str)
+        def save_map_session(self, prefix: str) -> None:
+            prefix = str(Path(prefix).expanduser().resolve())
+            if (
+                self.slam_serialize_client is None
+                or self.slam_save_map_client is None
+                or not self.slam_serialize_client.service_is_ready()
+                or not self.slam_save_map_client.service_is_ready()
+            ):
+                self.map_operation_changed.emit(
+                    f"栅格地图已保存：{prefix}.yaml（当前无 SLAM pose graph 服务）"
+                )
+                return
+            request = SerializePoseGraph.Request()
+            request.filename = prefix
+            self.map_operation_changed.emit(
+                f"正在保存 pose graph：{prefix}.posegraph/.data"
+            )
+            future = self.slam_serialize_client.call_async(request)
+            future.add_done_callback(
+                lambda result: self._on_pose_graph_exported(result, prefix)
+            )
+
+        def _on_pose_graph_exported(self, future, prefix: str) -> None:
+            try:
+                response = future.result()
+            except Exception as exc:
+                self.map_operation_changed.emit(f"保存 pose graph 失败：{exc}")
+                return
+            if response.result != SerializePoseGraph.Response.RESULT_SUCCESS:
+                self.map_operation_changed.emit(
+                    f"保存 pose graph 失败，结果码：{response.result}"
+                )
+                return
+            request = SaveMap.Request()
+            request.name.data = prefix
+            future = self.slam_save_map_client.call_async(request)
+            future.add_done_callback(
+                lambda result: self._on_map_exported(result, prefix)
+            )
+
+        def _on_map_exported(self, future, prefix: str) -> None:
+            try:
+                response = future.result()
+            except Exception as exc:
+                self.map_operation_changed.emit(f"保存地图图像失败：{exc}")
+                return
+            if response.result != SaveMap.Response.RESULT_SUCCESS:
+                self.map_operation_changed.emit(
+                    f"保存地图图像失败，结果码：{response.result}"
+                )
+                return
+            self.map_operation_changed.emit(
+                f"地图会话已保存：{prefix}.yaml/.pgm/.posegraph/.data"
+            )
+
+        @Slot(str)
+        def load_map_session(self, yaml_path: str) -> None:
+            yaml_path = str(Path(yaml_path).expanduser().resolve())
+            prefix = str(Path(yaml_path).with_suffix(""))
+            if (
+                self.slam_deserialize_client is not None
+                and self.slam_deserialize_client.service_is_ready()
+            ):
+                if not Path(f"{prefix}.posegraph").is_file() or not Path(
+                    f"{prefix}.data"
+                ).is_file():
+                    self.map_operation_changed.emit(
+                        "持续建图必须同时存在同名 .posegraph 和 .data 文件"
+                    )
+                    return
+                self._cancel_active_goal()
+                self.pose_graph = prefix
+                parameter_client = self.map_manager_parameter_client
+                if (
+                    parameter_client is not None
+                    and parameter_client.services_are_ready()
+                ):
+                    future = parameter_client.set_parameters(
+                        [
+                            Parameter(
+                                "map_prefix",
+                                Parameter.Type.STRING,
+                                prefix,
+                            )
+                        ]
+                    )
+                    future.add_done_callback(
+                        lambda result: self._on_map_prefix_changed(result, prefix)
+                    )
+                    return
+                self.map_operation_changed.emit(
+                    "未发现持久化管理器；载入后不会自动保存"
+                )
+                self._deserialize_loaded_map(prefix)
+                return
+
+            if (
+                self.map_server_load_client is not None
+                and self.map_server_load_client.service_is_ready()
+            ):
+                self._cancel_active_goal()
+                request = LoadMap.Request()
+                request.map_url = yaml_path
+                self.map_operation_changed.emit(f"正在载入静态地图：{yaml_path}")
+                future = self.map_server_load_client.call_async(request)
+                future.add_done_callback(
+                    lambda result: self._on_static_map_loaded(result, yaml_path)
+                )
+                return
+            self.map_operation_changed.emit(
+                "没有可用的 SLAM Toolbox 或 Map Server 载入服务"
+            )
+
+        def _on_map_prefix_changed(self, future, prefix: str) -> None:
+            try:
+                results = future.result()
+            except Exception as exc:
+                self.map_operation_changed.emit(f"切换自动保存路径失败：{exc}")
+                return
+            failed = next(
+                (result.reason for result in results if not result.successful),
+                "",
+            )
+            if failed:
+                self.map_operation_changed.emit(f"切换自动保存路径失败：{failed}")
+                return
+            self._deserialize_loaded_map(prefix)
+
+        def _deserialize_loaded_map(self, prefix: str) -> None:
+            request = DeserializePoseGraph.Request()
+            request.filename = prefix
+            request.match_type = DeserializePoseGraph.Request.START_AT_FIRST_NODE
+            self.map_operation_changed.emit(
+                f"正在载入持续地图：{prefix}（按建图起点匹配）"
+            )
+            future = self.slam_deserialize_client.call_async(request)
+            future.add_done_callback(
+                lambda result: self._on_pose_graph_loaded(result, prefix)
+            )
+
+        def _on_pose_graph_loaded(self, future, prefix: str) -> None:
+            try:
+                future.result()
+            except Exception as exc:
+                self.map_operation_changed.emit(f"载入持续地图失败：{exc}")
+                return
+            self.map_operation_changed.emit(
+                f"已载入 {prefix}；若车辆不在建图起点，请重新设置初始位姿"
+            )
+
+        def _on_static_map_loaded(self, future, yaml_path: str) -> None:
+            try:
+                response = future.result()
+            except Exception as exc:
+                self.map_operation_changed.emit(f"载入静态地图失败：{exc}")
+                return
+            if response.result != LoadMap.Response.RESULT_SUCCESS:
+                self.map_operation_changed.emit(
+                    f"载入静态地图失败，结果码：{response.result}"
+                )
+                return
+            self.map_operation_changed.emit(
+                f"静态地图已载入：{yaml_path}；请重新设置初始位姿"
             )
 
         @Slot(float, float, float, str)
@@ -1021,6 +1221,8 @@ if QApplication is not None:
         initial_pose_requested = Signal(float, float, float, str)
         global_relocalize_requested = Signal()
         nomotion_update_requested = Signal()
+        map_save_requested = Signal(str)
+        map_load_requested = Signal(str)
 
         def __init__(
             self,
@@ -1037,6 +1239,7 @@ if QApplication is not None:
             self.snapshot: Optional[MapSnapshot] = None
             self.goal: Optional[tuple[float, float, float]] = None
             self.localization_backend = "waiting"
+            self.current_map_file = str(Path(map_file).expanduser())
             self._closing = False
             self.setWindowTitle("Robot320 地图导航")
             self.resize(1280, 900)
@@ -1061,6 +1264,8 @@ if QApplication is not None:
             self.initial_pose_requested.connect(self.worker.set_initial_pose)
             self.global_relocalize_requested.connect(self.worker.global_relocalize)
             self.nomotion_update_requested.connect(self.worker.request_nomotion_update)
+            self.map_save_requested.connect(self.worker.save_map_session)
+            self.map_load_requested.connect(self.worker.load_map_session)
             self.worker.map_received.connect(self._on_map)
             self.worker.pose_received.connect(self._on_pose)
             self.worker.scan_received.connect(self._on_scan_points)
@@ -1081,6 +1286,7 @@ if QApplication is not None:
             self.worker.relocalization_changed.connect(
                 self.relocalization_value.setText
             )
+            self.worker.map_operation_changed.connect(self._on_map_operation)
             self.worker.error.connect(self._on_error)
             self.worker_thread.start()
 
@@ -1151,6 +1357,24 @@ if QApplication is not None:
             map_layout.addRow("雷达匹配", self.scan_value)
             map_layout.addRow("鼠标", self.cursor_value)
             layout.addWidget(map_group)
+
+            map_file_group = QGroupBox("地图文件")
+            map_file_layout = QVBoxLayout(map_file_group)
+            self.map_file_value = QLabel(self.current_map_file)
+            self._configure_value_label(self.map_file_value)
+            save_map_button = QPushButton("保存当前地图…")
+            save_map_button.setMinimumHeight(38)
+            save_map_button.clicked.connect(self._save_current_map)
+            load_map_button = QPushButton("载入已有地图…")
+            load_map_button.setMinimumHeight(38)
+            load_map_button.clicked.connect(self._load_map_file)
+            self.map_operation_value = QLabel("可保存或切换 ROS 地图会话")
+            self._configure_value_label(self.map_operation_value)
+            map_file_layout.addWidget(self.map_file_value)
+            map_file_layout.addWidget(save_map_button)
+            map_file_layout.addWidget(load_map_button)
+            map_file_layout.addWidget(self.map_operation_value)
+            layout.addWidget(map_file_group)
 
             goal_group = QGroupBox("地图选中位姿")
             goal_layout = QFormLayout(goal_group)
@@ -1271,6 +1495,74 @@ if QApplication is not None:
             spin.setSingleStep(0.1)
             spin.setSuffix(suffix)
             return spin
+
+        def _save_current_map(self) -> None:
+            if self.snapshot is None:
+                self._on_error("尚未收到或预载地图，无法保存")
+                return
+            default_path = self.current_map_file or str(
+                Path.home() / "robot320_maps" / "patrol_current.yaml"
+            )
+            selected_path, _selected_filter = QFileDialog.getSaveFileName(
+                self,
+                "保存当前 Robot320 地图",
+                default_path,
+                "ROS 地图 (*.yaml);;所有文件 (*)",
+            )
+            if not selected_path:
+                return
+            try:
+                yaml_path, _pgm_path = save_map_yaml(
+                    self.snapshot,
+                    selected_path,
+                )
+            except Exception as exc:
+                QMessageBox.critical(self, "地图保存失败", str(exc))
+                return
+            self.current_map_file = str(yaml_path)
+            self.map_file_value.setText(self.current_map_file)
+            prefix = str(yaml_path.with_suffix(""))
+            self.map_operation_value.setText("栅格地图已保存，正在保存完整会话……")
+            self.map_save_requested.emit(prefix)
+
+        def _load_map_file(self) -> None:
+            start_path = self.current_map_file or str(
+                Path.home() / "robot320_maps"
+            )
+            selected_path, _selected_filter = QFileDialog.getOpenFileName(
+                self,
+                "载入 Robot320 地图",
+                start_path,
+                "ROS 地图 (*.yaml *.yml);;所有文件 (*)",
+            )
+            if not selected_path:
+                return
+            confirmation = QMessageBox.question(
+                self,
+                "确认载入地图",
+                "载入会取消当前导航并替换后端地图。\n"
+                "持续建图模式要求同目录存在同名 .posegraph 和 .data。\n"
+                "是否继续？",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if confirmation != QMessageBox.StandardButton.Yes:
+                return
+            try:
+                snapshot = load_map_yaml(selected_path, self.map_frame)
+            except Exception as exc:
+                QMessageBox.critical(self, "地图载入失败", str(exc))
+                return
+            self.current_map_file = str(Path(selected_path).expanduser().resolve())
+            self.map_file_value.setText(self.current_map_file)
+            self._display_map(snapshot, f"文件预览 · {Path(selected_path).name}")
+            self.map_operation_value.setText("文件已读取，正在切换 ROS 后端地图……")
+            self.map_load_requested.emit(self.current_map_file)
+
+        @Slot(str)
+        def _on_map_operation(self, message: str) -> None:
+            self.map_operation_value.setText(message)
+            self.statusBar().showMessage(message, 10000)
 
         def _preload_map(self, map_file: str) -> None:
             if not map_file:

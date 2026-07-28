@@ -213,6 +213,61 @@ def load_map_yaml(path: str | Path, frame_id: str = "map") -> MapSnapshot:
     )
 
 
+def save_map_yaml(
+    snapshot: MapSnapshot,
+    path: str | Path,
+) -> tuple[Path, Path]:
+    """Save a snapshot as a ROS map-server YAML and binary PGM."""
+    yaml_path = Path(path).expanduser().resolve()
+    if yaml_path.suffix.lower() not in {".yaml", ".yml"}:
+        yaml_path = yaml_path.with_suffix(".yaml")
+    pgm_path = yaml_path.with_suffix(".pgm")
+    yaml_path.parent.mkdir(parents=True, exist_ok=True)
+
+    geometry = snapshot.geometry
+    pixels = bytearray(geometry.width * geometry.height)
+    for image_row in range(geometry.height):
+        grid_y = geometry.height - 1 - image_row
+        source_offset = grid_y * geometry.width
+        target_offset = image_row * geometry.width
+        for column in range(geometry.width):
+            occupancy = snapshot.data[source_offset + column]
+            if occupancy < 0:
+                shade = 205
+            elif occupancy >= 65:
+                shade = 0
+            elif occupancy <= 25:
+                shade = 254
+            else:
+                shade = 205
+            pixels[target_offset + column] = shade
+
+    pgm_path.write_bytes(
+        f"P5\n# Robot320 map\n{geometry.width} {geometry.height}\n255\n".encode()
+        + pixels
+    )
+    yaml_path.write_text(
+        "\n".join(
+            [
+                f"image: {pgm_path.name}",
+                "mode: trinary",
+                f"resolution: {geometry.resolution:.9g}",
+                (
+                    "origin: "
+                    f"[{geometry.origin_x:.9g}, {geometry.origin_y:.9g}, "
+                    f"{geometry.origin_yaw:.9g}]"
+                ),
+                "negate: 0",
+                "occupied_thresh: 0.65",
+                "free_thresh: 0.196",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    return yaml_path, pgm_path
+
+
 def project_laser_scan(
     ranges: Sequence[float],
     *,

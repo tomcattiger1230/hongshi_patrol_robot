@@ -342,14 +342,12 @@ def _create_mid360s_lidar() -> LidarSensor:
     lidar_prim = stage_utils.get_current_stage().GetPrimAtPath(lidar_path)
     if not lidar_prim.IsValid():
         raise RuntimeError(f"Failed to attach RTX lidar at {lidar_path}")
+    if lidar_prim is None or not lidar_prim.IsValid():
+        raise RuntimeError("Isaac Sim failed to create the local RTX lidar")
     lidar = Lidar(
         str(lidar_prim.GetPath()),
         tick_rate=10.0,
         aux_output_level="FULL",
-        # Re-author a chassis-local pose after changing the USD namespace.
-        # Otherwise the staging transform may be interpreted in world space.
-        translations=MID360_POSITION.reshape(1, 3),
-        orientations=np.array([[1.0, 0.0, 0.0, 0.0]]),
         attributes={
             "omni:sensor:Core:nearRangeM": 0.10,
             "omni:sensor:Core:farRangeM": 70.0,

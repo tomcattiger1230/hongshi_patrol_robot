@@ -677,8 +677,9 @@ if QApplication is not None:
             message.pose.covariance[35] = math.radians(15.0) ** 2
             self.initial_pose_pub.publish(message)
             self.relocalization_changed.emit(
-                "已发布粗略初始位姿；请观察蓝色机器人标记是否稳定"
+                "已发布粗略初始位姿；正在用连续 MID-360 扫描更新粒子"
             )
+            self._schedule_amcl_scan_updates()
 
         @Slot()
         def global_relocalize(self) -> None:
@@ -753,8 +754,22 @@ if QApplication is not None:
                 self.relocalization_changed.emit(f"全局重定位请求失败：{exc}")
                 return
             self.relocalization_changed.emit(
-                "全局搜索已启动；请手动低速走大弧线，待定位置信度收敛后再导航"
+                "全局搜索已启动并自动触发扫描更新；请继续低速走大弧线"
             )
+            self._schedule_amcl_scan_updates()
+
+        def _schedule_amcl_scan_updates(self) -> None:
+            for delay_ms in (300, 900, 1800):
+                QTimer.singleShot(delay_ms, self._request_amcl_scan_update)
+
+        def _request_amcl_scan_update(self) -> None:
+            if (
+                self.nomotion_update_client is None
+                or not self.nomotion_update_client.service_is_ready()
+            ):
+                return
+            future = self.nomotion_update_client.call_async(Empty.Request())
+            future.add_done_callback(self._on_nomotion_update_done)
 
         @Slot()
         def request_nomotion_update(self) -> None:

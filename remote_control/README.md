@@ -213,6 +213,8 @@ Nav2 必须使用同一个 domain ID。
 
 重定位会先取消正在执行的导航。AMCL 全局重定位调用
 `/reinitialize_global_localization`，强制更新调用 `/request_nomotion_update`。
+GUI 在发布 AMCL 粗略位姿或启动全局搜索后会自动触发三次无运动扫描更新，使车辆静止时
+也能利用连续 MID-360 扫描开始收敛。
 持续建图的选区重定位调用 SLAM Toolbox `/slam_toolbox/deserialize_map` 的
 `START_AT_GIVEN_POSE`，建图起点重匹配使用 `START_AT_FIRST_NODE`。GUI 同时读取
 `/amcl_pose` 和 SLAM Toolbox `/pose` 的协方差；在置信度尚未收敛时不要发送导航目标。

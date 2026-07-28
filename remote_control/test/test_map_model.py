@@ -5,8 +5,10 @@ import pytest
 from remote_control.map_model import (
     MapGeometry,
     goal_yaw,
+    load_map_yaml,
     map_snapshot,
     pose_uncertainty,
+    project_laser_scan,
 )
 
 
@@ -90,3 +92,48 @@ def test_pose_uncertainty_uses_largest_planar_variance():
 
     assert position_sigma == pytest.approx(0.3)
     assert math.degrees(yaw_sigma) == pytest.approx(10.0)
+
+
+def test_load_map_yaml_reads_pgm_and_flips_image_rows(tmp_path):
+    (tmp_path / "map.pgm").write_bytes(
+        b"P5\n# top row then bottom row\n2 2\n255\n"
+        + bytes([0, 205, 254, 100])
+    )
+    (tmp_path / "map.yaml").write_text(
+        "\n".join(
+            [
+                "image: map.pgm",
+                "resolution: 0.05",
+                "origin: [-1.0, -2.0, 0.25]",
+                "negate: 0",
+                "occupied_thresh: 0.65",
+                "free_thresh: 0.196",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    snapshot = load_map_yaml(tmp_path / "map.yaml")
+
+    assert snapshot.geometry.width == 2
+    assert snapshot.geometry.height == 2
+    assert snapshot.geometry.resolution == pytest.approx(0.05)
+    assert snapshot.geometry.origin_x == pytest.approx(-1.0)
+    assert snapshot.geometry.origin_yaw == pytest.approx(0.25)
+    assert snapshot.data == (0, -1, 100, -1)
+
+
+def test_project_laser_scan_uses_sensor_map_transform_and_filters_ranges():
+    points = project_laser_scan(
+        [1.0, math.inf, 3.0],
+        angle_min=0.0,
+        angle_increment=math.pi / 2.0,
+        sensor_x=2.0,
+        sensor_y=3.0,
+        sensor_yaw=math.pi / 2.0,
+        range_min=0.2,
+        range_max=2.0,
+    )
+
+    assert len(points) == 1
+    assert points[0] == pytest.approx((2.0, 4.0))

@@ -176,6 +176,20 @@ ros2 launch robot320_localization_bringup robot320_simulation.launch.py \
   --domain-id 20 --use-sim-time
 ```
 
+GUI 默认立即读取
+`~/robot320_maps/patrol_current.yaml` 和同目录的 PGM，因此即使 ROS 后端尚未启动也能
+预览上次地图。后端发布 `/map` 后会自动切换到实时地图。需要载入其他地图或 pose
+graph 时：
+
+```bash
+./scripts/uv_run.sh desktop robot320_navigation_gui \
+  --map-file /path/to/site.yaml \
+  --pose-graph /path/to/site
+```
+
+地图中的红点是 `/scan` 根据当前 `map -> lidar_link` 变换投影后的 MID-360 匹配结果。
+红点贴合黑色墙面表示当前雷达匹配合理；整体错位通常表示初始位姿或里程计存在偏差。
+
 本机仿真默认 ROS domain 为 0，此时把上述参数改为 `--domain-id 0`。GUI、仿真器和
 Nav2 必须使用同一个 domain ID。
 
@@ -183,18 +197,24 @@ Nav2 必须使用同一个 domain ID。
 
 1. 等待右上角显示“Nav2 已连接”。
 2. 如果大致知道机器人位置，在地图上点击并拖动朝向，然后选择“将选中位姿设为初始位置”。
-3. 如果完全不知道位置，选择“不知道位置：全局重定位”。
-4. 全局重定位后使用综合遥控面板，让自行车底盘低速走一段大弧线或 S 形路径；不能要求
+   AMCL 会接收 `/initialpose`；持续建图模式会重新载入序列化 pose graph，并让下一帧
+   MID-360 扫描在所选区域附近匹配。
+3. AMCL 静态定位模式中，完全不知道位置时可选择“不知道位置：全局重定位”。持续建图
+   模式不提供全地图粒子搜索，按钮会改成“回到建图起点：雷达重匹配”，且车辆必须确实
+   位于原始建图起点附近。
+4. 重定位后使用综合遥控面板，让自行车底盘低速走一段大弧线或 S 形路径；不能要求
    它像差速底盘一样原地旋转。
-5. 等待“定位置信度”由“不确定”变为“正在收敛”或“良好”；必要时选择
-   “使用当前扫描强制更新”。
+5. 等待“定位置信度”由“不确定”变为“正在收敛”或“良好”，并确认红色雷达点贴合
+   地图墙面。AMCL 可选择“使用当前扫描强制更新”；SLAM Toolbox 需移动至少 0.10 m
+   或转向 0.05 rad 才会处理下一帧。
 6. 在空闲区域点击并拖动目标朝向，确认坐标后选择“发送目标，开始自动导航”。
 7. GUI 持续显示剩余距离、预计时间和最终结果；“取消当前导航”可随时终止。
 
-重定位会先取消正在执行的导航。全局重定位调用 AMCL
-`/reinitialize_global_localization`，在地图自由空间均匀初始化粒子；强制更新调用
-`/request_nomotion_update`。GUI 通过 `/amcl_pose` 协方差显示位置和朝向的标准差。
-在置信度尚未收敛时不要发送自动导航目标。
+重定位会先取消正在执行的导航。AMCL 全局重定位调用
+`/reinitialize_global_localization`，强制更新调用 `/request_nomotion_update`。
+持续建图的选区重定位调用 SLAM Toolbox `/slam_toolbox/deserialize_map` 的
+`START_AT_GIVEN_POSE`，建图起点重匹配使用 `START_AT_FIRST_NODE`。GUI 同时读取
+`/amcl_pose` 和 SLAM Toolbox `/pose` 的协方差；在置信度尚未收敛时不要发送导航目标。
 
 地图采用 ROS `OccupancyGrid` 坐标原点、分辨率和旋转信息进行换算，目标消息的
 `frame_id` 使用地图实际 frame。GUI 不会自行绕过 Nav2 安全检查：目标能否接受及能否

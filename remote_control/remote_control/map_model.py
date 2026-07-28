@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import ast
 from dataclasses import dataclass
 import math
+from pathlib import Path
 from typing import Sequence
 
 
@@ -147,3 +149,147 @@ def pose_uncertainty(covariance: Sequence[float]) -> tuple[float, float]:
     position_variance = max(0.0, float(covariance[0]), float(covariance[7]))
     yaw_variance = max(0.0, float(covariance[35]))
     return math.sqrt(position_variance), math.sqrt(yaw_variance)
+
+
+def load_map_yaml(path: str | Path, frame_id: str = "map") -> MapSnapshot:
+    """Load a ROS map-server YAML and PGM without requiring PyYAML."""
+    yaml_path = Path(path).expanduser().resolve()
+    values: dict[str, str] = {}
+    for raw_line in yaml_path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.split("#", 1)[0].strip()
+        if not line or ":" not in line:
+            continue
+        key, value = line.split(":", 1)
+        values[key.strip()] = value.strip()
+
+    required = {"image", "resolution", "origin"}
+    missing = sorted(required.difference(values))
+    if missing:
+        raise ValueError(f"map YAML is missing: {', '.join(missing)}")
+
+    image_value = values["image"]
+    if image_value[:1] in {"'", '"'}:
+        image_value = str(ast.literal_eval(image_value))
+    image_path = Path(image_value).expanduser()
+    if not image_path.is_absolute():
+        image_path = yaml_path.parent / image_path
+
+    width, height, pixels = _load_pgm(image_path)
+    origin = ast.literal_eval(values["origin"])
+    if not isinstance(origin, (list, tuple)) or len(origin) != 3:
+        raise ValueError("map origin must be [x, y, yaw]")
+    negate = bool(int(values.get("negate", "0")))
+    occupied_threshold = float(values.get("occupied_thresh", "0.65"))
+    free_threshold = float(values.get("free_thresh", "0.196"))
+
+    data: list[int] = []
+    for grid_y in range(height):
+        image_row = height - 1 - grid_y
+        row_offset = image_row * width
+        for column in range(width):
+            shade = pixels[row_offset + column]
+            occupancy = shade / 255.0 if negate else (255 - shade) / 255.0
+            if occupancy > occupied_threshold:
+                data.append(100)
+            elif occupancy < free_threshold:
+                data.append(0)
+            else:
+                data.append(-1)
+
+    return map_snapshot(
+        width=width,
+        height=height,
+        resolution=float(values["resolution"]),
+        origin_x=float(origin[0]),
+        origin_y=float(origin[1]),
+        origin_yaw=float(origin[2]),
+        data=data,
+        frame_id=frame_id,
+    )
+
+
+def project_laser_scan(
+    ranges: Sequence[float],
+    *,
+    angle_min: float,
+    angle_increment: float,
+    sensor_x: float,
+    sensor_y: float,
+    sensor_yaw: float,
+    range_min: float,
+    range_max: float,
+    max_points: int = 720,
+) -> tuple[tuple[float, float], ...]:
+    """Project a planar scan into map-frame points."""
+    if max_points <= 0:
+        raise ValueError("max_points must be positive")
+    step = max(1, math.ceil(len(ranges) / max_points))
+    cosine = math.cos(sensor_yaw)
+    sine = math.sin(sensor_yaw)
+    points: list[tuple[float, float]] = []
+    for index in range(0, len(ranges), step):
+        distance = float(ranges[index])
+        if not math.isfinite(distance) or not range_min <= distance <= range_max:
+            continue
+        angle = angle_min + index * angle_increment
+        local_x = distance * math.cos(angle)
+        local_y = distance * math.sin(angle)
+        points.append(
+            (
+                sensor_x + cosine * local_x - sine * local_y,
+                sensor_y + sine * local_x + cosine * local_y,
+            )
+        )
+    return tuple(points)
+
+
+def _load_pgm(path: Path) -> tuple[int, int, bytes]:
+    payload = path.read_bytes()
+    position = 0
+
+    def token() -> bytes:
+        nonlocal position
+        while position < len(payload):
+            if payload[position : position + 1] == b"#":
+                newline = payload.find(b"\n", position)
+                position = len(payload) if newline < 0 else newline + 1
+            elif payload[position : position + 1].isspace():
+                position += 1
+            else:
+                break
+        start = position
+        while position < len(payload):
+            current = payload[position : position + 1]
+            if current.isspace() or current == b"#":
+                break
+            position += 1
+        if start == position:
+            raise ValueError(f"invalid PGM header: {path}")
+        return payload[start:position]
+
+    magic = token()
+    width = int(token())
+    height = int(token())
+    max_value = int(token())
+    if width <= 0 or height <= 0 or not 0 < max_value <= 255:
+        raise ValueError(f"unsupported PGM geometry: {path}")
+
+    if magic == b"P5":
+        if position >= len(payload) or not payload[position : position + 1].isspace():
+            raise ValueError(f"invalid binary PGM separator: {path}")
+        if payload[position : position + 2] == b"\r\n":
+            position += 2
+        else:
+            position += 1
+        pixels = payload[position : position + width * height]
+    elif magic == b"P2":
+        pixels = bytes(round(int(token()) * 255 / max_value) for _ in range(width * height))
+        max_value = 255
+    else:
+        raise ValueError(f"unsupported PGM type {magic!r}: {path}")
+
+    if len(pixels) != width * height:
+        raise ValueError(f"PGM has {len(pixels)} pixels, expected {width * height}")
+    if max_value != 255:
+        pixels = bytes(round(value * 255 / max_value) for value in pixels)
+    return width, height, pixels

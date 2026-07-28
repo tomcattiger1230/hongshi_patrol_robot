@@ -15,6 +15,7 @@ from .map_model import (
     goal_yaw,
     load_map_yaml,
     map_snapshot,
+    polyline_length,
     pose_uncertainty,
     project_laser_scan,
     scan_alignment_score,
@@ -70,7 +71,7 @@ try:
     from action_msgs.msg import GoalStatus
     from geometry_msgs.msg import PoseWithCovarianceStamped
     from nav2_msgs.action import NavigateToPose
-    from nav_msgs.msg import OccupancyGrid
+    from nav_msgs.msg import OccupancyGrid, Path as NavPath
     from rclpy.action import ActionClient
     from rclpy.executors import SingleThreadedExecutor
     from rclpy.parameter import Parameter
@@ -119,6 +120,10 @@ if QApplication is not None:
             self._map_item: Optional[QGraphicsPixmapItem] = None
             self._scan_item = None
             self._scan_points: tuple[tuple[float, float], ...] = ()
+            self._global_plan_item = None
+            self._local_trajectory_item = None
+            self._global_plan_points: tuple[tuple[float, float], ...] = ()
+            self._local_trajectory_points: tuple[tuple[float, float], ...] = ()
             self._robot_items: list = []
             self._goal_items: list = []
             self._snapshot: Optional[MapSnapshot] = None
@@ -158,6 +163,7 @@ if QApplication is not None:
             self._snapshot = snapshot
             self._scene.setSceneRect(0, 0, geometry.width, geometry.height)
             self._draw_scan_points()
+            self._draw_navigation_paths()
             if self._first_map:
                 self.fit_map()
                 self._first_map = False
@@ -193,6 +199,62 @@ if QApplication is not None:
                 QBrush(QColor("#ff6d00")),
             )
             self._scan_item.setZValue(3)
+
+        def set_global_plan(
+            self, points: tuple[tuple[float, float], ...]
+        ) -> None:
+            self._global_plan_points = points
+            self._draw_navigation_paths()
+
+        def set_local_trajectory(
+            self, points: tuple[tuple[float, float], ...]
+        ) -> None:
+            self._local_trajectory_points = points
+            self._draw_navigation_paths()
+
+        def _draw_navigation_paths(self) -> None:
+            for item_name in ("_global_plan_item", "_local_trajectory_item"):
+                item = getattr(self, item_name)
+                if item is not None:
+                    self._scene.removeItem(item)
+                    setattr(self, item_name, None)
+            if self._snapshot is None:
+                return
+            self._global_plan_item = self._add_polyline(
+                self._global_plan_points,
+                "#14dcff",
+                3.0,
+                5,
+            )
+            self._local_trajectory_item = self._add_polyline(
+                self._local_trajectory_points,
+                "#ffc107",
+                4.0,
+                6,
+            )
+
+        def _add_polyline(
+            self,
+            points: tuple[tuple[float, float], ...],
+            color: str,
+            width: float,
+            z_value: float,
+        ):
+            if self._snapshot is None or len(points) < 2:
+                return None
+            geometry = self._snapshot.geometry
+            path = QPainterPath()
+            first_x, first_y = geometry.world_to_scene(*points[0])
+            path.moveTo(first_x, first_y)
+            for world_x, world_y in points[1:]:
+                scene_x, scene_y = geometry.world_to_scene(world_x, world_y)
+                path.lineTo(scene_x, scene_y)
+            item = self._scene.addPath(
+                path,
+                self._cosmetic_pen(color, width),
+            )
+            item.setZValue(z_value)
+            return item
 
         def set_robot_pose(self, x_m: float, y_m: float, yaw_rad: float) -> None:
             self._robot_yaw = yaw_rad
@@ -387,6 +449,8 @@ if QApplication is not None:
         localization_quality_changed = Signal(float, float, str)
         scan_received = Signal(object)
         scan_status_changed = Signal(str)
+        global_plan_received = Signal(object)
+        local_trajectory_received = Signal(object)
         localization_backend_changed = Signal(str)
         relocalization_changed = Signal(str)
         error = Signal(str)
@@ -472,6 +536,24 @@ if QApplication is not None:
                     "/scan",
                     self._on_scan,
                     qos_profile_sensor_data,
+                )
+                self.node.create_subscription(
+                    NavPath,
+                    "/plan",
+                    lambda message: self._on_navigation_path(
+                        message,
+                        self.global_plan_received,
+                    ),
+                    10,
+                )
+                self.node.create_subscription(
+                    NavPath,
+                    "/lookahead_collision_arc",
+                    lambda message: self._on_navigation_path(
+                        message,
+                        self.local_trajectory_received,
+                    ),
+                    10,
                 )
                 self.initial_pose_pub = self.node.create_publisher(
                     PoseWithCovarianceStamped,
@@ -640,6 +722,50 @@ if QApplication is not None:
                 range_max=message.range_max,
             )
             self.scan_received.emit(points)
+
+        def _on_navigation_path(self, message: NavPath, output_signal) -> None:
+            points = tuple(
+                (pose.pose.position.x, pose.pose.position.y)
+                for pose in message.poses
+            )
+            frame_id = message.header.frame_id or self.map_frame
+            if not points or frame_id == self.map_frame:
+                output_signal.emit(points)
+                return
+            if self.tf_buffer is None:
+                return
+            try:
+                try:
+                    transform = self.tf_buffer.lookup_transform(
+                        self.map_frame,
+                        frame_id,
+                        Time.from_msg(message.header.stamp),
+                    )
+                except Exception:
+                    transform = self.tf_buffer.lookup_transform(
+                        self.map_frame,
+                        frame_id,
+                        Time(),
+                    )
+            except Exception:
+                return
+            translation = transform.transform.translation
+            rotation = transform.transform.rotation
+            yaw_rad = math.atan2(
+                2.0 * (rotation.w * rotation.z + rotation.x * rotation.y),
+                1.0 - 2.0 * (rotation.y * rotation.y + rotation.z * rotation.z),
+            )
+            cosine = math.cos(yaw_rad)
+            sine = math.sin(yaw_rad)
+            output_signal.emit(
+                tuple(
+                    (
+                        translation.x + cosine * x_m - sine * y_m,
+                        translation.y + sine * x_m + cosine * y_m,
+                    )
+                    for x_m, y_m in points
+                )
+            )
 
         @Slot(float, float, float, str)
         def set_initial_pose(
@@ -939,6 +1065,10 @@ if QApplication is not None:
             self.worker.pose_received.connect(self._on_pose)
             self.worker.scan_received.connect(self._on_scan_points)
             self.worker.scan_status_changed.connect(self.scan_value.setText)
+            self.worker.global_plan_received.connect(self._on_global_plan)
+            self.worker.local_trajectory_received.connect(
+                self._on_local_trajectory
+            )
             self.worker.connection_changed.connect(self._on_connection)
             self.worker.navigation_changed.connect(self.navigation_value.setText)
             self.worker.feedback_changed.connect(self._on_feedback)
@@ -1090,17 +1220,26 @@ if QApplication is not None:
             status_layout = QVBoxLayout(status_group)
             self.navigation_value = QLabel("等待目标")
             self.feedback_value = QLabel("剩余距离：--　预计时间：--")
+            self.global_plan_value = QLabel("全局路径：等待 /plan")
+            self.local_trajectory_value = QLabel(
+                "局部轨迹：等待 /lookahead_collision_arc"
+            )
             self._configure_value_label(self.navigation_value)
             self._configure_value_label(self.feedback_value)
+            self._configure_value_label(self.global_plan_value)
+            self._configure_value_label(self.local_trajectory_value)
             status_layout.addWidget(self.navigation_value)
             status_layout.addWidget(self.feedback_value)
+            status_layout.addWidget(self.global_plan_value)
+            status_layout.addWidget(self.local_trajectory_value)
             layout.addWidget(status_group)
 
             help_text = QLabel(
                 "操作：在可通行区域按下鼠标左键确定目标点，拖动决定车头朝向，"
                 "松开后可将它用作初始位姿或导航目标。红点是 MID-360 扫描经当前"
                 "定位变换后的地图匹配结果。持续建图时可选择灰色边界作为探索目标；"
-                "静态定位时灰色区域不会更新。滚轮缩放，中键拖动平移地图。"
+                "青线是 Nav2 全局路径，黄线是控制器局部前视轨迹。静态定位时灰色"
+                "区域不会更新。滚轮缩放，中键拖动平移地图。"
             )
             help_text.setWordWrap(True)
             help_text.setObjectName("help")
@@ -1195,6 +1334,28 @@ if QApplication is not None:
             ratio = 100.0 * matched / evaluated if evaluated else 0.0
             self.scan_value.setText(
                 f"{len(points)} 个红色点 · 贴墙率 {ratio:.0f}%"
+            )
+
+        @Slot(object)
+        def _on_global_plan(
+            self,
+            points: tuple[tuple[float, float], ...],
+        ) -> None:
+            self.map_view.set_global_plan(points)
+            self.global_plan_value.setText(
+                f"全局路径：{len(points)} 点 · "
+                f"{polyline_length(points):.2f} m · 青色"
+            )
+
+        @Slot(object)
+        def _on_local_trajectory(
+            self,
+            points: tuple[tuple[float, float], ...],
+        ) -> None:
+            self.map_view.set_local_trajectory(points)
+            self.local_trajectory_value.setText(
+                f"局部轨迹：{len(points)} 点 · "
+                f"{polyline_length(points):.2f} m · 黄色"
             )
 
         def _send_goal(self) -> None:

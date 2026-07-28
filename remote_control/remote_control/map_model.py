@@ -288,6 +288,14 @@ def scan_alignment_score(
     return matched, evaluated
 
 
+def polyline_length(points: Sequence[tuple[float, float]]) -> float:
+    """Return the accumulated length of a planar polyline."""
+    return sum(
+        math.hypot(end_x - start_x, end_y - start_y)
+        for (start_x, start_y), (end_x, end_y) in zip(points, points[1:])
+    )
+
+
 def _load_pgm(path: Path) -> tuple[int, int, bytes]:
     payload = path.read_bytes()
     position = 0

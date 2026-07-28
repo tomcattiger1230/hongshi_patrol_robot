@@ -191,6 +191,10 @@ graph 时：
 “贴墙率”统计红点落在已知障碍边缘 0.15 m 范围内的比例。红点贴合黑色墙面且该比例
 稳定表示当前雷达匹配合理；整体错位通常表示初始位姿或里程计存在偏差。
 
+GUI 使用与 RViz 相同的 `/plan` 显示青色 Nav2 全局规划路径，同时订阅
+`/lookahead_collision_arc` 显示黄色控制器局部前视轨迹。右侧导航状态列出两条路径的
+点数和累计长度；路径不在 `map` frame 时会先通过 TF 转换后再绘制。
+
 灰色栅格是占用值 `-1` 的未知区域，不是已经确认可通行的地面。在 `mode:=continuing`
 下，GUI 允许把灰色边界附近设为探索目标，Smac Hybrid 的 `allow_unknown` 会规划进入，
 SLAM Toolbox 随扫描把可见区域更新为白色或黑色。`mode:=localization` 使用只读静态

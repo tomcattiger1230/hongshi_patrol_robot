@@ -7,6 +7,7 @@ from remote_control.map_model import (
     goal_yaw,
     load_map_yaml,
     map_snapshot,
+    polyline_length,
     pose_uncertainty,
     project_laser_scan,
     scan_alignment_score,
@@ -173,3 +174,10 @@ def test_scan_alignment_score_matches_nearby_occupied_cells():
 
     assert matched == 1
     assert evaluated == 2
+
+
+def test_polyline_length_accumulates_segments():
+    assert polyline_length([(0.0, 0.0), (3.0, 4.0), (3.0, 6.0)]) == pytest.approx(
+        7.0
+    )
+    assert polyline_length([]) == 0.0

@@ -910,6 +910,7 @@ if QApplication is not None:
             self.map_frame = map_frame
             self.snapshot: Optional[MapSnapshot] = None
             self.goal: Optional[tuple[float, float, float]] = None
+            self.localization_backend = "waiting"
             self._closing = False
             self.setWindowTitle("Robot320 地图导航")
             self.resize(1280, 900)
@@ -1098,7 +1099,8 @@ if QApplication is not None:
             help_text = QLabel(
                 "操作：在可通行区域按下鼠标左键确定目标点，拖动决定车头朝向，"
                 "松开后可将它用作初始位姿或导航目标。红点是 MID-360 扫描经当前"
-                "定位变换后的地图匹配结果。滚轮缩放，中键拖动平移地图。"
+                "定位变换后的地图匹配结果。持续建图时可选择灰色边界作为探索目标；"
+                "静态定位时灰色区域不会更新。滚轮缩放，中键拖动平移地图。"
             )
             help_text.setWordWrap(True)
             help_text.setObjectName("help")
@@ -1224,10 +1226,25 @@ if QApplication is not None:
             if occupancy is None:
                 self._on_error("选中位置不在当前地图范围内")
                 return None
-            if not self.snapshot.is_traversable(x_m, y_m):
+            allow_unknown = self.localization_backend == "slam"
+            if not self.snapshot.is_traversable(
+                x_m,
+                y_m,
+                allow_unknown=allow_unknown,
+            ):
+                if occupancy < 0:
+                    self._on_error(
+                        "当前是静态定位模式，灰色区域不会更新；"
+                        "请切换 mode:=continuing 后发送探索目标"
+                    )
+                    return None
                 description = "未知区域" if occupancy < 0 else f"占用值 {occupancy}"
                 self._on_error(f"选中位置位于障碍物或{description}，请重新选择")
                 return None
+            if occupancy < 0:
+                self.navigation_value.setText(
+                    "灰色探索目标已接受；建议选择未知边界附近，不要直接跨越大片未知区"
+                )
             return x_m, y_m, yaw_rad
 
         def _clear_goal(self) -> None:
@@ -1263,6 +1280,7 @@ if QApplication is not None:
 
         @Slot(str)
         def _on_localization_backend(self, backend: str) -> None:
+            self.localization_backend = backend
             if backend == "slam":
                 self.localization_backend_value.setText(
                     "SLAM Toolbox · 持续建图/雷达匹配"

@@ -89,10 +89,15 @@ class MapSnapshot:
         world_x: float,
         world_y: float,
         occupied_threshold: int = 65,
+        allow_unknown: bool = False,
     ) -> bool:
         """Apply a simple GUI-side occupied/unknown cell check."""
         occupancy = self.occupancy_at_world(world_x, world_y)
-        return occupancy is not None and 0 <= occupancy < occupied_threshold
+        if occupancy is None:
+            return False
+        if occupancy < 0:
+            return allow_unknown
+        return occupancy < occupied_threshold
 
 
 def map_snapshot(

@@ -79,6 +79,7 @@ def test_map_snapshot_reports_occupied_unknown_and_outside_cells():
     assert snapshot.is_traversable(0.5, 0.5)
     assert not snapshot.is_traversable(1.5, 0.5)
     assert not snapshot.is_traversable(0.5, 1.5)
+    assert snapshot.is_traversable(0.5, 1.5, allow_unknown=True)
     assert snapshot.is_traversable(1.5, 1.5)
     assert snapshot.occupancy_at_world(3.0, 3.0) is None
 

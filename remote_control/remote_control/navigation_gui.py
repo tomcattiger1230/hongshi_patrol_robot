@@ -17,6 +17,7 @@ from .map_model import (
     map_snapshot,
     pose_uncertainty,
     project_laser_scan,
+    scan_alignment_score,
     yaw_from_quaternion,
 )
 
@@ -639,9 +640,6 @@ if QApplication is not None:
                 range_max=message.range_max,
             )
             self.scan_received.emit(points)
-            self.scan_status_changed.emit(
-                f"{len(points)} 个匹配点 · 红色 · {message.header.frame_id}"
-            )
 
         @Slot(float, float, float, str)
         def set_initial_pose(
@@ -923,7 +921,7 @@ if QApplication is not None:
             self.nomotion_update_requested.connect(self.worker.request_nomotion_update)
             self.worker.map_received.connect(self._on_map)
             self.worker.pose_received.connect(self._on_pose)
-            self.worker.scan_received.connect(self.map_view.set_scan_points)
+            self.worker.scan_received.connect(self._on_scan_points)
             self.worker.scan_status_changed.connect(self.scan_value.setText)
             self.worker.connection_changed.connect(self._on_connection)
             self.worker.navigation_changed.connect(self.navigation_value.setText)
@@ -1166,6 +1164,21 @@ if QApplication is not None:
         @Slot(float, float)
         def _on_cursor(self, x_m: float, y_m: float) -> None:
             self.cursor_value.setText(f"x={x_m:.2f} m，y={y_m:.2f} m")
+
+        @Slot(object)
+        def _on_scan_points(
+            self,
+            points: tuple[tuple[float, float], ...],
+        ) -> None:
+            self.map_view.set_scan_points(points)
+            if self.snapshot is None:
+                self.scan_value.setText(f"{len(points)} 个匹配点 · 红色")
+                return
+            matched, evaluated = scan_alignment_score(self.snapshot, points)
+            ratio = 100.0 * matched / evaluated if evaluated else 0.0
+            self.scan_value.setText(
+                f"{len(points)} 个红色点 · 贴墙率 {ratio:.0f}%"
+            )
 
         def _send_goal(self) -> None:
             selected_pose = self._validated_selected_pose()

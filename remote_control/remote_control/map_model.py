@@ -243,6 +243,46 @@ def project_laser_scan(
     return tuple(points)
 
 
+def scan_alignment_score(
+    snapshot: MapSnapshot,
+    points: Sequence[tuple[float, float]],
+    *,
+    search_radius_m: float = 0.15,
+    occupied_threshold: int = 65,
+) -> tuple[int, int]:
+    """Count scan endpoints that fall near occupied map cells."""
+    if search_radius_m < 0.0:
+        raise ValueError("search_radius_m must not be negative")
+    geometry = snapshot.geometry
+    radius_cells = math.ceil(search_radius_m / geometry.resolution)
+    matched = 0
+    evaluated = 0
+    for world_x, world_y in points:
+        grid_x, grid_y = geometry.world_to_grid(world_x, world_y)
+        column = math.floor(grid_x)
+        row = math.floor(grid_y)
+        if not (0 <= column < geometry.width and 0 <= row < geometry.height):
+            continue
+        evaluated += 1
+        found_occupied = False
+        for neighbor_y in range(
+            max(0, row - radius_cells),
+            min(geometry.height, row + radius_cells + 1),
+        ):
+            offset = neighbor_y * geometry.width
+            for neighbor_x in range(
+                max(0, column - radius_cells),
+                min(geometry.width, column + radius_cells + 1),
+            ):
+                if snapshot.data[offset + neighbor_x] >= occupied_threshold:
+                    found_occupied = True
+                    break
+            if found_occupied:
+                break
+        matched += int(found_occupied)
+    return matched, evaluated
+
+
 def _load_pgm(path: Path) -> tuple[int, int, bytes]:
     payload = path.read_bytes()
     position = 0

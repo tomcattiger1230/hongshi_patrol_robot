@@ -9,6 +9,7 @@ from remote_control.map_model import (
     map_snapshot,
     pose_uncertainty,
     project_laser_scan,
+    scan_alignment_score,
 )
 
 
@@ -137,3 +138,37 @@ def test_project_laser_scan_uses_sensor_map_transform_and_filters_ranges():
 
     assert len(points) == 1
     assert points[0] == pytest.approx((2.0, 4.0))
+
+
+def test_scan_alignment_score_matches_nearby_occupied_cells():
+    snapshot = map_snapshot(
+        width=4,
+        height=3,
+        resolution=1.0,
+        origin_x=0.0,
+        origin_y=0.0,
+        origin_yaw=0.0,
+        data=[
+            0,
+            0,
+            0,
+            0,
+            0,
+            100,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+        ],
+    )
+
+    matched, evaluated = scan_alignment_score(
+        snapshot,
+        [(1.5, 1.5), (3.5, 2.5), (10.0, 10.0)],
+        search_radius_m=0.0,
+    )
+
+    assert matched == 1
+    assert evaluated == 2

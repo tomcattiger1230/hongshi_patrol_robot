@@ -1,5 +1,8 @@
 """Run the primitive patrol robot in Isaac Sim with ROS 2 control."""
 
+# Isaac extensions must be imported only after SimulationApp is constructed.
+# ruff: noqa: E402
+
 from __future__ import annotations
 
 import argparse
@@ -55,6 +58,7 @@ SIMULATION_APP = SimulationApp({"headless": not ARGS.gui})
 import isaacsim.core.experimental.utils.app as app_utils
 import isaacsim.core.experimental.utils.stage as stage_utils
 import numpy as np
+import omni.kit.commands
 import rclpy
 from geometry_msgs.msg import TransformStamped, Twist
 from nav_msgs.msg import Odometry
@@ -307,13 +311,23 @@ def _build_scene(robot_usd: Path) -> WheeledRobot:
 
 def _create_mid360s_lidar() -> LidarSensor:
     """Create an RTX lidar with a MID-360-like range and ROS 2 output."""
-    # Create the OmniLidar prim directly instead of referencing NVIDIA's
-    # Example_Rotary asset. The generic schema is bundled with Isaac Sim, so
-    # this also works when the simulator host cannot reach the asset server.
-    lidar = Lidar.create(
+    # Use a complete local 360-degree, 32-channel rotary profile. Creating an
+    # unconfigured OmniLidar uses schema defaults whose rays occupy only one
+    # sector; SLAM then tries to rotate the map to match that asymmetric scan.
+    # Hesai_XT32_SD10 ships inside Isaac Sim, so this remains fully offline.
+    _, lidar_prim = omni.kit.commands.execute(
+        "IsaacSensorCreateRtxLidar",
         path="/World/PatrolRobot/mid360s_lidar",
+        parent=None,
+        config="Hesai_XT32_SD10",
+        translation=Gf.Vec3d(*MID360_POSITION),
+        orientation=Gf.Quatd(1.0, 0.0, 0.0, 0.0),
+    )
+    if lidar_prim is None or not lidar_prim.IsValid():
+        raise RuntimeError("Isaac Sim failed to create the local RTX lidar")
+    lidar = Lidar(
+        str(lidar_prim.GetPath()),
         tick_rate=10.0,
-        translations=MID360_POSITION,
         aux_output_level="FULL",
         attributes={
             "omni:sensor:Core:nearRangeM": 0.10,
@@ -450,6 +464,7 @@ def main() -> None:
     ros_node = None
     try:
         app_utils.enable_extension("isaacsim.ros2.bridge")
+        app_utils.enable_extension("isaacsim.sensors.rtx")
         app_utils.enable_extension("isaacsim.sensors.rtx.nodes")
         app_utils.update_app(steps=2)
 

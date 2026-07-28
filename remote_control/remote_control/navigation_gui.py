@@ -23,6 +23,12 @@ from .map_model import (
     yaw_from_quaternion,
 )
 
+
+def normalized_frame_id(frame_id: str, fallback: str = "map") -> str:
+    """Return a non-empty ROS frame for navigation goals."""
+    return frame_id.strip() or fallback.strip() or "map"
+
+
 try:
     from PySide6.QtCore import (
         QMetaObject,
@@ -542,7 +548,7 @@ if QApplication is not None:
         ) -> None:
             super().__init__()
             self.map_topic = map_topic
-            self.map_frame = map_frame
+            self.map_frame = normalized_frame_id(map_frame)
             self.base_frame = base_frame
             self.action_name = action_name
             self.pose_graph = str(Path(pose_graph).expanduser().resolve())
@@ -772,7 +778,7 @@ if QApplication is not None:
                 data=message.data,
                 frame_id=message.header.frame_id or self.map_frame,
             )
-            self.map_frame = snapshot.frame_id
+            self.map_frame = normalized_frame_id(snapshot.frame_id, self.map_frame)
             self.map_received.emit(snapshot)
 
         def _on_localization_pose(
@@ -1205,13 +1211,23 @@ if QApplication is not None:
             if not waypoints:
                 self.error.emit("路径点列表为空")
                 return
-            self._cancel_active_goal()
+            if self.goal_handle is not None:
+                self.error.emit("已有导航任务，请先取消并等待任务结束")
+                return
+            if not all(
+                math.isfinite(value)
+                for waypoint in waypoints
+                for value in waypoint
+            ):
+                self.error.emit("路径点包含无效坐标")
+                return
+            goal_frame = normalized_frame_id(frame_id, self.map_frame)
             goal = FollowWaypoints.Goal()
             goal.number_of_loops = 0
             goal.goal_index = 0
             for x_m, y_m, yaw_rad in waypoints:
                 waypoint = PoseStamped()
-                waypoint.header.frame_id = frame_id or self.map_frame
+                waypoint.header.frame_id = goal_frame
                 waypoint.pose.position.x = x_m
                 waypoint.pose.position.y = y_m
                 waypoint.pose.orientation.z = math.sin(yaw_rad / 2.0)
@@ -1283,10 +1299,18 @@ if QApplication is not None:
             if self.nav_client is None or not self.nav_client.server_is_ready():
                 self.error.emit("Nav2 /navigate_to_pose 尚未就绪")
                 return
-            self._cancel_active_goal()
+            if self.goal_handle is not None:
+                self.error.emit("已有导航任务，请先取消并等待任务结束")
+                return
+            if not all(math.isfinite(value) for value in (x_m, y_m, yaw_rad)):
+                self.error.emit("目标位姿包含无效坐标")
+                return
 
             goal = NavigateToPose.Goal()
-            goal.pose.header.frame_id = frame_id or self.map_frame
+            goal.pose.header.frame_id = normalized_frame_id(
+                frame_id,
+                self.map_frame,
+            )
             # Use the latest available TF. In simulation, stamping with "now"
             # can be a few milliseconds newer than slam_toolbox's map->odom.
             goal.pose.pose.position.x = x_m
@@ -1387,7 +1411,7 @@ if QApplication is not None:
             use_sim_time: bool,
         ) -> None:
             super().__init__()
-            self.map_frame = map_frame
+            self.map_frame = normalized_frame_id(map_frame)
             self.snapshot: Optional[MapSnapshot] = None
             self.goal: Optional[tuple[float, float, float]] = None
             self.waypoints: list[tuple[float, float, float]] = []
@@ -1783,7 +1807,7 @@ if QApplication is not None:
 
         def _display_map(self, snapshot: MapSnapshot, source: str) -> None:
             self.snapshot = snapshot
-            self.map_frame = snapshot.frame_id
+            self.map_frame = normalized_frame_id(snapshot.frame_id, self.map_frame)
             self.map_view.set_map(snapshot)
             geometry = snapshot.geometry
             self.map_value.setText(

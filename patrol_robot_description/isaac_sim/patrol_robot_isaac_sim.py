@@ -92,6 +92,7 @@ MAX_STEERING_ANGLE = math.atan(WHEEL_BASE / MINIMUM_TURNING_RADIUS)
 MAX_LINEAR_SPEED = 20.0 / 3.6
 PHYSICS_DT = 1.0 / 60.0
 MID360_POSITION = np.array([0.40, 0.0, 1.50])
+ISAAC_BASE_LINK_PATH = "/World/PatrolRobot/Geometry/base_footprint"
 STEERING_DOF_NAMES = [
     "front_left_steering_joint",
     "front_right_steering_joint",
@@ -323,8 +324,11 @@ def _create_mid360s_lidar() -> LidarSensor:
     # Hesai_XT32_SD10 ships inside Isaac Sim, so this remains fully offline.
     _, lidar_prim = omni.kit.commands.execute(
         "IsaacSensorCreateRtxLidar",
-        path="/World/PatrolRobot/mid360s_lidar",
-        parent=None,
+        path="/mid360s_lidar",
+        # Fixed URDF links are merged into the dynamic base_footprint body.
+        # Parenting the sensor to the articulation container leaves it behind
+        # when PhysX moves that body, making SLAM cancel all odometry motion.
+        parent=ISAAC_BASE_LINK_PATH,
         config="Hesai_XT32_SD10",
         translation=Gf.Vec3d(*MID360_POSITION),
         orientation=Gf.Quatd(1.0, 0.0, 0.0, 0.0),

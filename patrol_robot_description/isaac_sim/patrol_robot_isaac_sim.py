@@ -322,17 +322,26 @@ def _create_mid360s_lidar() -> LidarSensor:
     # unconfigured OmniLidar uses schema defaults whose rays occupy only one
     # sector; SLAM then tries to rotate the map to match that asymmetric scan.
     # Hesai_XT32_SD10 ships inside Isaac Sim, so this remains fully offline.
-    _, lidar_prim = omni.kit.commands.execute(
+    staging_path = "/World/mid360s_lidar"
+    lidar_path = f"{ISAAC_BASE_LINK_PATH}/mid360s_lidar"
+    omni.kit.commands.execute(
         "IsaacSensorCreateRtxLidar",
-        path="/mid360s_lidar",
-        # Fixed URDF links are merged into the dynamic base_footprint body.
-        # Parenting the sensor to the articulation container leaves it behind
-        # when PhysX moves that body, making SLAM cancel all odometry motion.
-        parent=ISAAC_BASE_LINK_PATH,
+        # The legacy creator resolves its built-in config only at a root path.
+        # Move the fully configured prim under the dynamic chassis afterwards.
+        path=staging_path,
+        parent=None,
         config="Hesai_XT32_SD10",
         translation=Gf.Vec3d(*MID360_POSITION),
         orientation=Gf.Quatd(1.0, 0.0, 0.0, 0.0),
     )
+    omni.kit.commands.execute(
+        "MovePrim",
+        path_from=staging_path,
+        path_to=lidar_path,
+    )
+    lidar_prim = stage_utils.get_current_stage().GetPrimAtPath(lidar_path)
+    if not lidar_prim.IsValid():
+        raise RuntimeError(f"Failed to attach RTX lidar at {lidar_path}")
     if lidar_prim is None or not lidar_prim.IsValid():
         raise RuntimeError("Isaac Sim failed to create the local RTX lidar")
     lidar = Lidar(

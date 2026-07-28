@@ -55,7 +55,7 @@ colcon build \
   --packages-up-to \
     slam_toolbox \
     nav2_bringup \
-    nav2_mppi_controller \
+    nav2_regulated_pure_pursuit_controller \
     nav2_smac_planner \
   --cmake-args -DBUILD_TESTING=OFF
 

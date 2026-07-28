@@ -287,7 +287,7 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument(
                 "navigation",
                 default_value="false",
-                description="Start Smac Hybrid and MPPI Ackermann Nav2.",
+                description="Start Smac Hybrid and RPP Ackermann Nav2.",
             ),
             DeclareLaunchArgument(
                 "exploration",

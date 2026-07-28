@@ -98,95 +98,33 @@ controller_server:
       # tolerance wider than the differential-drive Nav2 default.
       yaw_goal_tolerance: 0.20
     FollowPath:
-      plugin: "nav2_mppi_controller::MPPIController"
-      time_steps: 56
-      model_dt: 0.10
-      batch_size: 800
-      vx_std: 0.12
-      vy_std: 0.0
-      wz_std: 0.08
-      vx_max: 0.50
-      # Reeds-Shepp plans may contain short reversing manoeuvres when the
-      # 2.35 m turning circle cannot reach a nearby frontier by driving forward.
-      vx_min: -0.20
-      vy_max: 0.0
-      wz_max: 0.22
-      ax_max: 0.30
-      ax_min: -0.50
-      ay_max: 0.0
-      ay_min: 0.0
-      az_max: 0.25
-      iteration_count: 1
-      prune_distance: 2.5
+      # RPP follows the Hybrid-A* path geometrically and explicitly detects
+      # Reeds-Shepp direction cusps. This is deterministic for a heavy
+      # Ackermann chassis and does not replace a required reverse segment with
+      # an unrelated forward rollout.
+      plugin: "nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController"
+      desired_linear_vel: 0.35
+      lookahead_dist: 0.70
+      min_lookahead_dist: 0.45
+      max_lookahead_dist: 1.20
+      lookahead_time: 1.5
+      use_velocity_scaled_lookahead_dist: true
+      min_approach_linear_velocity: 0.05
+      approach_velocity_scaling_dist: 0.80
+      use_collision_detection: true
+      max_allowed_time_to_collision_up_to_carrot: 1.5
+      use_regulated_linear_velocity_scaling: true
+      use_cost_regulated_linear_velocity_scaling: true
+      regulated_linear_scaling_min_radius: 2.35
+      regulated_linear_scaling_min_speed: 0.10
+      cost_scaling_dist: 0.55
+      cost_scaling_gain: 1.0
+      inflation_cost_scaling_factor: 2.5
+      use_rotate_to_heading: false
+      allow_reversing: true
+      max_robot_pose_search_dist: 10.0
+      use_interpolation: true
       transform_tolerance: 0.5
-      temperature: 0.3
-      gamma: 0.015
-      motion_model: "Ackermann"
-      visualize: false
-      regenerate_noises: true
-      AckermannConstraints:
-        min_turning_r: 2.35
-      TrajectoryVisualizer:
-        trajectory_step: 5
-        time_step: 3
-      critics:
-        - ConstraintCritic
-        - CostCritic
-        - GoalCritic
-        - GoalAngleCritic
-        - PathAlignCritic
-        - PathFollowCritic
-        - PathAngleCritic
-      ConstraintCritic:
-        enabled: true
-        cost_power: 1
-        cost_weight: 4.0
-      CostCritic:
-        enabled: true
-        cost_power: 1
-        cost_weight: 3.81
-        near_collision_cost: 253
-        critical_cost: 300.0
-        consider_footprint: true
-        collision_cost: 1000000.0
-        near_goal_distance: 1.0
-        trajectory_point_step: 2
-      GoalCritic:
-        enabled: true
-        cost_power: 1
-        cost_weight: 5.0
-        threshold_to_consider: 1.4
-      GoalAngleCritic:
-        enabled: true
-        cost_power: 1
-        cost_weight: 3.0
-        threshold_to_consider: 0.5
-      PathAlignCritic:
-        enabled: true
-        cost_power: 1
-        cost_weight: 14.0
-        max_path_occupancy_ratio: 0.05
-        trajectory_point_step: 4
-        threshold_to_consider: 0.5
-        offset_from_furthest: 20
-        use_path_orientations: true
-      PathFollowCritic:
-        enabled: true
-        cost_power: 1
-        cost_weight: 5.0
-        offset_from_furthest: 5
-        threshold_to_consider: 1.4
-      PathAngleCritic:
-        enabled: true
-        cost_power: 1
-        cost_weight: 2.0
-        offset_from_furthest: 4
-        threshold_to_consider: 0.5
-        max_angle_to_furthest: 1.0
-        # Mode 2 uses the Reeds-Shepp path orientation to distinguish forward
-        # and reverse segments. Do not also enable PreferForwardCritic: it can
-        # overpower a required reverse segment and drive away from the path.
-        mode: 2
 
 local_costmap:
   local_costmap:

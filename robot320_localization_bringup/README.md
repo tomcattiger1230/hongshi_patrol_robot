@@ -13,12 +13,12 @@ MID-360 -> /livox/lidar --+-> pointcloud_to_laserscan -> /scan
                                   +-> Nav2 2D/3D obstacle costmaps
 
 odom -> base_footprint -----> SLAM/AMCL -> map -> odom
-Nav2 Smac Hybrid + MPPI Ackermann -> /cmd_vel -> EPS/后桥控制
+Nav2 Smac Hybrid + Regulated Pure Pursuit -> /cmd_vel -> EPS/后桥控制
 ```
 
 该组合保留 MID-360 点云给障碍物层，同时生成 `/scan` 供成熟的 2D SLAM 和 AMCL
 使用。全局规划使用 `SmacPlannerHybrid`，局部控制使用带 2.35 m 最小转弯半径约束的
-`MPPI Ackermann`。仓库原有 Cartographer 配置保留为备选。
+`Regulated Pure Pursuit Ackermann`。仓库原有 Cartographer 配置保留为备选。
 
 方案选择：
 
@@ -109,7 +109,7 @@ ros2 launch robot320_localization_bringup robot320_simulation.launch.py \
 与 Gazebo 完全相同。
 
 前沿探索器每两秒检查 `/map` 的“已知自由区/未知区”边界，过滤不满足车体安全间距
-的候选点，然后通过 `NavigateToPose` 让 Smac Hybrid + MPPI Ackermann 自动驶向下一个
+的候选点，然后通过 `NavigateToPose` 让 Smac Hybrid + Regulated Pure Pursuit 自动驶向下一个
 候选点。规划器使用 Reeds-Shepp 曲线，必要时允许最高 0.20 m/s 的短距离倒车，以满足
 2.35 m 最小转弯半径。连续没有候选点时表示自动探索完成。
 

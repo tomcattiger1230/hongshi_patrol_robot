@@ -6,6 +6,7 @@ from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import (
     DeclareLaunchArgument,
+    GroupAction,
     IncludeLaunchDescription,
     TimerAction,
 )
@@ -63,17 +64,26 @@ def generate_launch_description() -> LaunchDescription:
         convert_types=True,
     )
 
-    simulator = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(
-            str(description_share / "launch" / "patrol_robot_sim.launch.py")
-        ),
-        launch_arguments={
-            "gui": LaunchConfiguration("gui"),
-            "demo": LaunchConfiguration("demo"),
-            # This launch starts the navigation RViz below. Do not also start
-            # patrol_sim.rviz through a leaked parent `rviz` configuration.
-            "rviz": "false",
-        }.items(),
+    simulator = GroupAction(
+        scoped=True,
+        actions=[
+            IncludeLaunchDescription(
+                PythonLaunchDescriptionSource(
+                    str(
+                        description_share
+                        / "launch"
+                        / "patrol_robot_sim.launch.py"
+                    )
+                ),
+                launch_arguments={
+                    "gui": LaunchConfiguration("gui"),
+                    "demo": LaunchConfiguration("demo"),
+                    # This launch starts the navigation RViz below. Do not
+                    # start patrol_sim.rviz as a second RViz process.
+                    "rviz": "false",
+                }.items(),
+            )
+        ],
         condition=IfCondition(gazebo),
     )
     external_state_publisher = Node(

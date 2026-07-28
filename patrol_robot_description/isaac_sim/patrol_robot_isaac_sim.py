@@ -58,7 +58,7 @@ import numpy as np
 import rclpy
 from geometry_msgs.msg import TransformStamped, Twist
 from nav_msgs.msg import Odometry
-from pxr import Gf, UsdGeom, UsdLux, UsdPhysics
+from pxr import Gf, PhysxSchema, UsdGeom, UsdLux, UsdPhysics
 from rclpy.node import Node
 from rclpy.signals import SignalHandlerOptions
 from rosgraph_msgs.msg import Clock
@@ -129,8 +129,11 @@ def _import_robot(urdf_path: Path, output_dir: Path) -> Path:
             "front_right_steering_joint": 200.0,
             "front_left_wheel_joint": 0.05,
             "front_right_wheel_joint": 0.05,
-            "rear_left_wheel_joint": 10.0,
-            "rear_right_wheel_joint": 10.0,
+            # Velocity-drive damping acts as the rear motor's proportional
+            # torque gain. A value of 10 cannot move the 100+ kg articulation
+            # reliably and mostly lets the tire contacts chatter in place.
+            "rear_left_wheel_joint": 100.0,
+            "rear_right_wheel_joint": 100.0,
         },
         run_asset_transformer=False,
     )
@@ -465,6 +468,12 @@ def main() -> None:
             max_steering_angle_velocity=math.radians(25.0),
         )
 
+        # Give the four cylindrical wheel contacts additional velocity-solver
+        # iterations. The imported articulation root does not carry the PhysX
+        # tuning schema by default, so apply it before authoring the setting.
+        PhysxSchema.PhysxArticulationAPI.Apply(robot.prims[0])
+        robot.set_solver_iteration_counts([32], [4])
+
         SimulationManager.setup_simulation(dt=PHYSICS_DT, device="cpu")
         physics_scene = SimulationManager.get_physics_scenes()[0]
         physics_scene.set_enabled_gpu_dynamics(False)
@@ -483,6 +492,10 @@ def main() -> None:
         wall_start = time.monotonic()
         publish_every = 3
         step = 0
+        last_steering_targets: np.ndarray | None = None
+        last_wheel_targets: np.ndarray | None = None
+        parking_position: np.ndarray | None = None
+        parking_orientation: np.ndarray | None = None
         print(
             "PATROL_ISAAC_READY "
             f"cmd_vel={ARGS.cmd_vel_topic} odom={ARGS.odom_topic} "
@@ -502,13 +515,72 @@ def main() -> None:
             steering_positions, wheel_velocities = controller.forward(
                 [steering_angle, math.radians(25.0), linear_x, 2.0, PHYSICS_DT]
             )
-            robot.set_dof_position_targets(
-                np.asarray(steering_positions, dtype=np.float32),
-                dof_indices=steering_dof_indices,
-            )
-            robot.apply_wheel_actions(
-                np.asarray(wheel_velocities[2:], dtype=np.float32)
-            )
+            steering_targets = np.asarray(steering_positions, dtype=np.float32)
+            wheel_targets = np.asarray(wheel_velocities[2:], dtype=np.float32)
+            # Re-authoring identical drive targets every physics tick wakes the
+            # articulation and prevents PhysX from settling at rest.  Targets
+            # persist in the drives, so only update them when they change.
+            moving = abs(linear_x) >= 1.0e-4
+            if (
+                moving
+                or last_steering_targets is None
+                or not np.allclose(
+                    steering_targets, last_steering_targets, atol=1.0e-5
+                )
+            ):
+                robot.set_dof_position_targets(
+                    steering_targets,
+                    dof_indices=steering_dof_indices,
+                )
+                last_steering_targets = steering_targets.copy()
+            if (
+                moving
+                or last_wheel_targets is None
+                or not np.allclose(
+                    wheel_targets, last_wheel_targets, atol=1.0e-5
+                )
+            ):
+                robot.apply_wheel_actions(wheel_targets)
+                last_wheel_targets = wheel_targets.copy()
+
+            if abs(linear_x) < 1.0e-4:
+                # A real 180 kg AGV engages its brake at zero command.  Hold a
+                # planar pose here as the simulation equivalent: otherwise the
+                # four cylindrical wheel contacts can continually exchange
+                # tiny impulses and make the free-base articulation shake.
+                if parking_position is None or parking_orientation is None:
+                    parked_positions, parked_orientations = robot.get_world_poses()
+                    parking_position = parked_positions.numpy()[0]
+                    parking_position[2] = 0.0
+                    quaternion = parked_orientations.numpy()[0]
+                    yaw = math.atan2(
+                        2.0
+                        * (
+                            quaternion[0] * quaternion[3]
+                            + quaternion[1] * quaternion[2]
+                        ),
+                        1.0
+                        - 2.0
+                        * (
+                            quaternion[2] * quaternion[2]
+                            + quaternion[3] * quaternion[3]
+                        ),
+                    )
+                    parking_orientation = np.array(
+                        [math.cos(yaw / 2.0), 0.0, 0.0, math.sin(yaw / 2.0)],
+                        dtype=np.float32,
+                    )
+                robot.set_velocities(
+                    np.zeros((1, 3), dtype=np.float32),
+                    np.zeros((1, 3), dtype=np.float32),
+                )
+                robot.set_world_poses(
+                    parking_position.reshape(1, 3),
+                    parking_orientation.reshape(1, 4),
+                )
+            else:
+                parking_position = None
+                parking_orientation = None
 
             if step % publish_every == 0:
                 positions, orientations = robot.get_world_poses()

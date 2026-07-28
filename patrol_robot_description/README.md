@@ -112,9 +112,15 @@ Isaac Sim 安装在默认的 `~/isaacsim` 时，启动无界面仿真：
 有桌面或远程流式显示环境时：
 
 ```bash
-./patrol_robot_description/scripts/run_isaac_sim.sh --gui
+./patrol_robot_description/scripts/run_isaac_sim.sh --gui \
+  --cmd-vel-topic /cmd_vel_isaac
 ```
 
 若 Isaac Sim 位于其他目录，可设置 `ISAAC_SIM_ROOT`。Isaac Sim 后端复用与 Gazebo
 相同的 `/cmd_vel`、`/odom`、`/joint_states`、`/tf`、`/clock` 和
 `/livox/lidar` 话题，因此手动控制及点云消费端无需改变。
+
+与 `robot320_simulation.launch.py gazebo:=false navigation:=true` 联合运行时使用上面的
+`/cmd_vel_isaac` 内部输出。用户和键盘遥控仍发布 `/cmd_vel`；仲裁节点会让手动指令
+优先于 Nav2，并避免两路速度交替造成车辆抖动。单独运行 Isaac 时可继续使用默认
+`/cmd_vel`。

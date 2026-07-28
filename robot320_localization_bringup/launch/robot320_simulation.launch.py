@@ -256,7 +256,12 @@ def generate_launch_description() -> LaunchDescription:
             {
                 "use_sim_time": use_sim_time,
                 "input_topic": "/cmd_vel_smoothed",
-                "output_topic": "/cmd_vel",
+                # Keep manual /cmd_vel and Nav2's 20 Hz output off Isaac's
+                # final command topic. Otherwise their alternating non-zero
+                # and zero messages make the vehicle shake violently.
+                "priority_input_topic": "/cmd_vel",
+                "priority_timeout": 0.5,
+                "output_topic": "/cmd_vel_isaac",
             }
         ],
         condition=IfCondition(

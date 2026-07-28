@@ -271,7 +271,8 @@ Isaac Sim 和外部 ROS 节点分别在两个终端运行。必须先看到 Isaa
 ```bash
 cd /home/arnold/Develop/ROS_ws/partrol_ws/src/hongshi_patrol_robot
 export ROS_DOMAIN_ID=0
-./patrol_robot_description/scripts/run_isaac_sim.sh
+./patrol_robot_description/scripts/run_isaac_sim.sh \
+  --cmd-vel-topic /cmd_vel_isaac
 ```
 
 脚本默认使用 `~/isaacsim`、宿主 ROS 2 Jazzy 和 Isaac 内置 Jazzy ROS bridge。不要提前
@@ -280,8 +281,13 @@ source Lyrical，也不要把宿主机的 `PYTHONPATH` 注入 Isaac Python。
 需要 Isaac 图形界面时：
 
 ```bash
-./patrol_robot_description/scripts/run_isaac_sim.sh --gui
+./patrol_robot_description/scripts/run_isaac_sim.sh --gui \
+  --cmd-vel-topic /cmd_vel_isaac
 ```
+
+`/cmd_vel_isaac` 是集成仿真内部的最终控制话题。键盘遥控仍向 `/cmd_vel` 发布，
+`isaac_cmd_vel_relay` 会在手动指令到达时暂时屏蔽 Nav2 的 `/cmd_vel_smoothed`，
+避免非零与零速度交替造成车体剧烈抖动。
 
 ### 5.2 终端 2：启动自动 SLAM
 

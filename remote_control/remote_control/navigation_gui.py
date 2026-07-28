@@ -42,6 +42,7 @@ try:
         QApplication,
         QDoubleSpinBox,
         QFormLayout,
+        QFrame,
         QGraphicsPixmapItem,
         QGraphicsScene,
         QGraphicsView,
@@ -50,6 +51,8 @@ try:
         QLabel,
         QMainWindow,
         QPushButton,
+        QScrollArea,
+        QSizePolicy,
         QSplitter,
         QVBoxLayout,
         QWidget,
@@ -733,8 +736,22 @@ if QApplication is not None:
             self.map_view.goal_changed.connect(self._on_goal_selected)
             self.map_view.cursor_changed.connect(self._on_cursor)
             splitter.addWidget(self.map_view)
-            splitter.addWidget(self._build_control_panel())
-            splitter.setSizes([940, 300])
+            control_panel = self._build_control_panel()
+            control_panel.setMinimumWidth(340)
+            control_scroll = QScrollArea()
+            control_scroll.setObjectName("controlScroll")
+            control_scroll.setWidgetResizable(True)
+            control_scroll.setFrameShape(QFrame.Shape.NoFrame)
+            control_scroll.setHorizontalScrollBarPolicy(
+                Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+            )
+            control_scroll.setMinimumWidth(360)
+            control_scroll.setWidget(control_panel)
+            splitter.addWidget(control_scroll)
+            splitter.setSizes([880, 380])
+            splitter.setStretchFactor(0, 1)
+            splitter.setStretchFactor(1, 0)
+            splitter.setCollapsible(1, False)
             root.addWidget(splitter, 1)
             self.setCentralWidget(central)
 
@@ -744,11 +761,18 @@ if QApplication is not None:
 
             map_group = QGroupBox("地图与机器人")
             map_layout = QFormLayout(map_group)
+            self._configure_form_layout(map_layout)
             self.map_value = QLabel("等待 /map")
-            self.map_value.setWordWrap(True)
             self.pose_value = QLabel("等待 map → base_footprint")
             self.localization_quality_value = QLabel("等待 /amcl_pose")
             self.cursor_value = QLabel("--")
+            for value_label in (
+                self.map_value,
+                self.pose_value,
+                self.localization_quality_value,
+                self.cursor_value,
+            ):
+                self._configure_value_label(value_label)
             map_layout.addRow("地图", self.map_value)
             map_layout.addRow("机器人", self.pose_value)
             map_layout.addRow("定位置信度", self.localization_quality_value)
@@ -757,6 +781,7 @@ if QApplication is not None:
 
             goal_group = QGroupBox("地图选中位姿")
             goal_layout = QFormLayout(goal_group)
+            self._configure_form_layout(goal_layout)
             self.goal_x = self._spin(-1000.0, 1000.0, " m")
             self.goal_y = self._spin(-1000.0, 1000.0, " m")
             self.goal_yaw = self._spin(-180.0, 180.0, "°")
@@ -777,8 +802,14 @@ if QApplication is not None:
             nomotion_update_button.clicked.connect(
                 lambda _checked=False: self.nomotion_update_requested.emit()
             )
+            for button in (
+                set_initial_pose_button,
+                global_relocalize_button,
+                nomotion_update_button,
+            ):
+                button.setMinimumHeight(38)
             self.relocalization_value = QLabel("可设置粗略位置或启动全地图搜索")
-            self.relocalization_value.setWordWrap(True)
+            self._configure_value_label(self.relocalization_value)
             relocalization_layout.addWidget(set_initial_pose_button)
             relocalization_layout.addWidget(global_relocalize_button)
             relocalization_layout.addWidget(nomotion_update_button)
@@ -815,8 +846,9 @@ if QApplication is not None:
             status_group = QGroupBox("导航状态")
             status_layout = QVBoxLayout(status_group)
             self.navigation_value = QLabel("等待目标")
-            self.navigation_value.setWordWrap(True)
             self.feedback_value = QLabel("剩余距离：--　预计时间：--")
+            self._configure_value_label(self.navigation_value)
+            self._configure_value_label(self.feedback_value)
             status_layout.addWidget(self.navigation_value)
             status_layout.addWidget(self.feedback_value)
             layout.addWidget(status_group)
@@ -830,6 +862,22 @@ if QApplication is not None:
             layout.addWidget(help_text)
             layout.addStretch()
             return panel
+
+        @staticmethod
+        def _configure_form_layout(layout: QFormLayout) -> None:
+            layout.setFieldGrowthPolicy(
+                QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow
+            )
+            layout.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
+
+        @staticmethod
+        def _configure_value_label(label: QLabel) -> None:
+            label.setWordWrap(True)
+            label.setMinimumWidth(0)
+            label.setSizePolicy(
+                QSizePolicy.Policy.Ignored,
+                QSizePolicy.Policy.Preferred,
+            )
 
         @staticmethod
         def _spin(minimum: float, maximum: float, suffix: str) -> QDoubleSpinBox:

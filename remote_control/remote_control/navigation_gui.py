@@ -51,12 +51,14 @@ try:
         QFileDialog,
         QFormLayout,
         QFrame,
+        QGraphicsItem,
         QGraphicsPixmapItem,
         QGraphicsScene,
         QGraphicsView,
         QGroupBox,
         QHBoxLayout,
         QLabel,
+        QListWidget,
         QMainWindow,
         QMessageBox,
         QPushButton,
@@ -72,8 +74,8 @@ except ImportError:  # pragma: no cover - depends on the desktop environment.
 try:
     import rclpy
     from action_msgs.msg import GoalStatus
-    from geometry_msgs.msg import PoseWithCovarianceStamped
-    from nav2_msgs.action import NavigateToPose
+    from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped
+    from nav2_msgs.action import FollowWaypoints, NavigateToPose
     from nav2_msgs.srv import LoadMap
     from nav_msgs.msg import OccupancyGrid, Path as NavPath
     from rclpy.action import ActionClient
@@ -137,6 +139,8 @@ if QApplication is not None:
             self._local_trajectory_item = None
             self._global_plan_points: tuple[tuple[float, float], ...] = ()
             self._local_trajectory_points: tuple[tuple[float, float], ...] = ()
+            self._waypoint_items: list = []
+            self._waypoints: tuple[tuple[float, float, float], ...] = ()
             self._robot_items: list = []
             self._goal_items: list = []
             self._snapshot: Optional[MapSnapshot] = None
@@ -177,6 +181,7 @@ if QApplication is not None:
             self._scene.setSceneRect(0, 0, geometry.width, geometry.height)
             self._draw_scan_points()
             self._draw_navigation_paths()
+            self._draw_waypoints()
             if self._first_map:
                 self.fit_map()
                 self._first_map = False
@@ -268,6 +273,62 @@ if QApplication is not None:
             )
             item.setZValue(z_value)
             return item
+
+        def set_waypoints(
+            self,
+            waypoints: tuple[tuple[float, float, float], ...],
+        ) -> None:
+            self._waypoints = waypoints
+            self._draw_waypoints()
+
+        def _draw_waypoints(self) -> None:
+            self._remove_items(self._waypoint_items)
+            if self._snapshot is None or not self._waypoints:
+                return
+            geometry = self._snapshot.geometry
+            sequence_path = QPainterPath()
+            for index, (x_m, y_m, yaw_rad) in enumerate(self._waypoints):
+                scene_x, scene_y = geometry.world_to_scene(x_m, y_m)
+                if index == 0:
+                    sequence_path.moveTo(scene_x, scene_y)
+                else:
+                    sequence_path.lineTo(scene_x, scene_y)
+                tip_x, tip_y = geometry.world_to_scene(
+                    x_m + 0.55 * math.cos(yaw_rad),
+                    y_m + 0.55 * math.sin(yaw_rad),
+                )
+                radius = max(3.0, 0.16 / geometry.resolution)
+                marker = self._scene.addEllipse(
+                    scene_x - radius,
+                    scene_y - radius,
+                    radius * 2.0,
+                    radius * 2.0,
+                    self._cosmetic_pen("#ffffff", 2.0),
+                    QBrush(QColor("#7b1fa2")),
+                )
+                heading = self._scene.addLine(
+                    scene_x,
+                    scene_y,
+                    tip_x,
+                    tip_y,
+                    self._cosmetic_pen("#4a148c", 3.0),
+                )
+                number = self._scene.addText(str(index + 1), QFont("Sans Serif", 9))
+                number.setDefaultTextColor(QColor("#7b1fa2"))
+                number.setFlag(
+                    QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations,
+                    True,
+                )
+                number.setPos(scene_x + radius, scene_y - radius)
+                for item in (marker, heading, number):
+                    item.setZValue(7)
+                self._waypoint_items.extend([marker, heading, number])
+            if len(self._waypoints) >= 2:
+                sequence_pen = self._cosmetic_pen("#ab47bc", 2.0)
+                sequence_pen.setStyle(Qt.PenStyle.DashLine)
+                sequence = self._scene.addPath(sequence_path, sequence_pen)
+                sequence.setZValue(6.5)
+                self._waypoint_items.append(sequence)
 
         def set_robot_pose(self, x_m: float, y_m: float, yaw_rad: float) -> None:
             self._robot_yaw = yaw_rad
@@ -458,6 +519,7 @@ if QApplication is not None:
         pose_received = Signal(float, float, float)
         connection_changed = Signal(bool, str)
         navigation_changed = Signal(str)
+        waypoint_progress_changed = Signal(int, int)
         feedback_changed = Signal(float, float)
         localization_quality_changed = Signal(float, float, str)
         scan_received = Signal(object)
@@ -491,6 +553,7 @@ if QApplication is not None:
             self.tf_buffer = None
             self.tf_listener = None
             self.nav_client = None
+            self.waypoint_client = None
             self.initial_pose_pub = None
             self.global_localization_client = None
             self.nomotion_update_client = None
@@ -504,6 +567,7 @@ if QApplication is not None:
             self._last_tf_emit_ns = 0
             self._server_ready = False
             self._localization_backend = ""
+            self._waypoint_count = 0
 
         @Slot()
         def start(self) -> None:
@@ -617,6 +681,11 @@ if QApplication is not None:
                     self.node,
                     NavigateToPose,
                     self.action_name,
+                )
+                self.waypoint_client = ActionClient(
+                    self.node,
+                    FollowWaypoints,
+                    "/follow_waypoints",
                 )
                 self.executor = SingleThreadedExecutor()
                 self.executor.add_node(self.node)
@@ -1121,6 +1190,88 @@ if QApplication is not None:
                 return
             self.relocalization_changed.emit("已使用当前 MID-360 扫描强制更新定位")
 
+        @Slot(object, str)
+        def send_waypoints(
+            self,
+            waypoints: tuple[tuple[float, float, float], ...],
+            frame_id: str,
+        ) -> None:
+            if (
+                self.waypoint_client is None
+                or not self.waypoint_client.server_is_ready()
+            ):
+                self.error.emit("Nav2 /follow_waypoints 尚未就绪")
+                return
+            if not waypoints:
+                self.error.emit("路径点列表为空")
+                return
+            self._cancel_active_goal()
+            goal = FollowWaypoints.Goal()
+            goal.number_of_loops = 0
+            goal.goal_index = 0
+            for x_m, y_m, yaw_rad in waypoints:
+                waypoint = PoseStamped()
+                waypoint.header.frame_id = frame_id or self.map_frame
+                waypoint.pose.position.x = x_m
+                waypoint.pose.position.y = y_m
+                waypoint.pose.orientation.z = math.sin(yaw_rad / 2.0)
+                waypoint.pose.orientation.w = math.cos(yaw_rad / 2.0)
+                goal.poses.append(waypoint)
+            self._waypoint_count = len(waypoints)
+            self.navigation_changed.emit(
+                f"正在发送 {self._waypoint_count} 个路径点……"
+            )
+            future = self.waypoint_client.send_goal_async(
+                goal,
+                feedback_callback=self._on_waypoint_feedback,
+            )
+            future.add_done_callback(self._on_waypoint_goal_response)
+
+        def _on_waypoint_goal_response(self, future) -> None:
+            try:
+                goal_handle = future.result()
+            except Exception as exc:
+                self.navigation_changed.emit(f"路径点任务发送失败：{exc}")
+                return
+            if goal_handle is None or not goal_handle.accepted:
+                self.navigation_changed.emit("Nav2 拒绝了路径点任务")
+                return
+            self.goal_handle = goal_handle
+            self.waypoint_progress_changed.emit(1, self._waypoint_count)
+            self.navigation_changed.emit(
+                f"路径点任务已接受，共 {self._waypoint_count} 点"
+            )
+            result_future = goal_handle.get_result_async()
+            result_future.add_done_callback(self._on_waypoint_result)
+
+        def _on_waypoint_feedback(self, feedback_message) -> None:
+            current = int(feedback_message.feedback.current_waypoint) + 1
+            self.waypoint_progress_changed.emit(current, self._waypoint_count)
+            self.navigation_changed.emit(
+                f"正在执行路径点 {current}/{self._waypoint_count}"
+            )
+
+        def _on_waypoint_result(self, future) -> None:
+            try:
+                wrapped_result = future.result()
+                status = wrapped_result.status
+                result = wrapped_result.result
+            except Exception as exc:
+                self.navigation_changed.emit(f"读取路径点任务结果失败：{exc}")
+                return
+            missed = [int(item.index) + 1 for item in result.missed_waypoints]
+            if status == GoalStatus.STATUS_SUCCEEDED and not missed:
+                message = f"全部 {self._waypoint_count} 个路径点执行完成"
+            elif status == GoalStatus.STATUS_CANCELED:
+                message = "路径点任务已取消"
+            elif missed:
+                message = "路径点任务结束，未到达：" + ", ".join(map(str, missed))
+            else:
+                detail = result.error_msg or f"状态码 {status}"
+                message = f"路径点任务失败：{detail}"
+            self.navigation_changed.emit(message)
+            self.goal_handle = None
+
         @Slot(float, float, float, str)
         def send_goal(
             self,
@@ -1223,6 +1374,7 @@ if QApplication is not None:
         nomotion_update_requested = Signal()
         map_save_requested = Signal(str)
         map_load_requested = Signal(str)
+        waypoints_requested = Signal(object, str)
 
         def __init__(
             self,
@@ -1238,6 +1390,7 @@ if QApplication is not None:
             self.map_frame = map_frame
             self.snapshot: Optional[MapSnapshot] = None
             self.goal: Optional[tuple[float, float, float]] = None
+            self.waypoints: list[tuple[float, float, float]] = []
             self.localization_backend = "waiting"
             self.current_map_file = str(Path(map_file).expanduser())
             self._closing = False
@@ -1266,6 +1419,7 @@ if QApplication is not None:
             self.nomotion_update_requested.connect(self.worker.request_nomotion_update)
             self.map_save_requested.connect(self.worker.save_map_session)
             self.map_load_requested.connect(self.worker.load_map_session)
+            self.waypoints_requested.connect(self.worker.send_waypoints)
             self.worker.map_received.connect(self._on_map)
             self.worker.pose_received.connect(self._on_pose)
             self.worker.scan_received.connect(self._on_scan_points)
@@ -1276,6 +1430,9 @@ if QApplication is not None:
             )
             self.worker.connection_changed.connect(self._on_connection)
             self.worker.navigation_changed.connect(self.navigation_value.setText)
+            self.worker.waypoint_progress_changed.connect(
+                self._on_waypoint_progress
+            )
             self.worker.feedback_changed.connect(self._on_feedback)
             self.worker.localization_quality_changed.connect(
                 self._on_localization_quality
@@ -1387,6 +1544,46 @@ if QApplication is not None:
             goal_layout.addRow("朝向", self.goal_yaw)
             layout.addWidget(goal_group)
 
+            waypoint_group = QGroupBox("路径点任务")
+            waypoint_layout = QVBoxLayout(waypoint_group)
+            self.waypoint_list = QListWidget()
+            self.waypoint_list.setMinimumHeight(110)
+            self.waypoint_list.currentRowChanged.connect(
+                self._on_waypoint_selected
+            )
+            add_waypoint_button = QPushButton("添加当前选中位姿")
+            add_waypoint_button.clicked.connect(self._add_waypoint)
+            order_buttons = QHBoxLayout()
+            move_up_button = QPushButton("上移")
+            move_up_button.clicked.connect(lambda: self._move_waypoint(-1))
+            move_down_button = QPushButton("下移")
+            move_down_button.clicked.connect(lambda: self._move_waypoint(1))
+            order_buttons.addWidget(move_up_button)
+            order_buttons.addWidget(move_down_button)
+            edit_buttons = QHBoxLayout()
+            remove_waypoint_button = QPushButton("删除")
+            remove_waypoint_button.clicked.connect(self._remove_waypoint)
+            clear_waypoints_button = QPushButton("清空")
+            clear_waypoints_button.clicked.connect(self._clear_waypoints)
+            edit_buttons.addWidget(remove_waypoint_button)
+            edit_buttons.addWidget(clear_waypoints_button)
+            self.execute_waypoints_button = QPushButton("依次执行全部路径点")
+            self.execute_waypoints_button.setObjectName("primary")
+            self.execute_waypoints_button.setMinimumHeight(44)
+            self.execute_waypoints_button.setEnabled(False)
+            self.execute_waypoints_button.clicked.connect(
+                self._execute_waypoints
+            )
+            self.waypoint_status_value = QLabel("尚未添加路径点")
+            self._configure_value_label(self.waypoint_status_value)
+            waypoint_layout.addWidget(self.waypoint_list)
+            waypoint_layout.addWidget(add_waypoint_button)
+            waypoint_layout.addLayout(order_buttons)
+            waypoint_layout.addLayout(edit_buttons)
+            waypoint_layout.addWidget(self.execute_waypoints_button)
+            waypoint_layout.addWidget(self.waypoint_status_value)
+            layout.addWidget(waypoint_group)
+
             relocalization_group = QGroupBox("重定位")
             relocalization_layout = QVBoxLayout(relocalization_group)
             set_initial_pose_button = QPushButton("将选中位姿设为初始位置")
@@ -1463,7 +1660,8 @@ if QApplication is not None:
                 "松开后可将它用作初始位姿或导航目标。红点是 MID-360 扫描经当前"
                 "定位变换后的地图匹配结果。持续建图时可选择灰色边界作为探索目标；"
                 "青线是 Nav2 全局路径，黄线是控制器局部前视轨迹。静态定位时灰色"
-                "区域不会更新。滚轮缩放，中键拖动平移地图。"
+                "区域不会更新。紫色编号标记是路径点，拖动选好方向后逐个添加并排序。"
+                "滚轮缩放，中键拖动平移地图。"
             )
             help_text.setWordWrap(True)
             help_text.setObjectName("help")
@@ -1555,6 +1753,7 @@ if QApplication is not None:
                 return
             self.current_map_file = str(Path(selected_path).expanduser().resolve())
             self.map_file_value.setText(self.current_map_file)
+            self._clear_waypoints()
             self._display_map(snapshot, f"文件预览 · {Path(selected_path).name}")
             self.map_operation_value.setText("文件已读取，正在切换 ROS 后端地图……")
             self.map_load_requested.emit(self.current_map_file)
@@ -1649,6 +1848,106 @@ if QApplication is not None:
                 f"局部轨迹：{len(points)} 点 · "
                 f"{polyline_length(points):.2f} m · 黄色"
             )
+
+        def _add_waypoint(self) -> None:
+            selected_pose = self._validated_selected_pose()
+            if selected_pose is None:
+                return
+            self.waypoints.append(selected_pose)
+            self._refresh_waypoints(len(self.waypoints) - 1)
+            self.waypoint_status_value.setText(
+                f"已添加路径点 {len(self.waypoints)}"
+            )
+
+        def _remove_waypoint(self) -> None:
+            row = self.waypoint_list.currentRow()
+            if not 0 <= row < len(self.waypoints):
+                self._on_error("请先选择要删除的路径点")
+                return
+            self.waypoints.pop(row)
+            self._refresh_waypoints(min(row, len(self.waypoints) - 1))
+
+        def _clear_waypoints(self) -> None:
+            self.waypoints.clear()
+            self._refresh_waypoints()
+            self.waypoint_status_value.setText("路径点列表已清空")
+
+        def _move_waypoint(self, offset: int) -> None:
+            row = self.waypoint_list.currentRow()
+            target = row + offset
+            if not 0 <= row < len(self.waypoints) or not 0 <= target < len(
+                self.waypoints
+            ):
+                return
+            self.waypoints[row], self.waypoints[target] = (
+                self.waypoints[target],
+                self.waypoints[row],
+            )
+            self._refresh_waypoints(target)
+
+        def _refresh_waypoints(self, selected_row: int = -1) -> None:
+            self.waypoint_list.blockSignals(True)
+            self.waypoint_list.clear()
+            for index, (x_m, y_m, yaw_rad) in enumerate(self.waypoints, start=1):
+                self.waypoint_list.addItem(
+                    f"{index:02d}  x={x_m:.2f}  y={y_m:.2f}  "
+                    f"yaw={math.degrees(yaw_rad):.1f}°"
+                )
+            self.waypoint_list.blockSignals(False)
+            self.map_view.set_waypoints(tuple(self.waypoints))
+            self.execute_waypoints_button.setEnabled(bool(self.waypoints))
+            if 0 <= selected_row < len(self.waypoints):
+                self.waypoint_list.setCurrentRow(selected_row)
+            if self.waypoints:
+                self.waypoint_status_value.setText(
+                    f"共 {len(self.waypoints)} 个路径点，可调整顺序后执行"
+                )
+            else:
+                self.waypoint_status_value.setText("尚未添加路径点")
+
+        @Slot(int)
+        def _on_waypoint_selected(self, row: int) -> None:
+            if not 0 <= row < len(self.waypoints):
+                return
+            x_m, y_m, yaw_rad = self.waypoints[row]
+            self.goal = (x_m, y_m, yaw_rad)
+            self.goal_x.setValue(x_m)
+            self.goal_y.setValue(y_m)
+            self.goal_yaw.setValue(math.degrees(yaw_rad))
+            self.map_view.set_goal(x_m, y_m, yaw_rad)
+            self.send_button.setEnabled(True)
+
+        def _execute_waypoints(self) -> None:
+            if self.snapshot is None or not self.waypoints:
+                self._on_error("请先添加路径点")
+                return
+            allow_unknown = self.localization_backend == "slam"
+            for index, (x_m, y_m, _yaw_rad) in enumerate(
+                self.waypoints,
+                start=1,
+            ):
+                if not self.snapshot.is_traversable(
+                    x_m,
+                    y_m,
+                    allow_unknown=allow_unknown,
+                ):
+                    self._on_error(f"路径点 {index} 当前不可通行，请调整")
+                    return
+            self.waypoint_status_value.setText(
+                f"正在发送 {len(self.waypoints)} 个路径点……"
+            )
+            self.waypoints_requested.emit(
+                tuple(self.waypoints),
+                self.map_frame,
+            )
+
+        @Slot(int, int)
+        def _on_waypoint_progress(self, current: int, total: int) -> None:
+            self.waypoint_status_value.setText(
+                f"正在执行路径点 {current}/{total}"
+            )
+            if 1 <= current <= len(self.waypoints):
+                self.waypoint_list.setCurrentRow(current - 1)
 
         def _send_goal(self) -> None:
             selected_pose = self._validated_selected_pose()

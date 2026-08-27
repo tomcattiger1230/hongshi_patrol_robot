@@ -6,7 +6,6 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 endif()
 
 find_package(ament_cmake REQUIRED)
-find_package(ament_cmake_target_dependencies REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(pcl_conversions REQUIRED)
@@ -18,13 +17,10 @@ add_definitions(${PCL_DEFINITIONS})
 
 add_executable(mid360_preprocess_node src/mid360_preprocess_node.cpp)
 
-ament_target_dependencies(mid360_preprocess_node
-  rclcpp
-  sensor_msgs
-  pcl_conversions
-)
-
 target_link_libraries(mid360_preprocess_node
+  rclcpp::rclcpp
+  sensor_msgs::sensor_msgs
+  pcl_conversions::pcl_conversions
   ${PCL_LIBRARIES}
 )
 

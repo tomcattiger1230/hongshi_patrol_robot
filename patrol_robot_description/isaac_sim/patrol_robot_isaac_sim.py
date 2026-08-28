@@ -71,12 +71,7 @@ def _parse_args() -> argparse.Namespace:
 
 
 ARGS = _parse_args()
-# Solid-state RTX lidars distribute one scan across multiple render ticks.
-# Isaac Sim 6 requires the motion BVH for that mode; without it the sensor can
-# stall during startup and moving-platform returns are spatially distorted.
-SIMULATION_APP = SimulationApp(
-    {"headless": not ARGS.gui, "enable_motion_bvh": True}
-)
+SIMULATION_APP = SimulationApp({"headless": not ARGS.gui})
 
 import isaacsim.core.experimental.utils.app as app_utils
 import isaacsim.core.experimental.utils.stage as stage_utils
@@ -455,9 +450,11 @@ def _mid360_attributes() -> dict[str, object]:
         "omni:sensor:Core:elevationErrorStd": 0.0,
         "omni:sensor:Core:outputFrameOfReference": "SENSOR",
     }
-    fire_times = Vt.UIntArray(
-        (np.arange(MID360_RAYS_PER_FRAME) * 25_000).tolist()
-    )
+    # Isaac Sim 6's ROS writer currently produces no PointCloud2 data when a
+    # custom solid-state profile uses multi-tick motion BVH. Cast each 10 Hz
+    # frame as one snapshot; this preserves geometry and avoids motion-BVH
+    # distortion/failure at the cost of not modelling intra-frame skew.
+    fire_times = Vt.UIntArray([0] * MID360_RAYS_PER_FRAME)
     channel_ids = Vt.UIntArray(
         (np.arange(MID360_RAYS_PER_FRAME) % 4 + 1).tolist()
     )

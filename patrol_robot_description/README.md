@@ -10,6 +10,10 @@ performance sample of the real 200,000 points/s stream, with a nominal
 -7.18--52.16-degree vertical coverage. The bundled
 `isaac_sim/mid360_pattern.npz` was generated from rows 1--80,000 of:
 
+Isaac Sim 6 casts each 10 Hz frame as a single snapshot because its ROS writer
+does not currently emit data for this custom profile with multi-tick motion
+BVH. Consequently, intra-frame motion skew is not simulated.
+
 https://github.com/Livox-SDK/livox_laser_simulation/blob/main/scan_mode/mid360.csv
 
 Upstream CSV SHA-256:

@@ -407,6 +407,8 @@ def _create_mid360s_lidar() -> LidarSensor:
         config="XT32_SD10",
         tick_rate=10.0,
         aux_output_level="FULL",
+        translations=[MID360_POSITION],
+        orientations=[[1.0, 0.0, 0.0, 0.0]],
         attributes={
             "omni:sensor:Core:nearRangeM": 0.10,
             "omni:sensor:Core:farRangeM": 70.0,
@@ -416,7 +418,6 @@ def _create_mid360s_lidar() -> LidarSensor:
     lidar_root = stage_utils.get_current_stage().GetPrimAtPath(lidar_root_path)
     if not lidar_root.IsValid():
         raise RuntimeError(f"Failed to attach RTX lidar at {lidar_root_path}")
-    UsdGeom.XformCommonAPI(lidar_root).SetTranslate(Gf.Vec3d(*MID360_POSITION))
     sensor = LidarSensor(lidar, annotators=[])
     sensor.attach_writer(
         "RtxLidarROS2PublishPointCloud",

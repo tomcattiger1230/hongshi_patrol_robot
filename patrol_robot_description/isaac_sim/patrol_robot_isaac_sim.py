@@ -459,9 +459,7 @@ def _set_mid360s_lidar_pose(
     log: bool = False,
 ) -> None:
     """Keep the independent sensor asset aligned with the live articulation."""
-    stage = stage_utils.get_current_stage()
     lidar_prim = lidar_sensor.lidar.prims[0]
-    lidar_root = stage.GetPrimAtPath(ISAAC_LIDAR_ROOT_PATH)
     yaw = math.atan2(
         2.0 * (orientation[0] * orientation[3] + orientation[1] * orientation[2]),
         1.0 - 2.0 * (orientation[2] ** 2 + orientation[3] ** 2),
@@ -473,9 +471,11 @@ def _set_mid360s_lidar_pose(
         float(position[1] + sin_yaw * MID360_POSITION[0]),
         float(position[2] + MID360_POSITION[2]),
     )
-    root_xform = UsdGeom.XformCommonAPI(lidar_root)
-    root_xform.SetTranslate(world_position)
-    root_xform.SetRotate(Gf.Vec3f(0.0, 0.0, math.degrees(yaw)))
+    # The XT32 OmniLidar prim resets its transform stack, so transforms on the
+    # referenced asset root do not propagate to the actual ray origin.
+    lidar_xform = UsdGeom.XformCommonAPI(lidar_prim)
+    lidar_xform.SetTranslate(world_position)
+    lidar_xform.SetRotate(Gf.Vec3f(0.0, 0.0, math.degrees(yaw)))
     if log:
         lidar_world_position = UsdGeom.Xformable(
             lidar_prim

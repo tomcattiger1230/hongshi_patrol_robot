@@ -71,7 +71,12 @@ def _parse_args() -> argparse.Namespace:
 
 
 ARGS = _parse_args()
-SIMULATION_APP = SimulationApp({"headless": not ARGS.gui})
+# Solid-state RTX lidars distribute one scan across multiple render ticks.
+# Isaac Sim 6 requires the motion BVH for that mode; without it the sensor can
+# stall during startup and moving-platform returns are spatially distorted.
+SIMULATION_APP = SimulationApp(
+    {"headless": not ARGS.gui, "enable_motion_bvh": True}
+)
 
 import isaacsim.core.experimental.utils.app as app_utils
 import isaacsim.core.experimental.utils.stage as stage_utils

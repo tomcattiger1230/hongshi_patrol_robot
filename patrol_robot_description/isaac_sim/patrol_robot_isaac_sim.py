@@ -110,6 +110,7 @@ STEERING_DRIVE_DAMPING = 200.0
 TIRE_STATIC_FRICTION = 0.9
 TIRE_DYNAMIC_FRICTION = 0.8
 MID360_POSITION = np.array([0.40, 0.0, 1.50])
+ISAAC_ROBOT_PATH = "/World/PatrolRobot"
 ISAAC_BASE_LINK_PATH = "/World/PatrolRobot/Geometry/base_footprint"
 STEERING_DOF_NAMES = [
     "front_left_steering_joint",
@@ -389,7 +390,7 @@ def _build_scene(robot_usd: Path) -> WheeledRobot:
     UsdGeom.Xformable(light).AddRotateXYZOp().Set(Gf.Vec3f(35.0, -25.0, 20.0))
 
     robot = WheeledRobot(
-        paths="/World/PatrolRobot",
+        paths=ISAAC_ROBOT_PATH,
         wheel_dof_names=REAR_WHEEL_DOF_NAMES,
         usd_path=str(robot_usd),
         # The wheel radius and joint origins place the tire bottoms at z=0.
@@ -408,7 +409,9 @@ def _create_mid360s_lidar() -> LidarSensor:
     # JSON profiles in extsDeprecated. Its unconfigured fallback has almost no
     # downward rays from 270-330 degrees, creating a false navigation blind
     # sector. Use the supported USD asset API and the full XT32 rotary profile.
-    lidar_root_path = f"{ISAAC_BASE_LINK_PATH}/mid360s_lidar"
+    # Geometry/base_footprint is an importer-generated, scaled visual hierarchy.
+    # Mount the sensor below the articulation root so offsets remain in metres.
+    lidar_root_path = f"{ISAAC_ROBOT_PATH}/mid360s_lidar"
     lidar_common = {
         "tick_rate": 10.0,
         "aux_output_level": "FULL",
@@ -436,22 +439,10 @@ def _create_mid360s_lidar() -> LidarSensor:
     if not lidar_root.IsValid():
         raise RuntimeError(f"Failed to attach RTX lidar at {lidar_root_path}")
     lidar_prim = lidar.prims[0]
-    stage = stage_utils.get_current_stage()
-    base_prim = stage.GetPrimAtPath(ISAAC_BASE_LINK_PATH)
-    base_to_world = UsdGeom.Xformable(base_prim).ComputeLocalToWorldTransform(
-        Usd.TimeCode.Default()
-    )
-    lidar_to_world = UsdGeom.Xformable(lidar_prim).ComputeLocalToWorldTransform(
-        Usd.TimeCode.Default()
-    )
-    authored_position = base_to_world.GetInverse().Transform(
-        lidar_to_world.ExtractTranslation()
-    )
-    root_translation = MID360_POSITION - np.asarray(authored_position, dtype=float)
     # Move the reference root rather than overwriting the OmniLidar prim's
     # authored transform. Resetting the latter disables returns in Isaac 6's
     # XT32 asset even though the prim remains visible and publishes a topic.
-    UsdGeom.XformCommonAPI(lidar_root).SetTranslate(Gf.Vec3d(*root_translation))
+    UsdGeom.XformCommonAPI(lidar_root).SetTranslate(Gf.Vec3d(*MID360_POSITION))
     lidar_world_position = UsdGeom.Xformable(lidar_prim).ComputeLocalToWorldTransform(
         Usd.TimeCode.Default()
     ).ExtractTranslation()

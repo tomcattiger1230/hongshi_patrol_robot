@@ -72,7 +72,7 @@ import numpy as np
 import rclpy
 from geometry_msgs.msg import TransformStamped, Twist
 from nav_msgs.msg import Odometry
-from pxr import Gf, PhysxSchema, UsdGeom, UsdLux, UsdPhysics, UsdShade
+from pxr import Gf, PhysxSchema, Usd, UsdGeom, UsdLux, UsdPhysics, UsdShade
 from rclpy.node import Node
 from rclpy.signals import SignalHandlerOptions
 from rosgraph_msgs.msg import Clock
@@ -418,6 +418,17 @@ def _create_mid360s_lidar() -> LidarSensor:
     lidar_root = stage_utils.get_current_stage().GetPrimAtPath(lidar_root_path)
     if not lidar_root.IsValid():
         raise RuntimeError(f"Failed to attach RTX lidar at {lidar_root_path}")
+    lidar_prim = lidar.prims[0]
+    lidar_world_position = UsdGeom.Xformable(lidar_prim).ComputeLocalToWorldTransform(
+        Usd.TimeCode.Default()
+    ).ExtractTranslation()
+    print(
+        "PATROL_ISAAC_LIDAR "
+        f"path={lidar_prim.GetPath()} "
+        f"world=({lidar_world_position[0]:.3f},"
+        f"{lidar_world_position[1]:.3f},{lidar_world_position[2]:.3f})",
+        flush=True,
+    )
     sensor = LidarSensor(lidar, annotators=[])
     sensor.attach_writer(
         "RtxLidarROS2PublishPointCloud",

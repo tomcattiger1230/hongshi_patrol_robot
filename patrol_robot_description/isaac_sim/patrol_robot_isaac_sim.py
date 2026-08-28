@@ -807,6 +807,7 @@ def main() -> None:
         wall_start = time.monotonic()
         publish_every = 3
         step = 0
+        lidar_reported = False
         last_steering_targets: np.ndarray | None = None
         last_wheel_targets: np.ndarray | None = None
         print(
@@ -818,6 +819,18 @@ def main() -> None:
 
         while not stop_requested and (not ARGS.gui or SIMULATION_APP.is_running()):
             SIMULATION_APP.update()
+            if not lidar_reported and step > 0 and step % 60 == 0:
+                lidar_data, lidar_info = lidar_sensor.get_data(
+                    "generic-model-output"
+                )
+                if lidar_data is not None:
+                    print(
+                        "PATROL_ISAAC_LIDAR_GMO "
+                        f"shape={getattr(lidar_data, 'shape', None)} "
+                        f"info_keys={sorted(lidar_info)}",
+                        flush=True,
+                    )
+                    lidar_reported = True
             # Pressing the GUI Stop button invalidates the articulation's
             # physics tensor view. Pause is an inspection state and must keep
             # the application alive without advancing simulated time.

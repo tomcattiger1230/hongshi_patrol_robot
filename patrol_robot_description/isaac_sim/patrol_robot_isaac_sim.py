@@ -707,13 +707,7 @@ def main() -> None:
             dof_indices=joint_state_dof_indices,
         )
         app_utils.update_app(steps=150)
-        settled_positions, settled_orientations = robot.get_world_poses()
-        _set_mid360s_lidar_pose(
-            lidar_sensor,
-            settled_positions.numpy()[0],
-            settled_orientations.numpy()[0],
-            log=True,
-        )
+        settled_positions, _ = robot.get_world_poses()
         settled_linear, settled_angular = robot.get_velocities()
         settled_dof_velocities = robot.get_dof_velocities(
             dof_indices=joint_state_dof_indices
@@ -819,9 +813,6 @@ def main() -> None:
                     dof_indices=joint_state_dof_indices
                 )
                 orientation = orientations.numpy()[0]
-                _set_mid360s_lidar_pose(
-                    lidar_sensor, positions.numpy()[0], orientation
-                )
                 yaw = math.atan2(
                     2.0
                     * (

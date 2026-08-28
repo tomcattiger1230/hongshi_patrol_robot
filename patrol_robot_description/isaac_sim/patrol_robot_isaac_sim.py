@@ -472,10 +472,15 @@ def _set_mid360s_lidar_pose(
         float(position[2] + MID360_POSITION[2]),
     )
     # The XT32 OmniLidar prim resets its transform stack, so transforms on the
-    # referenced asset root do not propagate to the actual ray origin.
-    lidar_xform = UsdGeom.XformCommonAPI(lidar_prim)
-    lidar_xform.SetTranslate(world_position)
-    lidar_xform.SetRotate(Gf.Vec3f(0.0, 0.0, math.degrees(yaw)))
+    # referenced asset root do not propagate to the actual ray origin. Use the
+    # sensor wrapper's pose backend to author the effective prim transform.
+    lidar_sensor.lidar.set_world_poses(
+        positions=np.asarray([world_position], dtype=np.float32),
+        orientations=np.asarray(
+            [[math.cos(yaw / 2.0), 0.0, 0.0, math.sin(yaw / 2.0)]],
+            dtype=np.float32,
+        ),
+    )
     if log:
         lidar_world_position = UsdGeom.Xformable(
             lidar_prim

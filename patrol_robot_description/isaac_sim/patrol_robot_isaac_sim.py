@@ -71,9 +71,7 @@ def _parse_args() -> argparse.Namespace:
 
 
 ARGS = _parse_args()
-SIMULATION_APP = SimulationApp(
-    {"headless": not ARGS.gui, "enable_motion_bvh": True}
-)
+SIMULATION_APP = SimulationApp({"headless": not ARGS.gui})
 
 import isaacsim.core.experimental.utils.app as app_utils
 import isaacsim.core.experimental.utils.stage as stage_utils
@@ -446,6 +444,9 @@ def _mid360_attributes() -> dict[str, object]:
         "omni:sensor:Core:maxReturns": 1,
         "omni:sensor:Core:scanRateBaseHz": 10,
         "omni:sensor:Core:patternFiringRateHz": 10,
+        # Use Isaac's supported complete-scan mode for a custom solid-state
+        # profile; its multi-tick path does not yield valid returns here.
+        "omni:sensor:Core:instantLidar": True,
         "omni:sensor:Core:numberOfEmitters": MID360_RAYS_PER_FRAME,
         # RTX's GMO contract limits channel IDs to 10 bits. Each of the four
         # scan lines therefore reuses the same 1,000 calibration channels.
@@ -513,17 +514,29 @@ def _create_mid360s_lidar() -> LidarSensor:
     lidar_root = stage_utils.get_current_stage().GetPrimAtPath(lidar_root_path)
     if not lidar_root.IsValid():
         raise RuntimeError(f"Failed to attach RTX lidar at {lidar_root_path}")
+    base_prim = stage_utils.get_current_stage().GetPrimAtPath(
+        ISAAC_BASE_LINK_PATH
+    )
+    base_to_world = UsdGeom.Xformable(base_prim).ComputeLocalToWorldTransform(
+        Usd.TimeCode.Default()
+    )
+    lidar_to_world = UsdGeom.Xformable(lidar_root).ComputeLocalToWorldTransform(
+        Usd.TimeCode.Default()
+    )
+    lidar_in_base = base_to_world.GetInverse().Transform(
+        lidar_to_world.ExtractTranslation()
+    )
+    print(
+        "PATROL_ISAAC_LIDAR_MOUNT "
+        f"base=({lidar_in_base[0]:.3f},{lidar_in_base[1]:.3f},"
+        f"{lidar_in_base[2]:.3f})",
+        flush=True,
+    )
     # Vendor USD assets may contain a nested sensor transform. Preserve the
     # explicit override path for troubleshooting, while the custom MID-360 is
     # already authored directly at the correct base-relative mount position.
     if ARGS.lidar_usd_path is not None:
         lidar_prim = lidar.prims[0]
-        base_prim = stage_utils.get_current_stage().GetPrimAtPath(
-            ISAAC_BASE_LINK_PATH
-        )
-        base_to_world = UsdGeom.Xformable(base_prim).ComputeLocalToWorldTransform(
-            Usd.TimeCode.Default()
-        )
         lidar_to_world = UsdGeom.Xformable(lidar_prim).ComputeLocalToWorldTransform(
             Usd.TimeCode.Default()
         )

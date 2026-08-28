@@ -791,11 +791,11 @@ def main() -> None:
                     ),
                 )
                 world_linear = linear_velocities.numpy()[0]
-                actual_linear_x = (
+                actual_linear_x = float(
                     math.cos(yaw) * world_linear[0]
                     + math.sin(yaw) * world_linear[1]
                 )
-                actual_angular_z = angular_velocities.numpy()[0][2]
+                actual_angular_z = float(angular_velocities.numpy()[0][2])
                 ros_node.publish_state(
                     simulation_time,
                     positions.numpy()[0],

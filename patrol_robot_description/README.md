@@ -4,7 +4,8 @@
 
 The Isaac Sim sensor uses four consecutive 0.1-second windows from Livox's
 official `scan_mode/mid360.csv` data as a compact four-state RTX scan pattern.
-It publishes 20,000 rays per frame at 10 Hz (200,000 points/s), with a nominal
+It publishes 4,000 rays per frame at 10 Hz (40,000 points/s), a uniform 1:5
+performance sample of the real 200,000 points/s stream, with a nominal
 0.1--70 m range and the measured pattern's 360-degree horizontal and
 -7.18--52.16-degree vertical coverage. The bundled
 `isaac_sim/mid360_pattern.npz` was generated from rows 1--80,000 of:

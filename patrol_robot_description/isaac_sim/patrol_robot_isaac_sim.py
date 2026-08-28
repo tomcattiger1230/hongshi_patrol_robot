@@ -116,6 +116,7 @@ TIRE_STATIC_FRICTION = 0.9
 TIRE_DYNAMIC_FRICTION = 0.8
 MID360_POSITION = np.array([0.40, 0.0, 1.50])
 MID360_PATTERN_PATH = Path(__file__).with_name("mid360_pattern.npz")
+MID360_RAYS_PER_FRAME = 4_000
 ISAAC_ROBOT_PATH = "/World/PatrolRobot"
 ISAAC_BASE_LINK_PATH = "/World/PatrolRobot/Geometry/base_footprint"
 STEERING_DOF_NAMES = [
@@ -424,8 +425,11 @@ def _mid360_attributes() -> dict[str, object]:
             "MID-360 scan pattern must have shape (4, 20000, 2), got "
             f"{pattern.shape}"
         )
+    # A full 20,000-ray frame makes Isaac Sim 6 spend many minutes building
+    # the motion-aware RTX sensor on the Spark. Uniformly retain every fifth
+    # official sample so the scan trajectory and field of view stay intact.
+    pattern = pattern[:, ::5]
 
-    # MID-360 publishes 200,000 first-return points/s at a typical 10 Hz.
     # Four official 0.1 s windows are cycled as emitter states so successive
     # frames retain the characteristic non-repetitive Livox distribution.
     attributes: dict[str, object] = {
@@ -441,18 +445,22 @@ def _mid360_attributes() -> dict[str, object]:
         "omni:sensor:Core:maxReturns": 1,
         "omni:sensor:Core:scanRateBaseHz": 10,
         "omni:sensor:Core:patternFiringRateHz": 10,
-        "omni:sensor:Core:numberOfEmitters": 20_000,
+        "omni:sensor:Core:numberOfEmitters": MID360_RAYS_PER_FRAME,
         "omni:sensor:Core:numberOfChannels": 4,
         "omni:sensor:Core:numLines": 4,
-        "omni:sensor:Core:numRaysPerLine": Vt.UIntArray([5_000] * 4),
+        "omni:sensor:Core:numRaysPerLine": Vt.UIntArray([1_000] * 4),
         "omni:sensor:Core:azimuthErrorMean": 0.0,
         "omni:sensor:Core:azimuthErrorStd": 0.0,
         "omni:sensor:Core:elevationErrorMean": 0.0,
         "omni:sensor:Core:elevationErrorStd": 0.0,
         "omni:sensor:Core:outputFrameOfReference": "SENSOR",
     }
-    fire_times = Vt.UIntArray((np.arange(20_000) * 5_000).tolist())
-    channel_ids = Vt.UIntArray((np.arange(20_000) % 4 + 1).tolist())
+    fire_times = Vt.UIntArray(
+        (np.arange(MID360_RAYS_PER_FRAME) * 25_000).tolist()
+    )
+    channel_ids = Vt.UIntArray(
+        (np.arange(MID360_RAYS_PER_FRAME) % 4 + 1).tolist()
+    )
     for state_index, state in enumerate(pattern, start=1):
         prefix = f"omni:sensor:Core:emitterState:s{state_index:03}"
         attributes[f"{prefix}:azimuthDeg"] = Vt.FloatArray(
@@ -467,7 +475,7 @@ def _mid360_attributes() -> dict[str, object]:
 
 
 def _create_mid360s_lidar() -> LidarSensor:
-    """Create a 10 Hz, 200 kpoint/s MID-360 RTX lidar and ROS output."""
+    """Create a motion-aware 10 Hz MID-360 RTX lidar and ROS output."""
     lidar_root_path = f"{ISAAC_BASE_LINK_PATH}/mid360s_lidar"
     if ARGS.lidar_usd_path is not None:
         lidar_usd_path = ARGS.lidar_usd_path.expanduser().resolve()

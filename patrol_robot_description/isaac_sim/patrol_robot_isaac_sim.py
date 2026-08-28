@@ -355,7 +355,10 @@ def _build_scene(robot_usd: Path) -> WheeledRobot:
         paths="/World/PatrolRobot",
         wheel_dof_names=REAR_WHEEL_DOF_NAMES,
         usd_path=str(robot_usd),
-        positions=[-10.5, -8.5, 0.02],
+        # The wheel radius and joint origins place the tire bottoms at z=0.
+        # A 2 cm drop injects enough energy into this unsuspended 180 kg model
+        # to excite all four wheel contacts before ROS control even starts.
+        positions=[-10.5, -8.5, 0.001],
     )
     _bind_tire_physics_material(stage)
     return robot
@@ -603,7 +606,7 @@ def main() -> None:
         robot.apply_wheel_actions(np.zeros(2, dtype=np.float32))
 
         # Let gravity and tire contacts settle before accepting ROS commands.
-        app_utils.update_app(steps=60)
+        app_utils.update_app(steps=180)
         settled_positions, _ = robot.get_world_poses()
         settled_linear, settled_angular = robot.get_velocities()
         settled_dof_velocities = robot.get_dof_velocities(
@@ -616,6 +619,18 @@ def main() -> None:
             f"angular_speed={np.linalg.norm(settled_angular.numpy()[0]):.6f} "
             "max_joint_speed="
             f"{np.max(np.abs(settled_dof_velocities.numpy())):.6f}",
+            flush=True,
+        )
+        print(
+            "PATROL_ISAAC_SETTLED_JOINTS "
+            + " ".join(
+                f"{name}={velocity:.6f}"
+                for name, velocity in zip(
+                    JOINT_STATE_NAMES,
+                    settled_dof_velocities.numpy()[0],
+                    strict=True,
+                )
+            ),
             flush=True,
         )
         if ARGS.start_paused:

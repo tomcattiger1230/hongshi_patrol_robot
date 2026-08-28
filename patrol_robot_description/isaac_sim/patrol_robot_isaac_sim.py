@@ -409,9 +409,7 @@ def _create_mid360s_lidar() -> LidarSensor:
     # JSON profiles in extsDeprecated. Its unconfigured fallback has almost no
     # downward rays from 270-330 degrees, creating a false navigation blind
     # sector. Use the supported USD asset API and the full XT32 rotary profile.
-    # Geometry/base_footprint is an importer-generated, scaled visual hierarchy.
-    # Mount the sensor below the articulation root so offsets remain in metres.
-    lidar_root_path = f"{ISAAC_ROBOT_PATH}/mid360s_lidar"
+    lidar_root_path = f"{ISAAC_BASE_LINK_PATH}/mid360s_lidar"
     lidar_common = {
         "tick_rate": 10.0,
         "aux_output_level": "FULL",
@@ -439,10 +437,20 @@ def _create_mid360s_lidar() -> LidarSensor:
     if not lidar_root.IsValid():
         raise RuntimeError(f"Failed to attach RTX lidar at {lidar_root_path}")
     lidar_prim = lidar.prims[0]
+    stage = stage_utils.get_current_stage()
+    base_prim = stage.GetPrimAtPath(ISAAC_BASE_LINK_PATH)
+    base_to_world = UsdGeom.Xformable(base_prim).ComputeLocalToWorldTransform(
+        Usd.TimeCode.Default()
+    )
+    base_world_position = base_to_world.ExtractTranslation()
+    target_world_position = base_world_position + Gf.Vec3d(*MID360_POSITION)
+    root_translation = base_to_world.GetInverse().Transform(target_world_position)
     # Move the reference root rather than overwriting the OmniLidar prim's
     # authored transform. Resetting the latter disables returns in Isaac 6's
     # XT32 asset even though the prim remains visible and publishes a topic.
-    UsdGeom.XformCommonAPI(lidar_root).SetTranslate(Gf.Vec3d(*MID360_POSITION))
+    # Convert the desired metre offset through the imported link transform;
+    # that hierarchy contains a URDF-authored scale and is not metre-local.
+    UsdGeom.XformCommonAPI(lidar_root).SetTranslate(root_translation)
     lidar_world_position = UsdGeom.Xformable(lidar_prim).ComputeLocalToWorldTransform(
         Usd.TimeCode.Default()
     ).ExtractTranslation()

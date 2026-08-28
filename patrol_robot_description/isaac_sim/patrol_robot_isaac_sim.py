@@ -69,8 +69,6 @@ SIMULATION_APP = SimulationApp({"headless": not ARGS.gui})
 import isaacsim.core.experimental.utils.app as app_utils
 import isaacsim.core.experimental.utils.stage as stage_utils
 import numpy as np
-import omni.kit.commands
-import omni.replicator.core as rep
 import rclpy
 from geometry_msgs.msg import TransformStamped, Twist
 from nav_msgs.msg import Odometry
@@ -87,6 +85,9 @@ from isaacsim.robot.experimental.wheeled_robots.controllers import (
     AckermannController,
 )
 from isaacsim.robot.experimental.wheeled_robots.robots import WheeledRobot
+from isaacsim.sensors.experimental.rtx import Lidar, LidarSensor
+
+
 WHEEL_RADIUS = 0.215
 WHEEL_BASE = 0.70
 TRACK_WIDTH = 0.825
@@ -396,54 +397,56 @@ def _build_scene(robot_usd: Path) -> WheeledRobot:
     return robot
 
 
-class LegacyLidarSensor:
-    """Own the render product and ROS writer for a configured camera lidar."""
-
-    def __init__(self, prim) -> None:
-        self.prim = prim
-        self.render_product = rep.create.render_product(
-            camera=str(prim.GetPath()),
-            resolution=(300, 300),
-            name="patrol_mid360s",
-        )
-        self.writer = rep.writers.get("RtxLidarROS2PublishPointCloud")
-        self.writer.initialize(topicName="livox/lidar", frameId="lidar_link")
-        self.writer.attach([self.render_product.path])
-
-    def detach_writer(self, _writer_name: str) -> None:
-        self.writer.detach()
-        self.render_product.destroy()
-
-
-def _create_mid360s_lidar() -> LegacyLidarSensor:
+def _create_mid360s_lidar() -> LidarSensor:
     """Create an RTX lidar with a MID-360-like range and ROS 2 output."""
     lidar_root_path = ISAAC_LIDAR_ROOT_PATH
-    success, _ = omni.kit.commands.execute(
-        "IsaacSensorCreateRtxLidar",
+    lidar = Lidar.create(
         path=lidar_root_path,
-        parent=None,
-        config="Hesai_XT32_SD10",
-        force_camera_prim=True,
-        translation=Gf.Vec3d(-10.1, -8.5, 1.501),
-        orientation=Gf.Quatd(1.0, 0.0, 0.0, 0.0),
+        tick_rate=10.0,
+        aux_output_level="FULL",
+        positions=[[-10.1, -8.5, 1.501]],
+        orientations=[[1.0, 0.0, 0.0, 0.0]],
+        attributes={
+            "omni:sensor:Core:nearRangeM": 0.10,
+            "omni:sensor:Core:farRangeM": 70.0,
+            "omni:sensor:Core:maxReturns": 2,
+            "omni:sensor:Core:numberOfEmitters": 32,
+            "omni:sensor:Core:patternFiringRateHz": 20000,
+            "omni:sensor:Core:scanRateBaseHz": 10,
+            "omni:sensor:Core:scanType": "ROTARY",
+            "omni:sensor:Core:rotationDirection": "CW",
+            "omni:sensor:Core:accumulateOutputs": True,
+            "omni:sensor:Core:outputFrameOfReference": "SENSOR",
+        },
     )
-    if not success:
-        raise RuntimeError("Isaac Sim failed to create the configured XT32 lidar")
-    lidar_root = stage_utils.get_current_stage().GetPrimAtPath(lidar_root_path)
-    if not lidar_root.IsValid():
-        raise RuntimeError(f"Failed to attach RTX lidar at {lidar_root_path}")
-    return LegacyLidarSensor(lidar_root)
+    lidar_prim = lidar.prims[0]
+    emitter_prefix = "omni:sensor:Core:emitterState:s001:"
+    lidar_prim.GetAttribute(f"{emitter_prefix}azimuthDeg").Set([0.0] * 32)
+    lidar_prim.GetAttribute(f"{emitter_prefix}elevationDeg").Set(
+        [float(angle) for angle in range(15, -17, -1)]
+    )
+    lidar_prim.GetAttribute(f"{emitter_prefix}fireTimeNs").Set(
+        [368 + 1512 * index for index in range(32)]
+    )
+    lidar_prim.GetAttribute(f"{emitter_prefix}channelId").Set(list(range(32)))
+    sensor = LidarSensor(lidar, annotators=[])
+    sensor.attach_writer(
+        "RtxLidarROS2PublishPointCloud",
+        topicName="livox/lidar",
+        frameId="lidar_link",
+    )
+    return sensor
 
 
 def _set_mid360s_lidar_pose(
-    lidar_sensor: LegacyLidarSensor,
+    lidar_sensor: LidarSensor,
     position: np.ndarray,
     orientation: np.ndarray,
     *,
     log: bool = False,
 ) -> None:
     """Keep the independent sensor asset aligned with the live articulation."""
-    lidar_prim = lidar_sensor.prim
+    lidar_prim = lidar_sensor.lidar.prims[0]
     yaw = math.atan2(
         2.0 * (orientation[0] * orientation[3] + orientation[1] * orientation[2]),
         1.0 - 2.0 * (orientation[2] ** 2 + orientation[3] ** 2),
@@ -455,9 +458,13 @@ def _set_mid360s_lidar_pose(
         float(position[1] + sin_yaw * MID360_POSITION[0]),
         float(position[2] + MID360_POSITION[2]),
     )
-    lidar_xform = UsdGeom.XformCommonAPI(lidar_prim)
-    lidar_xform.SetTranslate(world_position)
-    lidar_xform.SetRotate(Gf.Vec3f(0.0, 0.0, math.degrees(yaw)))
+    lidar_sensor.lidar.set_world_poses(
+        positions=np.asarray([world_position], dtype=np.float32),
+        orientations=np.asarray(
+            [[math.cos(yaw / 2.0), 0.0, 0.0, math.sin(yaw / 2.0)]],
+            dtype=np.float32,
+        ),
+    )
     if log:
         lidar_world_position = UsdGeom.Xformable(
             lidar_prim

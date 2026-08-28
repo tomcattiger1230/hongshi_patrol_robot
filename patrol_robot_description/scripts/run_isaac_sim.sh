@@ -33,24 +33,6 @@ if [[ ! -f "${ROS_SETUP}" ]]; then
   exit 2
 fi
 
-# Isaac Sim 6 still ships the XT32 JSON profile, but only below
-# extsDeprecated while the legacy RTX creator searches omni.sensors.nv.common.
-# Make the profile discoverable there so it does not silently fall back to the
-# sparse default OmniLidar pattern (which creates a 270-330 degree blind arc).
-readonly XT32_CONFIG_SOURCE="${ISAAC_ROOT}/extsDeprecated/isaacsim.sensors.rtx/data/lidar_configs/HESAI/Hesai_XT32_SD10.json"
-shopt -s nullglob
-RTX_CONFIG_DIRS=("${ISAAC_ROOT}"/extscache/omni.sensors.nv.common-*/data/lidar)
-RTX_CONFIG_DIRS+=("${ISAAC_ROOT}"/.venv/lib/python*/site-packages/isaacsim/extscache/omni.sensors.nv.common-*/data/lidar)
-shopt -u nullglob
-if [[ -f "${XT32_CONFIG_SOURCE}" && ${#RTX_CONFIG_DIRS[@]} -gt 0 ]]; then
-  for rtx_config_dir in "${RTX_CONFIG_DIRS[@]}"; do
-    xt32_config_target="${rtx_config_dir}/Hesai_XT32_SD10.json"
-    if [[ ! -f "${xt32_config_target}" ]] || ! cmp -s "${XT32_CONFIG_SOURCE}" "${xt32_config_target}"; then
-      cp -- "${XT32_CONFIG_SOURCE}" "${xt32_config_target}"
-    fi
-  done
-fi
-
 # Generate the URDF in the host ROS shell before configuring Isaac's bundled
 # Python process.
 URDF_DIR="$(mktemp -d "${TMPDIR:-/tmp}/patrol_robot_isaac_urdf.XXXXXX")"

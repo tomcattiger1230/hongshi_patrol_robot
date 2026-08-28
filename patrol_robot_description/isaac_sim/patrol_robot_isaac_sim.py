@@ -432,7 +432,6 @@ def _mid360_attributes() -> dict[str, object]:
         "omni:sensor:Core:farRangeM": 70.0,
         "omni:sensor:Core:rangeResolutionM": 0.001,
         "omni:sensor:Core:rangeAccuracyM": 0.02,
-        "omni:sensor:Core:wavelengthNm": 905.0,
         "omni:sensor:Core:pulseTimeNs": 5,
         "omni:sensor:Core:maxReturns": 1,
         "omni:sensor:Core:scanRateBaseHz": 10,

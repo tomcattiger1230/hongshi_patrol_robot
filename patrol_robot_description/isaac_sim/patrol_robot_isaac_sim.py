@@ -119,11 +119,15 @@ JOINT_STATE_NAMES = [
     *FRONT_WHEEL_DOF_NAMES,
     *REAR_WHEEL_DOF_NAMES,
 ]
-WHEEL_COLLIDER_PATHS = [
+IMPORTED_WHEEL_COLLIDER_PATHS = [
     f"{ISAAC_BASE_LINK_PATH}/front_left_steering_link/front_left_wheel_link/cylinder_1",
     f"{ISAAC_BASE_LINK_PATH}/front_right_steering_link/front_right_wheel_link/cylinder_1",
     f"{ISAAC_BASE_LINK_PATH}/rear_left_wheel_link/cylinder_1",
     f"{ISAAC_BASE_LINK_PATH}/rear_right_wheel_link/cylinder_1",
+]
+ISAAC_WHEEL_COLLIDER_PATHS = [
+    f"{path.rsplit('/', 1)[0]}/isaac_sphere_collider"
+    for path in IMPORTED_WHEEL_COLLIDER_PATHS
 ]
 
 
@@ -213,6 +217,30 @@ def _add_static_cylinder(
     UsdPhysics.CollisionAPI.Apply(cylinder.GetPrim())
 
 
+def _configure_wheel_colliders(stage) -> None:
+    """Replace faceted cylinder contacts with stable Isaac wheel contacts.
+
+    PhysX cooks URDF cylinders as convex geometry.  A heavy chassis resting on
+    those facets can continually tip between contact points.  NVIDIA's sample
+    Ackermann asset likewise uses a bounding-sphere approximation for wheels.
+    Keep the cylinder visuals, but use analytic spheres for Isaac collisions.
+    """
+    for imported_path, sphere_path in zip(
+        IMPORTED_WHEEL_COLLIDER_PATHS,
+        ISAAC_WHEEL_COLLIDER_PATHS,
+        strict=True,
+    ):
+        imported_prim = stage.GetPrimAtPath(imported_path)
+        if not imported_prim.IsValid():
+            raise RuntimeError(f"Imported wheel collider not found: {imported_path}")
+        UsdPhysics.CollisionAPI(imported_prim).CreateCollisionEnabledAttr(False)
+
+        sphere = UsdGeom.Sphere.Define(stage, sphere_path)
+        sphere.CreateRadiusAttr(WHEEL_RADIUS)
+        sphere.CreateVisibilityAttr(UsdGeom.Tokens.invisible)
+        UsdPhysics.CollisionAPI.Apply(sphere.GetPrim())
+
+
 def _bind_tire_physics_material(stage) -> None:
     """Apply deterministic rubber contact properties to wheels and ground."""
     material = UsdShade.Material.Define(stage, "/World/PhysicsMaterials/Tire")
@@ -222,7 +250,7 @@ def _bind_tire_physics_material(stage) -> None:
     # A heavy, unsuspended AGV tire must not bounce on initial contact.
     material_api.CreateRestitutionAttr(0.0)
 
-    for path in ["/World/Ground", *WHEEL_COLLIDER_PATHS]:
+    for path in ["/World/Ground", *ISAAC_WHEEL_COLLIDER_PATHS]:
         prim = stage.GetPrimAtPath(path)
         if not prim.IsValid():
             raise RuntimeError(f"Physics collider not found for material binding: {path}")
@@ -360,6 +388,7 @@ def _build_scene(robot_usd: Path) -> WheeledRobot:
         # to excite all four wheel contacts before ROS control even starts.
         positions=[-10.5, -8.5, 0.001],
     )
+    _configure_wheel_colliders(stage)
     _bind_tire_physics_material(stage)
     return robot
 

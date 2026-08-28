@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import argparse
 import math
-import os
 import signal
 import sys
 import tempfile
@@ -46,12 +45,6 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--odom-topic", default="/odom")
     parser.add_argument(
-        "--lidar-usd-path",
-        type=Path,
-        default=(Path(value) if (value := os.environ.get("PATROL_ISAAC_LIDAR_USD_PATH")) else None),
-        help="Use a local RTX lidar USD asset instead of resolving it from Nucleus.",
-    )
-    parser.add_argument(
         "--realtime-factor",
         type=float,
         default=1.0,
@@ -76,6 +69,7 @@ SIMULATION_APP = SimulationApp({"headless": not ARGS.gui})
 import isaacsim.core.experimental.utils.app as app_utils
 import isaacsim.core.experimental.utils.stage as stage_utils
 import numpy as np
+import omni.kit.commands
 import rclpy
 from geometry_msgs.msg import TransformStamped, Twist
 from nav_msgs.msg import Odometry
@@ -406,42 +400,30 @@ def _build_scene(robot_usd: Path) -> WheeledRobot:
 
 def _create_mid360s_lidar() -> LidarSensor:
     """Create an RTX lidar with a MID-360-like range and ROS 2 output."""
-    # Isaac Sim 6's legacy IsaacSensorCreateRtxLidar command no longer resolves
-    # JSON profiles in extsDeprecated. Its unconfigured fallback has almost no
-    # downward rays from 270-330 degrees, creating a false navigation blind
-    # sector. Use the supported USD asset API and the full XT32 rotary profile.
     lidar_root_path = ISAAC_LIDAR_ROOT_PATH
-    lidar_common = {
-        "tick_rate": 10.0,
-        "aux_output_level": "FULL",
-        "attributes": {
+    success, _ = omni.kit.commands.execute(
+        "IsaacSensorCreateRtxLidar",
+        path=lidar_root_path,
+        parent=None,
+        config="Hesai_XT32_SD10",
+        translation=Gf.Vec3d(-10.1, -8.5, 1.501),
+        orientation=Gf.Quatd(1.0, 0.0, 0.0, 0.0),
+    )
+    if not success:
+        raise RuntimeError("Isaac Sim failed to create the configured XT32 lidar")
+    lidar_root = stage_utils.get_current_stage().GetPrimAtPath(lidar_root_path)
+    if not lidar_root.IsValid():
+        raise RuntimeError(f"Failed to attach RTX lidar at {lidar_root_path}")
+    lidar = Lidar(
+        lidar_root_path,
+        tick_rate=10.0,
+        aux_output_level="FULL",
+        attributes={
             "omni:sensor:Core:nearRangeM": 0.10,
             "omni:sensor:Core:farRangeM": 70.0,
             "omni:sensor:Core:outputFrameOfReference": "SENSOR",
         },
-    }
-    if ARGS.lidar_usd_path is not None:
-        lidar_usd_path = ARGS.lidar_usd_path.expanduser().resolve()
-        if not lidar_usd_path.is_file():
-            raise FileNotFoundError(f"RTX lidar USD asset not found: {lidar_usd_path}")
-        lidar_path = Lidar._create_from_usd(
-            path=lidar_root_path, usd_path=str(lidar_usd_path)
-        )
-        # The downloadable Isaac 6 XT32 asset omits this API token even though
-        # its OmniLidar prim contains the corresponding authored attributes.
-        # Apply it before wrapping the prim; Lidar validates schemas first.
-        Lidar._apply_schemas(lidar_path, ["OmniSensorGenericLidarCoreAPI"])
-        lidar = Lidar(path=lidar_path, **lidar_common)
-    else:
-        lidar = Lidar.create(path=lidar_root_path, config="XT32_SD10", **lidar_common)
-    lidar_root = stage_utils.get_current_stage().GetPrimAtPath(lidar_root_path)
-    if not lidar_root.IsValid():
-        raise RuntimeError(f"Failed to attach RTX lidar at {lidar_root_path}")
-    lidar_prim = lidar.prims[0]
-    # Move the reference root rather than overwriting the OmniLidar prim's
-    # authored transform. Resetting the latter disables returns in Isaac 6's
-    # XT32 asset even though the prim remains visible and publishes a topic.
-    UsdGeom.XformCommonAPI(lidar_root).SetTranslate(Gf.Vec3d(-10.1, -8.5, 1.501))
+    )
     sensor = LidarSensor(lidar, annotators=[])
     sensor.attach_writer(
         "RtxLidarROS2PublishPointCloud",
@@ -471,16 +453,9 @@ def _set_mid360s_lidar_pose(
         float(position[1] + sin_yaw * MID360_POSITION[0]),
         float(position[2] + MID360_POSITION[2]),
     )
-    # The XT32 OmniLidar prim resets its transform stack, so transforms on the
-    # referenced asset root do not propagate to the actual ray origin. Use the
-    # sensor wrapper's pose backend to author the effective prim transform.
-    lidar_sensor.lidar.set_world_poses(
-        positions=np.asarray([world_position], dtype=np.float32),
-        orientations=np.asarray(
-            [[math.cos(yaw / 2.0), 0.0, 0.0, math.sin(yaw / 2.0)]],
-            dtype=np.float32,
-        ),
-    )
+    lidar_xform = UsdGeom.XformCommonAPI(lidar_prim)
+    lidar_xform.SetTranslate(world_position)
+    lidar_xform.SetRotate(Gf.Vec3f(0.0, 0.0, math.degrees(yaw)))
     if log:
         lidar_world_position = UsdGeom.Xformable(
             lidar_prim

@@ -1296,7 +1296,16 @@ if QApplication is not None:
             yaw_rad: float,
             frame_id: str,
         ) -> None:
-            if self.nav_client is None or not self.nav_client.server_is_ready():
+            server_ready = bool(
+                self.nav_client is not None and self.nav_client.server_is_ready()
+            )
+            print(
+                "GUI_NAV_SEND "
+                f"x={x_m:.3f} y={y_m:.3f} yaw={yaw_rad:.3f} "
+                f"frame={frame_id} server_ready={server_ready}",
+                flush=True,
+            )
+            if not server_ready:
                 self.error.emit("Nav2 /navigate_to_pose 尚未就绪")
                 return
             if self.goal_handle is not None:
@@ -1331,9 +1340,11 @@ if QApplication is not None:
                 self.navigation_changed.emit(f"目标发送失败：{exc}")
                 return
             if goal_handle is None or not goal_handle.accepted:
+                print("GUI_NAV_RESPONSE rejected", flush=True)
                 self.navigation_changed.emit("Nav2 拒绝了目标")
                 return
             self.goal_handle = goal_handle
+            print("GUI_NAV_RESPONSE accepted", flush=True)
             self.navigation_changed.emit("目标已接受，AGV 正在行驶")
             result_future = goal_handle.get_result_async()
             result_future.add_done_callback(self._on_result)
@@ -1453,7 +1464,7 @@ if QApplication is not None:
                 self._on_local_trajectory
             )
             self.worker.connection_changed.connect(self._on_connection)
-            self.worker.navigation_changed.connect(self.navigation_value.setText)
+            self.worker.navigation_changed.connect(self._on_navigation_changed)
             self.worker.waypoint_progress_changed.connect(
                 self._on_waypoint_progress
             )
@@ -1639,6 +1650,8 @@ if QApplication is not None:
             self.send_button.setMinimumHeight(48)
             self.send_button.setEnabled(False)
             self.send_button.clicked.connect(self._send_goal)
+            self.send_status_value = QLabel("请先在地图上选择目标位姿")
+            self._configure_value_label(self.send_status_value)
             cancel_button = QPushButton("取消当前导航")
             cancel_button.clicked.connect(
                 lambda _checked=False: self.cancel_requested.emit()
@@ -1646,6 +1659,7 @@ if QApplication is not None:
             clear_button = QPushButton("清除目标标记")
             clear_button.clicked.connect(self._clear_goal)
             layout.addWidget(self.send_button)
+            layout.addWidget(self.send_status_value)
             layout.addWidget(cancel_button)
             layout.addWidget(clear_button)
 
@@ -1974,12 +1988,20 @@ if QApplication is not None:
                 self.waypoint_list.setCurrentRow(current - 1)
 
         def _send_goal(self) -> None:
+            self.send_status_value.setText("按钮已触发，正在校验目标……")
+            QApplication.processEvents()
             selected_pose = self._validated_selected_pose()
             if selected_pose is None:
                 return
             x_m, y_m, yaw_rad = selected_pose
             self.goal = (x_m, y_m, yaw_rad)
             self.map_view.set_goal(*self.goal)
+            message = (
+                f"正在提交：x={x_m:.2f} m，y={y_m:.2f} m，"
+                f"yaw={math.degrees(yaw_rad):.1f}°"
+            )
+            self.send_status_value.setText(message)
+            print(f"GUI_NAV_CLICK {message}", flush=True)
             self.goal_requested.emit(x_m, y_m, yaw_rad, self.map_frame)
 
         def _set_initial_pose(self) -> None:
@@ -1990,17 +2012,17 @@ if QApplication is not None:
 
         def _validated_selected_pose(self) -> Optional[tuple[float, float, float]]:
             if self.snapshot is None:
-                self._on_error("尚未收到地图")
+                self._show_action_error("尚未收到地图")
                 return None
             if self.goal is None:
-                self._on_error("请先在地图中点击并拖动选择位姿")
+                self._show_action_error("请先在地图中点击并拖动选择位姿")
                 return None
             x_m = self.goal_x.value()
             y_m = self.goal_y.value()
             yaw_rad = math.radians(self.goal_yaw.value())
             occupancy = self.snapshot.occupancy_at_world(x_m, y_m)
             if occupancy is None:
-                self._on_error("选中位置不在当前地图范围内")
+                self._show_action_error("选中位置不在当前地图范围内")
                 return None
             allow_unknown = self.localization_backend == "slam"
             if not self.snapshot.is_traversable(
@@ -2009,13 +2031,15 @@ if QApplication is not None:
                 allow_unknown=allow_unknown,
             ):
                 if occupancy < 0:
-                    self._on_error(
+                    self._show_action_error(
                         "当前是静态定位模式，灰色区域不会更新；"
                         "请切换 mode:=continuing 后发送探索目标"
                     )
                     return None
                 description = "未知区域" if occupancy < 0 else f"占用值 {occupancy}"
-                self._on_error(f"选中位置位于障碍物或{description}，请重新选择")
+                self._show_action_error(
+                    f"选中位置位于障碍物或{description}，请重新选择"
+                )
                 return None
             if occupancy < 0:
                 self.navigation_value.setText(
@@ -2082,9 +2106,21 @@ if QApplication is not None:
             self.connection_value.style().polish(self.connection_value)
 
         @Slot(str)
+        def _on_navigation_changed(self, message: str) -> None:
+            self.navigation_value.setText(message)
+            self.send_status_value.setText(message)
+            print(f"GUI_NAV_STATUS {message}", flush=True)
+
+        def _show_action_error(self, message: str) -> None:
+            self._on_error(message)
+            QMessageBox.warning(self, "导航目标未发送", message)
+
+        @Slot(str)
         def _on_error(self, message: str) -> None:
             self.navigation_value.setText(f"错误：{message}")
+            self.send_status_value.setText(f"未发送：{message}")
             self.statusBar().showMessage(message, 8000)
+            print(f"GUI_NAV_ERROR {message}", flush=True)
 
         def _apply_style(self) -> None:
             QApplication.instance().setFont(QFont("Sans Serif", 10))

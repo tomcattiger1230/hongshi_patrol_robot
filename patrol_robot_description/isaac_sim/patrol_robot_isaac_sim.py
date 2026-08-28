@@ -404,8 +404,6 @@ def _create_mid360s_lidar() -> LidarSensor:
         path=ISAAC_LIDAR_ROOT_PATH,
         tick_rate=10.0,
         aux_output_level="FULL",
-        positions=[[-10.1, -8.5, 1.501]],
-        orientations=[[1.0, 0.0, 0.0, 0.0]],
         attributes={
             "omni:sensor:Core:nearRangeM": 0.10,
             "omni:sensor:Core:farRangeM": 70.0,
@@ -417,6 +415,9 @@ def _create_mid360s_lidar() -> LidarSensor:
         "RtxLidarROS2PublishPointCloud",
         topicName="livox/lidar",
         frameId="lidar_link",
+    )
+    UsdGeom.XformCommonAPI(lidar.prims[0]).SetTranslate(
+        Gf.Vec3d(-10.1, -8.5, 1.501)
     )
     return sensor
 

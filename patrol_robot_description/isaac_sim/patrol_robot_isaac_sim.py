@@ -398,10 +398,11 @@ def _build_scene(robot_usd: Path) -> WheeledRobot:
 
 def _create_mid360s_lidar() -> LidarSensor:
     """Create an RTX lidar with a MID-360-like range and ROS 2 output."""
-    # Use a complete local 360-degree, 32-channel rotary profile. Creating an
-    # unconfigured OmniLidar uses schema defaults whose rays occupy only one
-    # sector; SLAM then tries to rotate the map to match that asymmetric scan.
-    # Hesai_XT32_SD10 ships inside Isaac Sim, so this remains fully offline.
+    # Use a complete local 360-degree rotary profile. Creating an unconfigured
+    # OmniLidar uses schema defaults with too few downward rays from 270-330
+    # degrees, producing a false blind sector in the navigation LaserScan.
+    # Isaac Sim 6 ships Hesai_QT64 in the active RTX config directory; the old
+    # XT32 profile only exists in extsDeprecated and is therefore not loaded.
     staging_path = "/World/mid360s_lidar"
     lidar_path = f"{ISAAC_BASE_LINK_PATH}/mid360s_lidar"
     omni.kit.commands.execute(
@@ -410,7 +411,7 @@ def _create_mid360s_lidar() -> LidarSensor:
         # Move the fully configured prim under the dynamic chassis afterwards.
         path=staging_path,
         parent=None,
-        config="Hesai_XT32_SD10",
+        config="Hesai_QT64",
         translation=Gf.Vec3d(*MID360_POSITION),
         orientation=Gf.Quatd(1.0, 0.0, 0.0, 0.0),
     )

@@ -605,8 +605,19 @@ def main() -> None:
         )
         robot.apply_wheel_actions(np.zeros(2, dtype=np.float32))
 
-        # Let gravity and tire contacts settle before accepting ROS commands.
-        app_utils.update_app(steps=180)
+        # Establish the four ground contacts, then discard the one-time impact
+        # impulse from spawning the articulation.  This is an initialization
+        # reset only; no root pose or velocity is overridden in the run loop.
+        app_utils.update_app(steps=30)
+        robot.set_velocities(
+            np.zeros((1, 3), dtype=np.float32),
+            np.zeros((1, 3), dtype=np.float32),
+        )
+        robot.set_dof_velocities(
+            np.zeros(len(JOINT_STATE_NAMES), dtype=np.float32),
+            dof_indices=joint_state_dof_indices,
+        )
+        app_utils.update_app(steps=150)
         settled_positions, _ = robot.get_world_poses()
         settled_linear, settled_angular = robot.get_velocities()
         settled_dof_velocities = robot.get_dof_velocities(

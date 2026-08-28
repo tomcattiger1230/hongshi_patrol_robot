@@ -40,12 +40,15 @@ fi
 readonly XT32_CONFIG_SOURCE="${ISAAC_ROOT}/extsDeprecated/isaacsim.sensors.rtx/data/lidar_configs/HESAI/Hesai_XT32_SD10.json"
 shopt -s nullglob
 RTX_CONFIG_DIRS=("${ISAAC_ROOT}"/extscache/omni.sensors.nv.common-*/data/lidar)
+RTX_CONFIG_DIRS+=("${ISAAC_ROOT}"/.venv/lib/python*/site-packages/isaacsim/extscache/omni.sensors.nv.common-*/data/lidar)
 shopt -u nullglob
 if [[ -f "${XT32_CONFIG_SOURCE}" && ${#RTX_CONFIG_DIRS[@]} -gt 0 ]]; then
-  readonly XT32_CONFIG_TARGET="${RTX_CONFIG_DIRS[0]}/Hesai_XT32_SD10.json"
-  if [[ ! -f "${XT32_CONFIG_TARGET}" ]] || ! cmp -s "${XT32_CONFIG_SOURCE}" "${XT32_CONFIG_TARGET}"; then
-    cp -- "${XT32_CONFIG_SOURCE}" "${XT32_CONFIG_TARGET}"
-  fi
+  for rtx_config_dir in "${RTX_CONFIG_DIRS[@]}"; do
+    xt32_config_target="${rtx_config_dir}/Hesai_XT32_SD10.json"
+    if [[ ! -f "${xt32_config_target}" ]] || ! cmp -s "${XT32_CONFIG_SOURCE}" "${xt32_config_target}"; then
+      cp -- "${XT32_CONFIG_SOURCE}" "${xt32_config_target}"
+    fi
+  done
 fi
 
 # Generate the URDF in the host ROS shell before configuring Isaac's bundled

@@ -70,6 +70,7 @@ import isaacsim.core.experimental.utils.app as app_utils
 import isaacsim.core.experimental.utils.stage as stage_utils
 import numpy as np
 import omni.kit.commands
+import omni.replicator.core as rep
 import rclpy
 from geometry_msgs.msg import TransformStamped, Twist
 from nav_msgs.msg import Odometry
@@ -86,9 +87,6 @@ from isaacsim.robot.experimental.wheeled_robots.controllers import (
     AckermannController,
 )
 from isaacsim.robot.experimental.wheeled_robots.robots import WheeledRobot
-from isaacsim.sensors.experimental.rtx import Lidar, LidarSensor
-
-
 WHEEL_RADIUS = 0.215
 WHEEL_BASE = 0.70
 TRACK_WIDTH = 0.825
@@ -398,7 +396,26 @@ def _build_scene(robot_usd: Path) -> WheeledRobot:
     return robot
 
 
-def _create_mid360s_lidar() -> LidarSensor:
+class LegacyLidarSensor:
+    """Own the render product and ROS writer for a configured camera lidar."""
+
+    def __init__(self, prim) -> None:
+        self.prim = prim
+        self.render_product = rep.create.render_product(
+            camera=str(prim.GetPath()),
+            resolution=(300, 300),
+            name="patrol_mid360s",
+        )
+        self.writer = rep.writers.get("RtxLidarROS2PublishPointCloud")
+        self.writer.initialize(topicName="livox/lidar", frameId="lidar_link")
+        self.writer.attach([self.render_product.path])
+
+    def detach_writer(self, _writer_name: str) -> None:
+        self.writer.detach()
+        self.render_product.destroy()
+
+
+def _create_mid360s_lidar() -> LegacyLidarSensor:
     """Create an RTX lidar with a MID-360-like range and ROS 2 output."""
     lidar_root_path = ISAAC_LIDAR_ROOT_PATH
     success, _ = omni.kit.commands.execute(
@@ -406,6 +423,7 @@ def _create_mid360s_lidar() -> LidarSensor:
         path=lidar_root_path,
         parent=None,
         config="Hesai_XT32_SD10",
+        force_camera_prim=True,
         translation=Gf.Vec3d(-10.1, -8.5, 1.501),
         orientation=Gf.Quatd(1.0, 0.0, 0.0, 0.0),
     )
@@ -414,34 +432,18 @@ def _create_mid360s_lidar() -> LidarSensor:
     lidar_root = stage_utils.get_current_stage().GetPrimAtPath(lidar_root_path)
     if not lidar_root.IsValid():
         raise RuntimeError(f"Failed to attach RTX lidar at {lidar_root_path}")
-    lidar = Lidar(
-        lidar_root_path,
-        tick_rate=10.0,
-        aux_output_level="FULL",
-        attributes={
-            "omni:sensor:Core:nearRangeM": 0.10,
-            "omni:sensor:Core:farRangeM": 70.0,
-            "omni:sensor:Core:outputFrameOfReference": "SENSOR",
-        },
-    )
-    sensor = LidarSensor(lidar, annotators=[])
-    sensor.attach_writer(
-        "RtxLidarROS2PublishPointCloud",
-        topicName="livox/lidar",
-        frameId="lidar_link",
-    )
-    return sensor
+    return LegacyLidarSensor(lidar_root)
 
 
 def _set_mid360s_lidar_pose(
-    lidar_sensor: LidarSensor,
+    lidar_sensor: LegacyLidarSensor,
     position: np.ndarray,
     orientation: np.ndarray,
     *,
     log: bool = False,
 ) -> None:
     """Keep the independent sensor asset aligned with the live articulation."""
-    lidar_prim = lidar_sensor.lidar.prims[0]
+    lidar_prim = lidar_sensor.prim
     yaw = math.atan2(
         2.0 * (orientation[0] * orientation[3] + orientation[1] * orientation[2]),
         1.0 - 2.0 * (orientation[2] ** 2 + orientation[3] ** 2),

@@ -51,9 +51,11 @@
       </geometry>
     </collision>
     <inertial>
-      <mass value="100.0"/>
-      <inertia ixx="7.2708" ixy="0.0" ixz="0.0"
-               iyy="20.7267" iyz="0.0" izz="26.0708"/>
+      <!-- 170.4 kg chassis + four 2.3 kg wheels + two 0.2 kg steering
+           carriers = 180 kg total vehicle mass. -->
+      <mass value="170.4"/>
+      <inertia ixx="8.59952" ixy="0.0" ixz="0.0"
+               iyy="35.31824" iyz="0.0" izz="40.63472"/>
     </inertial>
   </link>
 

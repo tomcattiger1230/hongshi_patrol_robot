@@ -73,7 +73,7 @@ import omni.kit.commands
 import rclpy
 from geometry_msgs.msg import TransformStamped, Twist
 from nav_msgs.msg import Odometry
-from pxr import Gf, PhysxSchema, UsdGeom, UsdLux, UsdPhysics
+from pxr import Gf, PhysxSchema, UsdGeom, UsdLux, UsdPhysics, UsdShade
 from rclpy.node import Node
 from rclpy.signals import SignalHandlerOptions
 from rosgraph_msgs.msg import Clock
@@ -96,6 +96,10 @@ MINIMUM_TURNING_RADIUS = 2.35
 MAX_STEERING_ANGLE = math.atan(WHEEL_BASE / MINIMUM_TURNING_RADIUS)
 MAX_LINEAR_SPEED = 20.0 / 3.6
 PHYSICS_DT = 1.0 / 60.0
+REAR_WHEEL_MAX_EFFORT = 120.0
+STEERING_MAX_EFFORT = 250.0
+TIRE_STATIC_FRICTION = 0.9
+TIRE_DYNAMIC_FRICTION = 0.8
 MID360_POSITION = np.array([0.40, 0.0, 1.50])
 ISAAC_BASE_LINK_PATH = "/World/PatrolRobot/Geometry/base_footprint"
 STEERING_DOF_NAMES = [
@@ -114,6 +118,12 @@ JOINT_STATE_NAMES = [
     *STEERING_DOF_NAMES,
     *FRONT_WHEEL_DOF_NAMES,
     *REAR_WHEEL_DOF_NAMES,
+]
+WHEEL_COLLIDER_PATHS = [
+    f"{ISAAC_BASE_LINK_PATH}/front_left_steering_link/front_left_wheel_link/cylinder_1",
+    f"{ISAAC_BASE_LINK_PATH}/front_right_steering_link/front_right_wheel_link/cylinder_1",
+    f"{ISAAC_BASE_LINK_PATH}/rear_left_wheel_link/cylinder_1",
+    f"{ISAAC_BASE_LINK_PATH}/rear_right_wheel_link/cylinder_1",
 ]
 
 
@@ -143,14 +153,22 @@ def _import_robot(urdf_path: Path, output_dir: Path) -> Path:
         override_joint_damping={
             "front_left_steering_joint": 200.0,
             "front_right_steering_joint": 200.0,
-            "front_left_wheel_joint": 0.05,
-            "front_right_wheel_joint": 0.05,
+            # A target type of "none" must have no drive gains.  Leaving a
+            # small damping here creates a zero-velocity drive on the passive
+            # front wheels and makes their ground contacts chatter.
+            "front_left_wheel_joint": 0.0,
+            "front_right_wheel_joint": 0.0,
             # Velocity-drive damping acts as the rear motor's proportional
             # torque gain. A value of 10 cannot move the 100+ kg articulation
             # reliably and mostly lets the tire contacts chatter in place.
             "rear_left_wheel_joint": 100.0,
             "rear_right_wheel_joint": 100.0,
         },
+        # convert_joints_attributes() runs after apply_joint_drives() and
+        # replaces these per-joint gains with the raw URDF dynamics values.
+        # Keep it disabled and author the required PhysX limits explicitly
+        # after the articulation tensor view has been initialized.
+        run_multi_physics_conversion=False,
         run_asset_transformer=False,
     )
     usd_path = URDFImporter(config).import_urdf()
@@ -193,6 +211,26 @@ def _add_static_cylinder(
     cylinder.GetDisplayColorAttr().Set([Gf.Vec3f(*color)])
     UsdGeom.Xformable(cylinder).AddTranslateOp().Set(Gf.Vec3d(*position))
     UsdPhysics.CollisionAPI.Apply(cylinder.GetPrim())
+
+
+def _bind_tire_physics_material(stage) -> None:
+    """Apply deterministic rubber contact properties to wheels and ground."""
+    material = UsdShade.Material.Define(stage, "/World/PhysicsMaterials/Tire")
+    material_api = UsdPhysics.MaterialAPI.Apply(material.GetPrim())
+    material_api.CreateStaticFrictionAttr(TIRE_STATIC_FRICTION)
+    material_api.CreateDynamicFrictionAttr(TIRE_DYNAMIC_FRICTION)
+    # A heavy, unsuspended AGV tire must not bounce on initial contact.
+    material_api.CreateRestitutionAttr(0.0)
+
+    for path in ["/World/Ground", *WHEEL_COLLIDER_PATHS]:
+        prim = stage.GetPrimAtPath(path)
+        if not prim.IsValid():
+            raise RuntimeError(f"Physics collider not found for material binding: {path}")
+        UsdShade.MaterialBindingAPI.Apply(prim).Bind(
+            material,
+            bindingStrength=UsdShade.Tokens.strongerThanDescendants,
+            materialPurpose="physics",
+        )
 
 
 def _build_scene(robot_usd: Path) -> WheeledRobot:
@@ -313,12 +351,14 @@ def _build_scene(robot_usd: Path) -> WheeledRobot:
     light.CreateAngleAttr(0.5)
     UsdGeom.Xformable(light).AddRotateXYZOp().Set(Gf.Vec3f(35.0, -25.0, 20.0))
 
-    return WheeledRobot(
+    robot = WheeledRobot(
         paths="/World/PatrolRobot",
         wheel_dof_names=REAR_WHEEL_DOF_NAMES,
         usd_path=str(robot_usd),
         positions=[-10.5, -8.5, 0.02],
     )
+    _bind_tire_physics_material(stage)
+    return robot
 
 
 def _create_mid360s_lidar() -> LidarSensor:
@@ -528,15 +568,58 @@ def main() -> None:
         physics_scene = SimulationManager.get_physics_scenes()[0]
         physics_scene.set_enabled_gpu_dynamics(False)
         app_utils.play()
-        app_utils.update_app(steps=10)
-        if ARGS.start_paused:
-            app_utils.pause()
+        # Initialize the articulation tensor view before setting per-DOF
+        # limits.  Unlike repeatedly teleporting the root body, the zero rear
+        # wheel target then acts as a physical parking brake.
+        app_utils.update_app(steps=2)
         steering_dof_indices = (
             robot.get_dof_indices(STEERING_DOF_NAMES).numpy().tolist()
+        )
+        rear_wheel_dof_indices = (
+            robot.get_dof_indices(REAR_WHEEL_DOF_NAMES).numpy().tolist()
         )
         joint_state_dof_indices = (
             robot.get_dof_indices(JOINT_STATE_NAMES).numpy().tolist()
         )
+        robot.set_dof_max_efforts(
+            np.full(2, STEERING_MAX_EFFORT, dtype=np.float32),
+            dof_indices=steering_dof_indices,
+        )
+        robot.set_dof_max_velocities(
+            np.full(2, math.radians(25.0), dtype=np.float32),
+            dof_indices=steering_dof_indices,
+        )
+        robot.set_dof_max_efforts(
+            np.full(2, REAR_WHEEL_MAX_EFFORT, dtype=np.float32),
+            dof_indices=rear_wheel_dof_indices,
+        )
+        robot.set_dof_max_velocities(
+            np.full(2, MAX_LINEAR_SPEED / WHEEL_RADIUS, dtype=np.float32),
+            dof_indices=rear_wheel_dof_indices,
+        )
+        robot.set_dof_position_targets(
+            np.zeros(2, dtype=np.float32), dof_indices=steering_dof_indices
+        )
+        robot.apply_wheel_actions(np.zeros(2, dtype=np.float32))
+
+        # Let gravity and tire contacts settle before accepting ROS commands.
+        app_utils.update_app(steps=60)
+        settled_positions, _ = robot.get_world_poses()
+        settled_linear, settled_angular = robot.get_velocities()
+        settled_dof_velocities = robot.get_dof_velocities(
+            dof_indices=joint_state_dof_indices
+        )
+        print(
+            "PATROL_ISAAC_SETTLED "
+            f"z={settled_positions.numpy()[0][2]:.5f} "
+            f"linear_speed={np.linalg.norm(settled_linear.numpy()[0]):.6f} "
+            f"angular_speed={np.linalg.norm(settled_angular.numpy()[0]):.6f} "
+            "max_joint_speed="
+            f"{np.max(np.abs(settled_dof_velocities.numpy())):.6f}",
+            flush=True,
+        )
+        if ARGS.start_paused:
+            app_utils.pause()
 
         rclpy.init(signal_handler_options=SignalHandlerOptions.NO)
         ros_node = IsaacRosInterface()
@@ -546,8 +629,6 @@ def main() -> None:
         step = 0
         last_steering_targets: np.ndarray | None = None
         last_wheel_targets: np.ndarray | None = None
-        parking_position: np.ndarray | None = None
-        parking_orientation: np.ndarray | None = None
         print(
             "PATROL_ISAAC_READY "
             f"cmd_vel={ARGS.cmd_vel_topic} odom={ARGS.odom_topic} "
@@ -609,45 +690,6 @@ def main() -> None:
             ):
                 robot.apply_wheel_actions(wheel_targets)
                 last_wheel_targets = wheel_targets.copy()
-
-            if abs(linear_x) < 1.0e-4:
-                # A real 180 kg AGV engages its brake at zero command.  Hold a
-                # planar pose here as the simulation equivalent: otherwise the
-                # four cylindrical wheel contacts can continually exchange
-                # tiny impulses and make the free-base articulation shake.
-                if parking_position is None or parking_orientation is None:
-                    parked_positions, parked_orientations = robot.get_world_poses()
-                    parking_position = parked_positions.numpy()[0]
-                    parking_position[2] = 0.0
-                    quaternion = parked_orientations.numpy()[0]
-                    yaw = math.atan2(
-                        2.0
-                        * (
-                            quaternion[0] * quaternion[3]
-                            + quaternion[1] * quaternion[2]
-                        ),
-                        1.0
-                        - 2.0
-                        * (
-                            quaternion[2] * quaternion[2]
-                            + quaternion[3] * quaternion[3]
-                        ),
-                    )
-                    parking_orientation = np.array(
-                        [math.cos(yaw / 2.0), 0.0, 0.0, math.sin(yaw / 2.0)],
-                        dtype=np.float32,
-                    )
-                robot.set_velocities(
-                    np.zeros((1, 3), dtype=np.float32),
-                    np.zeros((1, 3), dtype=np.float32),
-                )
-                robot.set_world_poses(
-                    parking_position.reshape(1, 3),
-                    parking_orientation.reshape(1, 4),
-                )
-            else:
-                parking_position = None
-                parking_orientation = None
 
             if step % publish_every == 0:
                 positions, orientations = robot.get_world_poses()

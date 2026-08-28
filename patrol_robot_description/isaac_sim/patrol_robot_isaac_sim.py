@@ -79,7 +79,7 @@ import numpy as np
 import rclpy
 from geometry_msgs.msg import TransformStamped, Twist
 from nav_msgs.msg import Odometry
-from pxr import Gf, PhysxSchema, Usd, UsdGeom, UsdLux, UsdPhysics, UsdShade
+from pxr import Gf, PhysxSchema, Usd, UsdGeom, UsdLux, UsdPhysics, UsdShade, Vt
 from rclpy.node import Node
 from rclpy.signals import SignalHandlerOptions
 from rosgraph_msgs.msg import Clock
@@ -110,6 +110,7 @@ STEERING_DRIVE_DAMPING = 200.0
 TIRE_STATIC_FRICTION = 0.9
 TIRE_DYNAMIC_FRICTION = 0.8
 MID360_POSITION = np.array([0.40, 0.0, 1.50])
+MID360_PATTERN_PATH = Path(__file__).with_name("mid360_pattern.npz")
 ISAAC_ROBOT_PATH = "/World/PatrolRobot"
 ISAAC_BASE_LINK_PATH = "/World/PatrolRobot/Geometry/base_footprint"
 STEERING_DOF_NAMES = [
@@ -403,18 +404,67 @@ def _build_scene(robot_usd: Path) -> WheeledRobot:
     return robot
 
 
-def _create_mid360s_lidar() -> LidarSensor:
-    """Create an RTX lidar with a MID-360-like range and ROS 2 output."""
-    lidar_root_path = f"{ISAAC_BASE_LINK_PATH}/mid360s_lidar"
-    lidar_common = {
-        "tick_rate": 10.0,
-        "aux_output_level": "FULL",
-        "attributes": {
-            "omni:sensor:Core:nearRangeM": 0.10,
-            "omni:sensor:Core:farRangeM": 70.0,
-            "omni:sensor:Core:outputFrameOfReference": "SENSOR",
-        },
+def _mid360_attributes() -> dict[str, object]:
+    """Build a four-frame RTX profile from Livox's published scan pattern."""
+    if not MID360_PATTERN_PATH.is_file():
+        raise FileNotFoundError(
+            f"MID-360 scan pattern not found: {MID360_PATTERN_PATH}"
+        )
+    with np.load(MID360_PATTERN_PATH) as pattern_file:
+        pattern = np.asarray(
+            pattern_file["azimuth_elevation_deg"], dtype=np.float32
+        )
+    if pattern.shape != (4, 20_000, 2):
+        raise ValueError(
+            "MID-360 scan pattern must have shape (4, 20000, 2), got "
+            f"{pattern.shape}"
+        )
+
+    # MID-360 publishes 200,000 first-return points/s at a typical 10 Hz.
+    # Four official 0.1 s windows are cycled as emitter states so successive
+    # frames retain the characteristic non-repetitive Livox distribution.
+    attributes: dict[str, object] = {
+        "omni:sensor:modelName": "Livox_MID360_Approximation",
+        "omni:sensor:Core:scanType": "SOLID_STATE",
+        "omni:sensor:Core:intensityProcessing": "NORMALIZATION",
+        "omni:sensor:Core:rayType": "IDEALIZED",
+        "omni:sensor:Core:nearRangeM": 0.10,
+        "omni:sensor:Core:farRangeM": 70.0,
+        "omni:sensor:Core:rangeResolutionM": 0.001,
+        "omni:sensor:Core:rangeAccuracyM": 0.02,
+        "omni:sensor:Core:wavelengthNm": 905.0,
+        "omni:sensor:Core:pulseTimeNs": 5,
+        "omni:sensor:Core:maxReturns": 1,
+        "omni:sensor:Core:scanRateBaseHz": 10,
+        "omni:sensor:Core:patternFiringRateHz": 10,
+        "omni:sensor:Core:numberOfEmitters": 20_000,
+        "omni:sensor:Core:numberOfChannels": 4,
+        "omni:sensor:Core:numLines": 4,
+        "omni:sensor:Core:numRaysPerLine": Vt.UIntArray([5_000] * 4),
+        "omni:sensor:Core:azimuthErrorMean": 0.0,
+        "omni:sensor:Core:azimuthErrorStd": 0.0,
+        "omni:sensor:Core:elevationErrorMean": 0.0,
+        "omni:sensor:Core:elevationErrorStd": 0.0,
+        "omni:sensor:Core:outputFrameOfReference": "SENSOR",
     }
+    fire_times = Vt.UIntArray((np.arange(20_000) * 5_000).tolist())
+    channel_ids = Vt.UIntArray((np.arange(20_000) % 4 + 1).tolist())
+    for state_index, state in enumerate(pattern, start=1):
+        prefix = f"omni:sensor:Core:emitterState:s{state_index:03}"
+        attributes[f"{prefix}:azimuthDeg"] = Vt.FloatArray(
+            state[:, 0].tolist()
+        )
+        attributes[f"{prefix}:elevationDeg"] = Vt.FloatArray(
+            state[:, 1].tolist()
+        )
+        attributes[f"{prefix}:fireTimeNs"] = fire_times
+        attributes[f"{prefix}:channelId"] = channel_ids
+    return attributes
+
+
+def _create_mid360s_lidar() -> LidarSensor:
+    """Create a 10 Hz, 200 kpoint/s MID-360 RTX lidar and ROS output."""
+    lidar_root_path = f"{ISAAC_BASE_LINK_PATH}/mid360s_lidar"
     if ARGS.lidar_usd_path is not None:
         lidar_usd_path = ARGS.lidar_usd_path.expanduser().resolve()
         if not lidar_usd_path.is_file():
@@ -423,25 +473,51 @@ def _create_mid360s_lidar() -> LidarSensor:
             path=lidar_root_path, usd_path=str(lidar_usd_path)
         )
         Lidar._apply_schemas(lidar_path, ["OmniSensorGenericLidarCoreAPI"])
-        lidar = Lidar(path=lidar_path, **lidar_common)
+        lidar = Lidar(
+            path=lidar_path,
+            tick_rate=10.0,
+            aux_output_level="FULL",
+            attributes={
+                "omni:sensor:Core:nearRangeM": 0.10,
+                "omni:sensor:Core:farRangeM": 70.0,
+                "omni:sensor:Core:outputFrameOfReference": "SENSOR",
+            },
+        )
     else:
-        lidar = Lidar.create(path=lidar_root_path, config="XT32_SD10", **lidar_common)
+        lidar = Lidar.create(
+            path=lidar_root_path,
+            tick_rate=10.0,
+            accumulate_outputs=True,
+            aux_output_level="FULL",
+            attributes=_mid360_attributes(),
+            translations=MID360_POSITION,
+        )
     lidar_root = stage_utils.get_current_stage().GetPrimAtPath(lidar_root_path)
     if not lidar_root.IsValid():
         raise RuntimeError(f"Failed to attach RTX lidar at {lidar_root_path}")
-    lidar_prim = lidar.prims[0]
-    base_prim = stage_utils.get_current_stage().GetPrimAtPath(ISAAC_BASE_LINK_PATH)
-    base_to_world = UsdGeom.Xformable(base_prim).ComputeLocalToWorldTransform(
-        Usd.TimeCode.Default()
-    )
-    lidar_to_world = UsdGeom.Xformable(lidar_prim).ComputeLocalToWorldTransform(
-        Usd.TimeCode.Default()
-    )
-    authored_position = base_to_world.GetInverse().Transform(
-        lidar_to_world.ExtractTranslation()
-    )
-    root_translation = MID360_POSITION - np.asarray(authored_position, dtype=float)
-    UsdGeom.XformCommonAPI(lidar_root).SetTranslate(Gf.Vec3d(*root_translation))
+    # Vendor USD assets may contain a nested sensor transform. Preserve the
+    # explicit override path for troubleshooting, while the custom MID-360 is
+    # already authored directly at the correct base-relative mount position.
+    if ARGS.lidar_usd_path is not None:
+        lidar_prim = lidar.prims[0]
+        base_prim = stage_utils.get_current_stage().GetPrimAtPath(
+            ISAAC_BASE_LINK_PATH
+        )
+        base_to_world = UsdGeom.Xformable(base_prim).ComputeLocalToWorldTransform(
+            Usd.TimeCode.Default()
+        )
+        lidar_to_world = UsdGeom.Xformable(lidar_prim).ComputeLocalToWorldTransform(
+            Usd.TimeCode.Default()
+        )
+        authored_position = base_to_world.GetInverse().Transform(
+            lidar_to_world.ExtractTranslation()
+        )
+        root_translation = MID360_POSITION - np.asarray(
+            authored_position, dtype=float
+        )
+        UsdGeom.XformCommonAPI(lidar_root).SetTranslate(
+            Gf.Vec3d(*root_translation)
+        )
     sensor = LidarSensor(lidar, annotators=[])
     sensor.attach_writer(
         "RtxLidarROS2PublishPointCloud",

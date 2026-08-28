@@ -1,5 +1,19 @@
 # Patrol Robot Description
 
+## Isaac Sim MID-360 model
+
+The Isaac Sim sensor uses four consecutive 0.1-second windows from Livox's
+official `scan_mode/mid360.csv` data as a compact four-state RTX scan pattern.
+It publishes 20,000 rays per frame at 10 Hz (200,000 points/s), with a nominal
+0.1--70 m range and the measured pattern's 360-degree horizontal and
+-7.18--52.16-degree vertical coverage. The bundled
+`isaac_sim/mid360_pattern.npz` was generated from rows 1--80,000 of:
+
+https://github.com/Livox-SDK/livox_laser_simulation/blob/main/scan_mode/mid360.csv
+
+Upstream CSV SHA-256:
+`aa1fc08b6a4400608dbd6ee832b7ea3a9c3c37197e734f60f58fe5abf762269a`.
+
 这是一个面向 ROS 2 Jazzy 和 Gazebo Harmonic 的最小巡检机器人仿真包。机器人只使用
 box、cylinder 和 sphere 构造，采用前轮 EPS 转向、后桥驱动的 Ackermann/自行车模型。
 

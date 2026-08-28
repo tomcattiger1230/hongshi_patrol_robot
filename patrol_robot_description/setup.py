@@ -13,7 +13,10 @@ setup(
         ("share/ament_index/resource_index/packages", [f"resource/{package_name}"]),
         (f"share/{package_name}", ["package.xml"]),
         (f"share/{package_name}/launch", glob("launch/*.launch.py")),
-        (f"share/{package_name}/isaac_sim", glob("isaac_sim/*.py")),
+        (
+            f"share/{package_name}/isaac_sim",
+            glob("isaac_sim/*.py") + glob("isaac_sim/*.npz"),
+        ),
         (f"share/{package_name}/rviz", glob("rviz/*")),
         (f"share/{package_name}/scripts", glob("scripts/*")),
         (f"share/{package_name}/urdf", glob("urdf/*")),

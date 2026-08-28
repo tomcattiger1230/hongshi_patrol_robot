@@ -58,11 +58,6 @@ export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 export PYTHONPATH="${INTERNAL_ROS_ROOT}/rclpy"
 export LD_LIBRARY_PATH="${INTERNAL_ROS_ROOT}/lib"
 
-readonly CACHED_XT32_USD="${HOME}/.cache/patrol_robot/isaac_assets/HESAI_XT32_SD10/HESAI_XT32_SD10.usd"
-if [[ -z "${PATROL_ISAAC_LIDAR_USD_PATH:-}" && -f "${CACHED_XT32_USD}" ]]; then
-  export PATROL_ISAAC_LIDAR_USD_PATH="${CACHED_XT32_USD}"
-fi
-
 "${ISAAC_ROOT}/python.sh" \
   "${PACKAGE_ROOT}/isaac_sim/patrol_robot_isaac_sim.py" \
   --urdf-path "${URDF_PATH}" "$@"

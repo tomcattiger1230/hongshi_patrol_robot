@@ -10,10 +10,9 @@ performance sample of the real 200,000 points/s stream, with a nominal
 -7.18--52.16-degree vertical coverage. The bundled
 `isaac_sim/mid360_pattern.npz` was generated from rows 1--80,000 of:
 
-Isaac Sim 6 casts each 10 Hz frame as a repeated single-state snapshot because
-its ROS writer does not currently emit data for this custom profile with
-multi-state/multi-tick motion BVH. Consequently, the longer-term
-non-repetition and intra-frame motion skew are not simulated.
+Isaac Sim 6 uses motion BVH to distribute the retained rays over each 100 ms
+frame. The longer-term non-repetition is not simulated because the ROS writer
+does not reliably support cycling several custom emitter states.
 
 https://github.com/Livox-SDK/livox_laser_simulation/blob/main/scan_mode/mid360.csv
 

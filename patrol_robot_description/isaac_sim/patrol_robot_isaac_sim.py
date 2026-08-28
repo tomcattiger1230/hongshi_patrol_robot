@@ -94,7 +94,11 @@ from isaacsim.robot.experimental.wheeled_robots.controllers import (
     AckermannController,
 )
 from isaacsim.robot.experimental.wheeled_robots.robots import WheeledRobot
-from isaacsim.sensors.experimental.rtx import Lidar, LidarSensor
+from isaacsim.sensors.experimental.rtx import (
+    Lidar,
+    LidarSensor,
+    parse_generic_model_output_data,
+)
 
 
 WHEEL_RADIUS = 0.215
@@ -443,10 +447,9 @@ def _mid360_attributes() -> dict[str, object]:
         "omni:sensor:Core:scanRateBaseHz": 10,
         "omni:sensor:Core:patternFiringRateHz": 10,
         "omni:sensor:Core:numberOfEmitters": MID360_RAYS_PER_FRAME,
-        # RTX channel IDs index the per-ray calibration table; they are not
-        # the four physical Livox emitters. NVIDIA's solid-state profiles use
-        # one channel per emitter ray.
-        "omni:sensor:Core:numberOfChannels": MID360_RAYS_PER_FRAME,
+        # RTX's GMO contract limits channel IDs to 10 bits. Each of the four
+        # scan lines therefore reuses the same 1,000 calibration channels.
+        "omni:sensor:Core:numberOfChannels": 1_000,
         "omni:sensor:Core:numLines": 4,
         "omni:sensor:Core:numRaysPerLine": Vt.UIntArray([1_000] * 4),
         "omni:sensor:Core:azimuthErrorMean": 0.0,
@@ -461,7 +464,7 @@ def _mid360_attributes() -> dict[str, object]:
         (np.arange(MID360_RAYS_PER_FRAME) * 25_000).tolist()
     )
     channel_ids = Vt.UIntArray(
-        (np.arange(MID360_RAYS_PER_FRAME) + 1).tolist()
+        (np.arange(MID360_RAYS_PER_FRAME) % 1_000 + 1).tolist()
     )
     for state_index, state in enumerate(pattern[:1], start=1):
         prefix = f"omni:sensor:Core:emitterState:s{state_index:03}"
@@ -824,9 +827,11 @@ def main() -> None:
                     "generic-model-output"
                 )
                 if lidar_data is not None:
+                    lidar_gmo = parse_generic_model_output_data(lidar_data)
                     print(
                         "PATROL_ISAAC_LIDAR_GMO "
                         f"shape={getattr(lidar_data, 'shape', None)} "
+                        f"returns={lidar_gmo.numElements} "
                         f"info_keys={sorted(lidar_info)}",
                         flush=True,
                     )

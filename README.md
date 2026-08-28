@@ -209,9 +209,8 @@ source install/setup.bash
 export ROS_DOMAIN_ID=0
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 
-# 仅通过 SSH 启动图形界面时需要这两项：
-export DISPLAY=:1
-export XAUTHORITY=/run/user/1000/gdm/Xauthority
+# 通过 SSH 启动时，还需设置当前桌面会话的 DISPLAY、XAUTHORITY、
+# XDG_RUNTIME_DIR 和 DBUS_SESSION_BUS_ADDRESS；见下方远程启动章节。
 
 src/hongshi_patrol_robot/patrol_robot_description/scripts/run_isaac_sim.sh \
   --gui --cmd-vel-topic /cmd_vel_isaac
@@ -254,6 +253,150 @@ export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 
 不要直接用系统 Python 执行 GUI，否则可能提示缺少 `PySide6`。停止时依次在 GUI、
 Nav2 和 Isaac Sim 三个终端按 `Ctrl+C`，并确认 `/cmd_vel_isaac` 已归零。
+
+#### 通过 SSH 远程启动 Isaac Sim、RViz2 和导航 GUI
+
+下面是开发机 `192.168.3.133` 上使用过的后台启动方式。远程桌面会话必须已经登录；
+SSH 本身不会创建可供 Qt/Isaac Sim 使用的图形会话。先在 SSH 终端中确认显示参数：
+
+```bash
+export XDG_RUNTIME_DIR=/run/user/$(id -u)
+export DBUS_SESSION_BUS_ADDRESS=unix:path=$XDG_RUNTIME_DIR/bus
+export DISPLAY=:0
+
+# GNOME Wayland/Xwayland 通常使用这个文件；先确认只返回一个当前会话文件。
+find "$XDG_RUNTIME_DIR" -maxdepth 1 -name '.mutter-Xwaylandauth.*' -print
+export XAUTHORITY=/run/user/1000/.mutter-Xwaylandauth.TVEWU3
+
+test -S "$XDG_RUNTIME_DIR/bus"
+test -r "$XAUTHORITY"
+```
+
+`XAUTHORITY` 后缀会在重新登录后变化，不能永久照抄示例值。若机器使用 GDM/Xorg，
+它也可能是 `/run/user/1000/gdm/Xauthority`。应以当前桌面会话的实际文件为准。
+
+所有后台进程必须继承同一套 ROS 环境：
+
+```bash
+cd ~/Develop/ROS_ws/hongshi_patrol_ws
+source /opt/ros/lyrical/setup.bash
+source install/setup.bash
+export ROS_DOMAIN_ID=0
+export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+```
+
+开始前确认没有旧 Gazebo、Isaac Sim 或 ROS bridge。特别是 `/clock` 只能有一个发布者：
+
+```bash
+pgrep -af 'patrol_robot_isaac_sim.py|gz-sim-main|parameter_bridge|robot320_simulation.launch.py'
+ros2 topic info /clock --verbose 2>/dev/null || true
+```
+
+以下命令均从同一个已经 source Lyrical 的 SSH shell 启动。Isaac Sim 6 与 Lyrical 的
+组合目前仍按实验环境处理，因此继续使用已经验证过的 Cyclone DDS；Gazebo 上通过的
+Fast DDS 结果不能自动等同于 Isaac Sim Bridge 也通过。
+
+第一步，后台启动 Isaac Sim 6 场景。PID 和日志分别保存在 `/tmp`：
+
+```bash
+nohup env \
+  DISPLAY="$DISPLAY" \
+  XAUTHORITY="$XAUTHORITY" \
+  XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" \
+  DBUS_SESSION_BUS_ADDRESS="$DBUS_SESSION_BUS_ADDRESS" \
+  ROS_DOMAIN_ID="$ROS_DOMAIN_ID" \
+  RMW_IMPLEMENTATION="$RMW_IMPLEMENTATION" \
+  src/hongshi_patrol_robot/patrol_robot_description/scripts/run_isaac_sim.sh \
+    --gui --cmd-vel-topic /cmd_vel_isaac \
+  > /tmp/robot320_isaac.log 2>&1 &
+echo $! | tee /tmp/robot320_isaac.pid
+```
+
+等待场景、车辆、MID-360 和 ROS Bridge 初始化完成。未看到就绪标志前不要启动 SLAM：
+
+```bash
+tail -f /tmp/robot320_isaac.log
+# 出现 PATROL_ISAAC_READY 后按 Ctrl+C，只退出 tail，不会关闭 Isaac Sim。
+```
+
+第二步，启动外部 SLAM Toolbox、Nav2 和项目 RViz2。这里必须使用 Isaac 专用地图名，
+不能加载 Gazebo pose graph：
+
+```bash
+nohup env \
+  DISPLAY="$DISPLAY" \
+  XAUTHORITY="$XAUTHORITY" \
+  XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" \
+  DBUS_SESSION_BUS_ADDRESS="$DBUS_SESSION_BUS_ADDRESS" \
+  ROS_DOMAIN_ID="$ROS_DOMAIN_ID" \
+  RMW_IMPLEMENTATION="$RMW_IMPLEMENTATION" \
+  ros2 launch robot320_localization_bringup robot320_simulation.launch.py \
+    gazebo:=false mode:=mapping \
+    persistent_map:=$HOME/robot320_maps/patrol_isaac \
+    navigation:=true exploration:=false rviz:=true gui:=false \
+  > /tmp/robot320_isaac_nav.log 2>&1 &
+echo $! | tee /tmp/robot320_isaac_nav.pid
+```
+
+第三步，从仓库根目录通过 uv 启动 Python 地图导航 GUI：
+
+```bash
+cd ~/Develop/ROS_ws/hongshi_patrol_ws/src/hongshi_patrol_robot
+nohup env \
+  DISPLAY="$DISPLAY" \
+  XAUTHORITY="$XAUTHORITY" \
+  XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" \
+  DBUS_SESSION_BUS_ADDRESS="$DBUS_SESSION_BUS_ADDRESS" \
+  ROS_DOMAIN_ID="$ROS_DOMAIN_ID" \
+  RMW_IMPLEMENTATION="$RMW_IMPLEMENTATION" \
+  ./scripts/uv_run.sh desktop robot320_navigation_gui \
+    --domain-id 0 --use-sim-time \
+  > /tmp/robot320_isaac_gui.log 2>&1 &
+echo $! | tee /tmp/robot320_isaac_gui.pid
+```
+
+三个窗口正常出现后做最小健康检查：
+
+```bash
+ros2 topic info /clock --verbose       # Publisher count 必须为 1
+ros2 topic hz /livox/lidar             # Ctrl+C 结束统计
+ros2 lifecycle get /slam_toolbox       # 应为 active [3]
+ros2 lifecycle get /planner_server     # 应为 active [3]
+ros2 lifecycle get /controller_server  # 应为 active [3]
+ros2 run tf2_ros tf2_echo map base_footprint
+```
+
+如果 Isaac Sim 窗口出现但 RViz2/GUI 没出现，优先查看对应日志，而不是重复执行启动命令：
+
+```bash
+tail -n 100 /tmp/robot320_isaac.log
+tail -n 100 /tmp/robot320_isaac_nav.log
+tail -n 100 /tmp/robot320_isaac_gui.log
+```
+
+停止时先取消导航并发送零速，再按 GUI → Nav2/RViz2 → Isaac Sim 的顺序结束。PID 文件
+可能来自旧进程，执行 `kill` 前必须核对命令行：
+
+```bash
+ros2 topic pub --once /cmd_vel_isaac geometry_msgs/msg/Twist \
+  '{linear: {x: 0.0}, angular: {z: 0.0}}'
+
+for file in /tmp/robot320_isaac_gui.pid \
+            /tmp/robot320_isaac_nav.pid \
+            /tmp/robot320_isaac.pid; do
+  pid=$(cat "$file")
+  ps -p "$pid" -o pid=,cmd=
+done
+
+# 确认上面三个 PID 与命令正确后，再依次执行：
+kill -TERM "$(cat /tmp/robot320_isaac_gui.pid)"
+kill -TERM "$(cat /tmp/robot320_isaac_nav.pid)"
+kill -TERM "$(cat /tmp/robot320_isaac.pid)"
+```
+
+停止后再次运行 `pgrep -af` 和 `ros2 topic info /clock --verbose`，确认没有孤儿仿真、
+点云预处理或时钟发布进程。残留节点会造成重复点云、TF 时间回跳和 DDS TypeObject
+错误。
 
 ### 2026-07-28 Isaac Sim 开发记录
 

@@ -70,7 +70,6 @@ import isaacsim.core.experimental.utils.app as app_utils
 import isaacsim.core.experimental.utils.stage as stage_utils
 import numpy as np
 import omni.kit.commands
-import omni.timeline
 import rclpy
 from geometry_msgs.msg import TransformStamped, Twist
 from nav_msgs.msg import Odometry
@@ -421,6 +420,11 @@ class IsaacRosInterface(Node):
     def command(self, simulation_time: float) -> tuple[float, float]:
         if ARGS.demo and self._last_command_monotonic_ns == 0:
             return self.demo_command(simulation_time)
+        self.command_timeout_brake()
+        return self.linear_x, self.angular_z
+
+    def command_timeout_brake(self) -> None:
+        """Zero the stored command if it has gone stale (wall-clock timeout)."""
         if (
             self._last_command_monotonic_ns
             and time.monotonic_ns() - self._last_command_monotonic_ns
@@ -428,7 +432,6 @@ class IsaacRosInterface(Node):
         ):
             self.linear_x = 0.0
             self.angular_z = 0.0
-        return self.linear_x, self.angular_z
 
     def publish_state(
         self,
@@ -526,9 +529,8 @@ def main() -> None:
         physics_scene.set_enabled_gpu_dynamics(False)
         app_utils.play()
         app_utils.update_app(steps=10)
-        timeline = omni.timeline.get_timeline_interface()
         if ARGS.start_paused:
-            timeline.pause()
+            app_utils.pause()
         steering_dof_indices = (
             robot.get_dof_indices(STEERING_DOF_NAMES).numpy().tolist()
         )
@@ -555,18 +557,22 @@ def main() -> None:
 
         while not stop_requested and (not ARGS.gui or SIMULATION_APP.is_running()):
             SIMULATION_APP.update()
-            rclpy.spin_once(ros_node, timeout_sec=0.0)
-            if not timeline.is_playing():
-                # Pausing or stopping the timeline is an inspection state, not
-                # an application shutdown request. Keep Kit responsive without
-                # touching articulation state or advancing simulated time.
+            # Pressing the GUI Stop button invalidates the articulation's
+            # physics tensor view. Pause is an inspection state and must keep
+            # the application alive without advancing simulated time.
+            if app_utils.is_stopped():
+                break
+            if app_utils.is_paused():
+                rclpy.spin_once(ros_node, timeout_sec=0.0)
+                ros_node.command_timeout_brake()
                 if ARGS.realtime_factor > 0.0:
                     wall_start = (
                         time.monotonic()
                         - simulation_time / ARGS.realtime_factor
                     )
-                time.sleep(0.01)
+                time.sleep(0.05)
                 continue
+            rclpy.spin_once(ros_node, timeout_sec=0.0)
             requested_linear_x, requested_angular_z = ros_node.command(
                 simulation_time
             )
@@ -667,20 +673,27 @@ def main() -> None:
             if ARGS.test_seconds > 0.0 and simulation_time >= ARGS.test_seconds:
                 break
 
-        robot.apply_wheel_actions(np.zeros(2, dtype=np.float32))
-        robot.set_dof_position_targets(
-            np.zeros(2, dtype=np.float32),
-            dof_indices=steering_dof_indices,
-        )
+        # The physics tensor view is invalid whenever the timeline was stopped
+        # from the GUI, so avoid articulation reads and writes in that state.
+        timeline_stopped = not robot.is_physics_tensor_entity_valid()
+        if not timeline_stopped:
+            robot.apply_wheel_actions(np.zeros(2, dtype=np.float32))
+            robot.set_dof_position_targets(
+                np.zeros(2, dtype=np.float32),
+                dof_indices=steering_dof_indices,
+            )
         lidar_sensor.detach_writer("RtxLidarROS2PublishPointCloud")
-        positions, _ = robot.get_world_poses()
-        final_position = positions.numpy()[0]
-        print(
-            "PATROL_ISAAC_FINAL "
-            f"x={final_position[0]:.3f} y={final_position[1]:.3f} "
-            f"z={final_position[2]:.3f}",
-            flush=True,
-        )
+        if timeline_stopped:
+            print("PATROL_ISAAC_FINAL timeline stopped by user", flush=True)
+        else:
+            positions, _ = robot.get_world_poses()
+            final_position = positions.numpy()[0]
+            print(
+                "PATROL_ISAAC_FINAL "
+                f"x={final_position[0]:.3f} y={final_position[1]:.3f} "
+                f"z={final_position[2]:.3f}",
+                flush=True,
+            )
     except BaseException:
         print("PATROL_ISAAC_ERROR", flush=True)
         traceback.print_exc()

@@ -437,6 +437,9 @@ def _mid360_attributes() -> dict[str, object]:
         "omni:sensor:Core:rayType": "IDEALIZED",
         "omni:sensor:Core:nearRangeM": 0.10,
         "omni:sensor:Core:farRangeM": 70.0,
+        "omni:sensor:Core:rangeCount": 1,
+        "omni:sensor:Core:rangesMinM": Vt.FloatArray([0.10]),
+        "omni:sensor:Core:rangesMaxM": Vt.FloatArray([70.0]),
         "omni:sensor:Core:rangeResolutionM": 0.001,
         "omni:sensor:Core:rangeAccuracyM": 0.02,
         "omni:sensor:Core:pulseTimeNs": 5,
@@ -465,6 +468,7 @@ def _mid360_attributes() -> dict[str, object]:
     channel_ids = Vt.UIntArray(
         (np.arange(MID360_RAYS_PER_FRAME) + 1).tolist()
     )
+    range_ids = Vt.UIntArray([0] * MID360_RAYS_PER_FRAME)
     for state_index, state in enumerate(pattern[:1], start=1):
         prefix = f"omni:sensor:Core:emitterState:s{state_index:03}"
         attributes[f"{prefix}:azimuthDeg"] = Vt.FloatArray(
@@ -475,6 +479,7 @@ def _mid360_attributes() -> dict[str, object]:
         )
         attributes[f"{prefix}:fireTimeNs"] = fire_times
         attributes[f"{prefix}:channelId"] = channel_ids
+        attributes[f"{prefix}:rangeId"] = range_ids
     return attributes
 
 

@@ -756,11 +756,6 @@ def main() -> None:
     temporary_dir = tempfile.TemporaryDirectory(prefix="patrol_robot_isaac_")
     ros_node = None
     try:
-        app_utils.enable_extension("isaacsim.ros2.bridge")
-        app_utils.enable_extension("isaacsim.sensors.rtx")
-        app_utils.enable_extension("isaacsim.sensors.rtx.nodes")
-        app_utils.update_app(steps=2)
-
         work_dir = Path(temporary_dir.name)
         robot_usd = _import_robot(ARGS.urdf_path, work_dir)
         robot = _build_scene(robot_usd)

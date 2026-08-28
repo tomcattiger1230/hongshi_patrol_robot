@@ -445,8 +445,6 @@ def _mid360_attributes() -> dict[str, object]:
         # the four physical Livox emitters. NVIDIA's solid-state profiles use
         # one channel per emitter ray.
         "omni:sensor:Core:numberOfChannels": MID360_RAYS_PER_FRAME,
-        "omni:sensor:Core:emitterStateCount": 1,
-        "omni:sensor:Core:stateResolutionStep": 1,
         "omni:sensor:Core:numLines": 4,
         "omni:sensor:Core:numRaysPerLine": Vt.UIntArray([1_000] * 4),
         "omni:sensor:Core:azimuthErrorMean": 0.0,

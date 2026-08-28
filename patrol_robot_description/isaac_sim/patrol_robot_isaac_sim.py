@@ -21,6 +21,11 @@ def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--gui", action="store_true", help="Show the Isaac Sim window.")
     parser.add_argument(
+        "--start-paused",
+        action="store_true",
+        help="Open the stage paused; use the Isaac Sim Play button to start physics.",
+    )
+    parser.add_argument(
         "--demo",
         action="store_true",
         help="Drive a repeating forward-and-turn pattern.",
@@ -65,6 +70,7 @@ import isaacsim.core.experimental.utils.app as app_utils
 import isaacsim.core.experimental.utils.stage as stage_utils
 import numpy as np
 import omni.kit.commands
+import omni.timeline
 import rclpy
 from geometry_msgs.msg import TransformStamped, Twist
 from nav_msgs.msg import Odometry
@@ -520,6 +526,9 @@ def main() -> None:
         physics_scene.set_enabled_gpu_dynamics(False)
         app_utils.play()
         app_utils.update_app(steps=10)
+        timeline = omni.timeline.get_timeline_interface()
+        if ARGS.start_paused:
+            timeline.pause()
         steering_dof_indices = (
             robot.get_dof_indices(STEERING_DOF_NAMES).numpy().tolist()
         )
@@ -547,6 +556,17 @@ def main() -> None:
         while not stop_requested and (not ARGS.gui or SIMULATION_APP.is_running()):
             SIMULATION_APP.update()
             rclpy.spin_once(ros_node, timeout_sec=0.0)
+            if not timeline.is_playing():
+                # Pausing or stopping the timeline is an inspection state, not
+                # an application shutdown request. Keep Kit responsive without
+                # touching articulation state or advancing simulated time.
+                if ARGS.realtime_factor > 0.0:
+                    wall_start = (
+                        time.monotonic()
+                        - simulation_time / ARGS.realtime_factor
+                    )
+                time.sleep(0.01)
+                continue
             requested_linear_x, requested_angular_z = ros_node.command(
                 simulation_time
             )

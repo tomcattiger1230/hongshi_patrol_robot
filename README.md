@@ -125,6 +125,14 @@ src/hongshi_patrol_robot/patrol_robot_description/scripts/run_isaac_sim.sh \
   --gui --cmd-vel-topic /cmd_vel_isaac
 ```
 
+如果需要先检查驱动关节而不推进物理仿真，增加 `--start-paused`。Isaac Sim
+窗口会保持打开；点击工具栏 Play 后开始仿真，之后点击 Pause/Stop 也不会退出程序：
+
+```bash
+src/hongshi_patrol_robot/patrol_robot_description/scripts/run_isaac_sim.sh \
+  --gui --start-paused --cmd-vel-topic /cmd_vel_isaac
+```
+
 看到 `PATROL_ISAAC_READY` 后，终端 2 启动持续建图和 Nav2：
 
 ```bash

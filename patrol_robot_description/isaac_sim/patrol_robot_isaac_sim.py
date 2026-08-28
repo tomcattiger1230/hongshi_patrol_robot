@@ -112,6 +112,7 @@ TIRE_DYNAMIC_FRICTION = 0.8
 MID360_POSITION = np.array([0.40, 0.0, 1.50])
 ISAAC_ROBOT_PATH = "/World/PatrolRobot"
 ISAAC_BASE_LINK_PATH = "/World/PatrolRobot/Geometry/base_footprint"
+ISAAC_LIDAR_ROOT_PATH = "/World/PatrolRobotLidar"
 STEERING_DOF_NAMES = [
     "front_left_steering_joint",
     "front_right_steering_joint",
@@ -409,7 +410,7 @@ def _create_mid360s_lidar() -> LidarSensor:
     # JSON profiles in extsDeprecated. Its unconfigured fallback has almost no
     # downward rays from 270-330 degrees, creating a false navigation blind
     # sector. Use the supported USD asset API and the full XT32 rotary profile.
-    lidar_root_path = f"{ISAAC_BASE_LINK_PATH}/mid360s_lidar"
+    lidar_root_path = ISAAC_LIDAR_ROOT_PATH
     lidar_common = {
         "tick_rate": 10.0,
         "aux_output_level": "FULL",
@@ -437,20 +438,10 @@ def _create_mid360s_lidar() -> LidarSensor:
     if not lidar_root.IsValid():
         raise RuntimeError(f"Failed to attach RTX lidar at {lidar_root_path}")
     lidar_prim = lidar.prims[0]
-    stage = stage_utils.get_current_stage()
-    base_prim = stage.GetPrimAtPath(ISAAC_BASE_LINK_PATH)
-    base_to_world = UsdGeom.Xformable(base_prim).ComputeLocalToWorldTransform(
-        Usd.TimeCode.Default()
-    )
-    base_world_position = base_to_world.ExtractTranslation()
-    target_world_position = base_world_position + Gf.Vec3d(*MID360_POSITION)
-    root_translation = base_to_world.GetInverse().Transform(target_world_position)
     # Move the reference root rather than overwriting the OmniLidar prim's
     # authored transform. Resetting the latter disables returns in Isaac 6's
     # XT32 asset even though the prim remains visible and publishes a topic.
-    # Convert the desired metre offset through the imported link transform;
-    # that hierarchy contains a URDF-authored scale and is not metre-local.
-    UsdGeom.XformCommonAPI(lidar_root).SetTranslate(root_translation)
+    UsdGeom.XformCommonAPI(lidar_root).SetTranslate(Gf.Vec3d(-10.1, -8.5, 1.501))
     sensor = LidarSensor(lidar, annotators=[])
     sensor.attach_writer(
         "RtxLidarROS2PublishPointCloud",
@@ -460,39 +451,42 @@ def _create_mid360s_lidar() -> LidarSensor:
     return sensor
 
 
-def _correct_mid360s_lidar_mount(lidar_sensor: LidarSensor) -> None:
-    """Correct the imported-link scale after live articulation transforms exist."""
+def _set_mid360s_lidar_pose(
+    lidar_sensor: LidarSensor,
+    position: np.ndarray,
+    orientation: np.ndarray,
+    *,
+    log: bool = False,
+) -> None:
+    """Keep the independent sensor asset aligned with the live articulation."""
     stage = stage_utils.get_current_stage()
     lidar_prim = lidar_sensor.lidar.prims[0]
-    lidar_root = stage.GetPrimAtPath(f"{ISAAC_BASE_LINK_PATH}/mid360s_lidar")
-    base_prim = stage.GetPrimAtPath(ISAAC_BASE_LINK_PATH)
-    base_to_world = UsdGeom.Xformable(base_prim).ComputeLocalToWorldTransform(
-        Usd.TimeCode.Default()
+    lidar_root = stage.GetPrimAtPath(ISAAC_LIDAR_ROOT_PATH)
+    yaw = math.atan2(
+        2.0 * (orientation[0] * orientation[3] + orientation[1] * orientation[2]),
+        1.0 - 2.0 * (orientation[2] ** 2 + orientation[3] ** 2),
     )
-    lidar_world_position = UsdGeom.Xformable(
-        lidar_prim
-    ).ComputeLocalToWorldTransform(Usd.TimeCode.Default()).ExtractTranslation()
-    desired_world_position = base_to_world.ExtractTranslation() + Gf.Vec3d(
-        *MID360_POSITION
+    cos_yaw = math.cos(yaw)
+    sin_yaw = math.sin(yaw)
+    world_position = Gf.Vec3d(
+        float(position[0] + cos_yaw * MID360_POSITION[0]),
+        float(position[1] + sin_yaw * MID360_POSITION[0]),
+        float(position[2] + MID360_POSITION[2]),
     )
-    world_to_base = base_to_world.GetInverse()
-    local_correction = world_to_base.Transform(
-        desired_world_position
-    ) - world_to_base.Transform(lidar_world_position)
-    translate_attr = lidar_root.GetAttribute("xformOp:translate")
-    root_translation = Gf.Vec3d(translate_attr.Get()) + local_correction
-    UsdGeom.XformCommonAPI(lidar_root).SetTranslate(root_translation)
-    app_utils.update_app(steps=2)
-    lidar_world_position = UsdGeom.Xformable(
-        lidar_prim
-    ).ComputeLocalToWorldTransform(Usd.TimeCode.Default()).ExtractTranslation()
-    print(
-        "PATROL_ISAAC_LIDAR "
-        f"path={lidar_prim.GetPath()} "
-        f"world=({lidar_world_position[0]:.3f},"
-        f"{lidar_world_position[1]:.3f},{lidar_world_position[2]:.3f})",
-        flush=True,
-    )
+    root_xform = UsdGeom.XformCommonAPI(lidar_root)
+    root_xform.SetTranslate(world_position)
+    root_xform.SetRotate(Gf.Vec3f(0.0, 0.0, math.degrees(yaw)))
+    if log:
+        lidar_world_position = UsdGeom.Xformable(
+            lidar_prim
+        ).ComputeLocalToWorldTransform(Usd.TimeCode.Default()).ExtractTranslation()
+        print(
+            "PATROL_ISAAC_LIDAR "
+            f"path={lidar_prim.GetPath()} "
+            f"world=({lidar_world_position[0]:.3f},"
+            f"{lidar_world_position[1]:.3f},{lidar_world_position[2]:.3f})",
+            flush=True,
+        )
 
 
 def _bicycle_command(
@@ -659,7 +653,6 @@ def main() -> None:
         # limits.  Unlike repeatedly teleporting the root body, the zero rear
         # wheel target then acts as a physical parking brake.
         app_utils.update_app(steps=2)
-        _correct_mid360s_lidar_mount(lidar_sensor)
         steering_dof_indices = (
             robot.get_dof_indices(STEERING_DOF_NAMES).numpy().tolist()
         )
@@ -724,7 +717,13 @@ def main() -> None:
             dof_indices=joint_state_dof_indices,
         )
         app_utils.update_app(steps=150)
-        settled_positions, _ = robot.get_world_poses()
+        settled_positions, settled_orientations = robot.get_world_poses()
+        _set_mid360s_lidar_pose(
+            lidar_sensor,
+            settled_positions.numpy()[0],
+            settled_orientations.numpy()[0],
+            log=True,
+        )
         settled_linear, settled_angular = robot.get_velocities()
         settled_dof_velocities = robot.get_dof_velocities(
             dof_indices=joint_state_dof_indices
@@ -830,6 +829,9 @@ def main() -> None:
                     dof_indices=joint_state_dof_indices
                 )
                 orientation = orientations.numpy()[0]
+                _set_mid360s_lidar_pose(
+                    lidar_sensor, positions.numpy()[0], orientation
+                )
                 yaw = math.atan2(
                     2.0
                     * (

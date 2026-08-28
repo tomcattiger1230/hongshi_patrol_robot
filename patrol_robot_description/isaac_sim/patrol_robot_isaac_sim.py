@@ -412,8 +412,6 @@ def _create_mid360s_lidar() -> LidarSensor:
     lidar_common = {
         "tick_rate": 10.0,
         "aux_output_level": "FULL",
-        "translations": [MID360_POSITION],
-        "orientations": [[1.0, 0.0, 0.0, 0.0]],
         "attributes": {
             "omni:sensor:Core:nearRangeM": 0.10,
             "omni:sensor:Core:farRangeM": 70.0,
@@ -438,6 +436,22 @@ def _create_mid360s_lidar() -> LidarSensor:
     if not lidar_root.IsValid():
         raise RuntimeError(f"Failed to attach RTX lidar at {lidar_root_path}")
     lidar_prim = lidar.prims[0]
+    stage = stage_utils.get_current_stage()
+    base_prim = stage.GetPrimAtPath(ISAAC_BASE_LINK_PATH)
+    base_to_world = UsdGeom.Xformable(base_prim).ComputeLocalToWorldTransform(
+        Usd.TimeCode.Default()
+    )
+    lidar_to_world = UsdGeom.Xformable(lidar_prim).ComputeLocalToWorldTransform(
+        Usd.TimeCode.Default()
+    )
+    authored_position = base_to_world.GetInverse().Transform(
+        lidar_to_world.ExtractTranslation()
+    )
+    root_translation = MID360_POSITION - np.asarray(authored_position, dtype=float)
+    # Move the reference root rather than overwriting the OmniLidar prim's
+    # authored transform. Resetting the latter disables returns in Isaac 6's
+    # XT32 asset even though the prim remains visible and publishes a topic.
+    UsdGeom.XformCommonAPI(lidar_root).SetTranslate(Gf.Vec3d(*root_translation))
     lidar_world_position = UsdGeom.Xformable(lidar_prim).ComputeLocalToWorldTransform(
         Usd.TimeCode.Default()
     ).ExtractTranslation()

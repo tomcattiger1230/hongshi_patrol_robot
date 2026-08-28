@@ -451,16 +451,6 @@ def _create_mid360s_lidar() -> LidarSensor:
     # Convert the desired metre offset through the imported link transform;
     # that hierarchy contains a URDF-authored scale and is not metre-local.
     UsdGeom.XformCommonAPI(lidar_root).SetTranslate(root_translation)
-    lidar_world_position = UsdGeom.Xformable(lidar_prim).ComputeLocalToWorldTransform(
-        Usd.TimeCode.Default()
-    ).ExtractTranslation()
-    print(
-        "PATROL_ISAAC_LIDAR "
-        f"path={lidar_prim.GetPath()} "
-        f"world=({lidar_world_position[0]:.3f},"
-        f"{lidar_world_position[1]:.3f},{lidar_world_position[2]:.3f})",
-        flush=True,
-    )
     sensor = LidarSensor(lidar, annotators=[])
     sensor.attach_writer(
         "RtxLidarROS2PublishPointCloud",
@@ -468,6 +458,41 @@ def _create_mid360s_lidar() -> LidarSensor:
         frameId="lidar_link",
     )
     return sensor
+
+
+def _correct_mid360s_lidar_mount(lidar_sensor: LidarSensor) -> None:
+    """Correct the imported-link scale after live articulation transforms exist."""
+    stage = stage_utils.get_current_stage()
+    lidar_prim = lidar_sensor.lidar.prims[0]
+    lidar_root = stage.GetPrimAtPath(f"{ISAAC_BASE_LINK_PATH}/mid360s_lidar")
+    base_prim = stage.GetPrimAtPath(ISAAC_BASE_LINK_PATH)
+    base_to_world = UsdGeom.Xformable(base_prim).ComputeLocalToWorldTransform(
+        Usd.TimeCode.Default()
+    )
+    lidar_world_position = UsdGeom.Xformable(
+        lidar_prim
+    ).ComputeLocalToWorldTransform(Usd.TimeCode.Default()).ExtractTranslation()
+    desired_world_position = base_to_world.ExtractTranslation() + Gf.Vec3d(
+        *MID360_POSITION
+    )
+    world_to_base = base_to_world.GetInverse()
+    local_correction = world_to_base.Transform(
+        desired_world_position
+    ) - world_to_base.Transform(lidar_world_position)
+    translate_attr = lidar_root.GetAttribute("xformOp:translate")
+    root_translation = Gf.Vec3d(translate_attr.Get()) + local_correction
+    UsdGeom.XformCommonAPI(lidar_root).SetTranslate(root_translation)
+    app_utils.update_app(steps=2)
+    lidar_world_position = UsdGeom.Xformable(
+        lidar_prim
+    ).ComputeLocalToWorldTransform(Usd.TimeCode.Default()).ExtractTranslation()
+    print(
+        "PATROL_ISAAC_LIDAR "
+        f"path={lidar_prim.GetPath()} "
+        f"world=({lidar_world_position[0]:.3f},"
+        f"{lidar_world_position[1]:.3f},{lidar_world_position[2]:.3f})",
+        flush=True,
+    )
 
 
 def _bicycle_command(
@@ -634,6 +659,7 @@ def main() -> None:
         # limits.  Unlike repeatedly teleporting the root body, the zero rear
         # wheel target then acts as a physical parking brake.
         app_utils.update_app(steps=2)
+        _correct_mid360s_lidar_mount(lidar_sensor)
         steering_dof_indices = (
             robot.get_dof_indices(STEERING_DOF_NAMES).numpy().tolist()
         )

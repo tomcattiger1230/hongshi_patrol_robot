@@ -1,5 +1,6 @@
 """Restamp simulated laser scans after expensive point-cloud projection."""
 
+import copy
 import math
 
 import rclpy
@@ -15,6 +16,8 @@ class ScanRestamper(Node):
         super().__init__("scan_restamper")
         self.declare_parameter("input_topic", "/scan_raw")
         self.declare_parameter("output_topic", "/scan")
+        self.declare_parameter("visualization_topic", "")
+        self.declare_parameter("visualization_no_return_range", 8.0)
         self.declare_parameter("frame_id", "")
         self.declare_parameter("sensor_x", 0.0)
         self.declare_parameter("sensor_y", 0.0)
@@ -26,6 +29,10 @@ class ScanRestamper(Node):
         )
         output_topic = (
             self.get_parameter("output_topic").get_parameter_value().string_value
+        )
+        visualization_topic = str(self.get_parameter("visualization_topic").value)
+        self._visualization_no_return_range = float(
+            self.get_parameter("visualization_no_return_range").value
         )
         self._frame_id = (
             self.get_parameter("frame_id").get_parameter_value().string_value
@@ -42,6 +49,11 @@ class ScanRestamper(Node):
             self.get_parameter("self_filter_y_abs").value
         )
         self._publisher = self.create_publisher(LaserScan, output_topic, 10)
+        self._visualization_publisher = None
+        if visualization_topic:
+            self._visualization_publisher = self.create_publisher(
+                LaserScan, visualization_topic, 10
+            )
         self.create_subscription(
             LaserScan,
             input_topic,
@@ -72,6 +84,21 @@ class ScanRestamper(Node):
                 ):
                     scan.ranges[index] = math.inf
         self._publisher.publish(scan)
+        if self._visualization_publisher is not None:
+            # Keep no-return rays as infinity on the navigation topic: SLAM and
+            # Nav2 must not mistake empty space for an obstacle.  RViz does not
+            # draw infinite ranges, however, so publish a separate display-only
+            # scan with those rays placed on a finite reference ring.
+            visual_scan = copy.deepcopy(scan)
+            no_return_range = min(
+                max(self._visualization_no_return_range, scan.range_min),
+                scan.range_max,
+            )
+            visual_scan.ranges = [
+                distance if math.isfinite(distance) else no_return_range
+                for distance in scan.ranges
+            ]
+            self._visualization_publisher.publish(visual_scan)
 
 
 def main(args=None) -> None:

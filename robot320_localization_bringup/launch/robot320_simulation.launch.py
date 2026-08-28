@@ -236,6 +236,10 @@ def generate_launch_description() -> LaunchDescription:
                 "use_sim_time": use_sim_time,
                 "input_topic": "/scan_raw",
                 "output_topic": "/scan",
+                # Display-only scan fills no-return rays at 8 m so RViz makes
+                # the full 360-degree field of view visible. Nav2 keeps /scan.
+                "visualization_topic": "/scan_visual",
+                "visualization_no_return_range": 8.0,
                 "frame_id": "lidar_link",
                 "sensor_x": 0.40,
                 "sensor_y": 0.0,

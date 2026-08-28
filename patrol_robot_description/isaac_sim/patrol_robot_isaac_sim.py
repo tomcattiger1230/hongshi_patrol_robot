@@ -496,7 +496,10 @@ def _create_mid360s_lidar() -> LidarSensor:
         lidar = Lidar.create(
             path=lidar_root_path,
             tick_rate=10.0,
-            accumulate_outputs=True,
+            # Each official-angle sample set is already a complete frame.
+            # Accumulation enables RTX multi-tick mode, which requires the
+            # incompatible motion-BVH path and prevents ROS output here.
+            accumulate_outputs=False,
             aux_output_level="FULL",
             attributes=_mid360_attributes(),
             translations=MID360_POSITION,

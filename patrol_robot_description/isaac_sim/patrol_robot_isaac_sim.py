@@ -110,6 +110,10 @@ STEERING_DRIVE_DAMPING = 200.0
 TIRE_STATIC_FRICTION = 0.9
 TIRE_DYNAMIC_FRICTION = 0.8
 MID360_POSITION = np.array([0.40, 0.0, 1.50])
+# The HESAI USD reference is authored in units that compose at 1/15 scale below
+# the imported URDF link. Compensate on the reference root; changing the nested
+# OmniLidar transform itself stops RTX returns in Isaac Sim 6.
+XT32_REFERENCE_TRANSLATION_SCALE = 15.0
 ISAAC_ROBOT_PATH = "/World/PatrolRobot"
 ISAAC_BASE_LINK_PATH = "/World/PatrolRobot/Geometry/base_footprint"
 STEERING_DOF_NAMES = [
@@ -441,7 +445,10 @@ def _create_mid360s_lidar() -> LidarSensor:
     authored_position = base_to_world.GetInverse().Transform(
         lidar_to_world.ExtractTranslation()
     )
-    root_translation = MID360_POSITION - np.asarray(authored_position, dtype=float)
+    root_translation = (
+        MID360_POSITION * XT32_REFERENCE_TRANSLATION_SCALE
+        - np.asarray(authored_position, dtype=float)
+    )
     UsdGeom.XformCommonAPI(lidar_root).SetTranslate(Gf.Vec3d(*root_translation))
     sensor = LidarSensor(lidar, annotators=[])
     sensor.attach_writer(

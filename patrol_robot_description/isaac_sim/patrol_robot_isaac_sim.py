@@ -409,27 +409,31 @@ def _create_mid360s_lidar() -> LidarSensor:
     # downward rays from 270-330 degrees, creating a false navigation blind
     # sector. Use the supported USD asset API and the full XT32 rotary profile.
     lidar_root_path = f"{ISAAC_BASE_LINK_PATH}/mid360s_lidar"
-    lidar_asset = {}
-    if ARGS.lidar_usd_path is not None:
-        lidar_usd_path = ARGS.lidar_usd_path.expanduser().resolve()
-        if not lidar_usd_path.is_file():
-            raise FileNotFoundError(f"RTX lidar USD asset not found: {lidar_usd_path}")
-        lidar_asset["usd_path"] = str(lidar_usd_path)
-    else:
-        lidar_asset["config"] = "XT32_SD10"
-    lidar = Lidar.create(
-        path=lidar_root_path,
-        **lidar_asset,
-        tick_rate=10.0,
-        aux_output_level="FULL",
-        translations=[MID360_POSITION],
-        orientations=[[1.0, 0.0, 0.0, 0.0]],
-        attributes={
+    lidar_common = {
+        "tick_rate": 10.0,
+        "aux_output_level": "FULL",
+        "translations": [MID360_POSITION],
+        "orientations": [[1.0, 0.0, 0.0, 0.0]],
+        "attributes": {
             "omni:sensor:Core:nearRangeM": 0.10,
             "omni:sensor:Core:farRangeM": 70.0,
             "omni:sensor:Core:outputFrameOfReference": "SENSOR",
         },
-    )
+    }
+    if ARGS.lidar_usd_path is not None:
+        lidar_usd_path = ARGS.lidar_usd_path.expanduser().resolve()
+        if not lidar_usd_path.is_file():
+            raise FileNotFoundError(f"RTX lidar USD asset not found: {lidar_usd_path}")
+        lidar_path = Lidar._create_from_usd(
+            path=lidar_root_path, usd_path=str(lidar_usd_path)
+        )
+        # The downloadable Isaac 6 XT32 asset omits this API token even though
+        # its OmniLidar prim contains the corresponding authored attributes.
+        # Apply it before wrapping the prim; Lidar validates schemas first.
+        Lidar._apply_schemas(lidar_path, ["OmniSensorGenericLidarCoreAPI"])
+        lidar = Lidar(path=lidar_path, **lidar_common)
+    else:
+        lidar = Lidar.create(path=lidar_root_path, config="XT32_SD10", **lidar_common)
     lidar_root = stage_utils.get_current_stage().GetPrimAtPath(lidar_root_path)
     if not lidar_root.IsValid():
         raise RuntimeError(f"Failed to attach RTX lidar at {lidar_root_path}")

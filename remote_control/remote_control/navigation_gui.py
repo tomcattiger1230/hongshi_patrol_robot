@@ -1360,7 +1360,9 @@ if QApplication is not None:
 
         def _on_result(self, future) -> None:
             try:
-                status = future.result().status
+                wrapped_result = future.result()
+                status = wrapped_result.status
+                result = wrapped_result.result
             except Exception as exc:
                 self.navigation_changed.emit(f"读取导航结果失败：{exc}")
                 return
@@ -1369,7 +1371,11 @@ if QApplication is not None:
                 GoalStatus.STATUS_CANCELED: "导航已取消",
                 GoalStatus.STATUS_ABORTED: "导航失败或已中止",
             }
-            self.navigation_changed.emit(messages.get(status, f"导航结束：{status}"))
+            message = messages.get(status, f"导航结束：{status}")
+            error_message = str(getattr(result, "error_msg", "")).strip()
+            if status == GoalStatus.STATUS_ABORTED and error_message:
+                message = f"导航失败：{error_message}"
+            self.navigation_changed.emit(message)
             self.goal_handle = None
 
         @Slot()

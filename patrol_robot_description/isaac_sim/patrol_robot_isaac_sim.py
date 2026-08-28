@@ -98,6 +98,9 @@ MAX_LINEAR_SPEED = 20.0 / 3.6
 PHYSICS_DT = 1.0 / 60.0
 REAR_WHEEL_MAX_EFFORT = 120.0
 STEERING_MAX_EFFORT = 250.0
+REAR_WHEEL_DRIVE_DAMPING = 1000.0
+STEERING_DRIVE_STIFFNESS = 5000.0
+STEERING_DRIVE_DAMPING = 200.0
 TIRE_STATIC_FRICTION = 0.9
 TIRE_DYNAMIC_FRICTION = 0.8
 MID360_POSITION = np.array([0.40, 0.0, 1.50])
@@ -607,6 +610,9 @@ def main() -> None:
         steering_dof_indices = (
             robot.get_dof_indices(STEERING_DOF_NAMES).numpy().tolist()
         )
+        front_wheel_dof_indices = (
+            robot.get_dof_indices(FRONT_WHEEL_DOF_NAMES).numpy().tolist()
+        )
         rear_wheel_dof_indices = (
             robot.get_dof_indices(REAR_WHEEL_DOF_NAMES).numpy().tolist()
         )
@@ -623,6 +629,24 @@ def main() -> None:
         )
         robot.set_dof_max_efforts(
             np.full(2, REAR_WHEEL_MAX_EFFORT, dtype=np.float32),
+            dof_indices=rear_wheel_dof_indices,
+        )
+        # Author gains through the live PhysX tensor view. Angular gains stored
+        # in USD use degree-based units, which otherwise makes the rear motor
+        # roughly 57 times softer than the SI value configured above.
+        robot.set_dof_gains(
+            stiffnesses=np.full(2, STEERING_DRIVE_STIFFNESS, dtype=np.float32),
+            dampings=np.full(2, STEERING_DRIVE_DAMPING, dtype=np.float32),
+            dof_indices=steering_dof_indices,
+        )
+        robot.set_dof_gains(
+            stiffnesses=np.zeros(2, dtype=np.float32),
+            dampings=np.zeros(2, dtype=np.float32),
+            dof_indices=front_wheel_dof_indices,
+        )
+        robot.set_dof_gains(
+            stiffnesses=np.zeros(2, dtype=np.float32),
+            dampings=np.full(2, REAR_WHEEL_DRIVE_DAMPING, dtype=np.float32),
             dof_indices=rear_wheel_dof_indices,
         )
         robot.set_dof_max_velocities(
@@ -748,16 +772,37 @@ def main() -> None:
 
             if step % publish_every == 0:
                 positions, orientations = robot.get_world_poses()
+                linear_velocities, angular_velocities = robot.get_velocities()
                 joint_positions = robot.get_dof_positions(
                     dof_indices=joint_state_dof_indices
                 )
+                orientation = orientations.numpy()[0]
+                yaw = math.atan2(
+                    2.0
+                    * (
+                        orientation[0] * orientation[3]
+                        + orientation[1] * orientation[2]
+                    ),
+                    1.0
+                    - 2.0
+                    * (
+                        orientation[2] * orientation[2]
+                        + orientation[3] * orientation[3]
+                    ),
+                )
+                world_linear = linear_velocities.numpy()[0]
+                actual_linear_x = (
+                    math.cos(yaw) * world_linear[0]
+                    + math.sin(yaw) * world_linear[1]
+                )
+                actual_angular_z = angular_velocities.numpy()[0][2]
                 ros_node.publish_state(
                     simulation_time,
                     positions.numpy()[0],
-                    orientations.numpy()[0],
+                    orientation,
                     joint_positions.numpy().reshape(-1),
-                    linear_x,
-                    angular_z,
+                    actual_linear_x,
+                    actual_angular_z,
                 )
 
             simulation_time += PHYSICS_DT

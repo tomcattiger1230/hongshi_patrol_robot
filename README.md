@@ -1,8 +1,10 @@
 # Hongshi Patrol Robot
 
-Robot320 巡检机器人项目。当前主要仿真平台运行 ROS 2 Jazzy，同时保留 ROS 2 Lyrical
-兼容配置；底盘驱动、MID-360s 定位并对接 Nav2，同网段上位机运行 PySide6 GUI。Ubuntu 上位机自动使用 ROS 2，
-Windows/macOS 使用 standalone Fast DDS，两者共享 ROS 2 `std_msgs/String` JSON 协议。
+Robot320 巡检机器人项目。当前主要开发平台为 Ubuntu 26.04 + ROS 2 Lyrical，
+Ubuntu 24.04 + ROS 2 Jazzy 保留为稳定基线和 Isaac Sim 6 Bridge 环境。项目包含自行车
+模型底盘、MID-360s、SLAM Toolbox、Nav2 和 PySide6 地图导航 GUI。Ubuntu 上位机
+直接使用 ROS 2，Windows/macOS 使用 standalone Fast DDS，两者共享 ROS 2
+`std_msgs/String` JSON 协议。
 
 ```text
 Windows/macOS GUI -> Fast DDS ---+
@@ -27,9 +29,80 @@ Ubuntu GUI -------> rclpy -------+                              ROS/Nav2/CAN
 Python 环境由根目录 `pyproject.toml`、`uv.lock` 和 `scripts/uv_*.sh` 管理；ROS 2 C++
 包仍由 colcon 构建。
 
-当前 `192.168.3.117`、ROS 2 Jazzy 平台的 Gazebo/Isaac Sim 建图、地图保存、GUI
-导航和故障排查命令统一见
+Gazebo/Isaac Sim 建图、地图保存、GUI 导航和故障排查命令统一见
 [`SIMULATION_SLAM_NAVIGATION_DEBUG_GUIDE.md`](./SIMULATION_SLAM_NAVIGATION_DEBUG_GUIDE.md)。
+
+## ROS 2 版本与兼容性
+
+不要只根据 `package.xml` 判断兼容性。ROS 2 发行版同时决定 Ubuntu、Python、Nav2、
+Gazebo 和 DDS 的版本；跨发行版复用二进制扩展或参数文件很容易出现“可以编译但运行
+异常”的情况。
+
+| 组合 | 项目状态 | 说明 |
+|---|---|---|
+| Ubuntu 26.04 Resolute + ROS 2 Lyrical + Gazebo Jetty | 当前主要平台，已验证 | 2026-08-28 在 `192.168.3.133` 验证 `gz-sim 10`、MID-360 点云、SLAM、Nav2 和 RViz |
+| Ubuntu 24.04 Noble + ROS 2 Jazzy + Gazebo Harmonic | 稳定基线 | 适合已有 Jazzy 工作区和 Gazebo Harmonic；不要把 Jazzy 的 `build/`、`install/` 带到 Lyrical |
+| Isaac Sim 6 + Jazzy Bridge + 外部 Lyrical 节点 | 实验性 | 标准 ROS 消息可以通过 DDS 互通，但 Python ABI、DDS TypeObject 和仿真时钟仍需逐项验证 |
+| Jazzy 二进制包直接运行在 Ubuntu 26.04 | 不支持 | Jazzy 的 Tier 1 平台是 Ubuntu 24.04，不能通过复制 `/opt/ros/jazzy` 代替正确安装 |
+
+ROS 2 官方目标平台见 [REP 2000](https://www.ros.org/reps/rep-2000.html)，ROS/Gazebo
+推荐配对见 [Gazebo 官方兼容表](https://gazebosim.org/docs/latest/ros_installation/)。本项目
+在 Lyrical 上使用其 vendor package 提供的 Gazebo Jetty；不要另外安装另一套 Gazebo
+再让 `ros_gz_bridge` 链接不同主版本的库。
+
+### Lyrical 平台的实际差异
+
+- Ubuntu 26.04 的系统 Python 是 3.14。ROS 的 `rclpy`、Qt binding 和其他 native
+  extension 必须使用匹配的 Python ABI。请通过 `scripts/uv_setup.sh` 和
+  `scripts/uv_run.sh` 使用允许 system site packages 的 `desktop`/`nuc` profile；只在
+  普通 uv 虚拟环境中执行可能出现 `No module named yaml`、`rclpy` 或 Qt 插件错误。
+- `slam_toolbox`、`pointcloud_to_laserscan`、`ros_gz_sim`、`gz_sim_vendor` 和 Cyclone DDS
+  已可从 Lyrical 系统包使用。当前 Nav2 使用仓库锁定的源码 overlay；每次新终端必须
+  按“ROS underlay → Nav2 underlay（如有）→ 机器人工作区”的顺序 source。
+- Kilted 及更新版本的 Nav2 默认使用 `geometry_msgs/msg/TwistStamped`。项目的 Gazebo
+  Ackermann 插件和 Isaac 控制器仍接收 `geometry_msgs/msg/Twist`，因此
+  `nav2_ackermann.yaml` 显式设置 `enable_stamped_cmd_vel: false`。不要让同一个
+  `/cmd_vel` 同时出现 `Twist` 和 `TwistStamped`，可用
+  `ros2 topic type /cmd_vel` 检查。
+- 新版 Nav2 增加了 route、docking 等 lifecycle server，并有参数更名或废弃提示。
+  从 Jazzy 复制参数后必须重新检查 `ros2 param dump` 和启动日志，不能默认旧参数仍被
+  使用。
+- 仿真图中只能存在一个 `/clock` 发布者。切换 Gazebo/Isaac Sim 前必须停止旧 simulator
+  和 `ros_gz_bridge`；`ros2 topic info /clock --verbose` 的 `Publisher count` 必须为 1。
+- 推荐所有外部 ROS 2 进程统一使用 `RMW_IMPLEMENTATION=rmw_cyclonedds_cpp`。不要在同一
+  启动链中临时切换 RMW，也不要把不同发行版生成的 `build/`、`install/`、Python
+  native module 或 TypeSupport 文件混用。
+
+### Isaac Sim 6 的边界
+
+Isaac Sim 6 内置 Python 3.12 和 Jazzy ROS Bridge，而 Lyrical 主机使用 Python 3.14。
+不得把 `/opt/ros/lyrical` 的 `rclpy` 或其他 native library 加入 Isaac Kit 的
+`PYTHONPATH`。Isaac 内只运行其自带 Bridge/仿真脚本，SLAM Toolbox、Nav2、RViz 和 GUI
+运行在外部 ROS 环境。目前 Lyrical 与 Isaac Bridge 联调中仍观察到过 Cyclone DDS
+TypeObject 错误，因此 Lyrical 上的完整闭环优先使用 Gazebo，Isaac Sim 暂按实验后端
+处理。
+
+Gazebo 与 Isaac Sim 的 pose graph 也不能混用。两者的雷达采样、出生位姿、障碍物和
+坐标误差不同，混用旧图可能让 Nav2 报 `Start occupied` 或造成地图旋转。建议至少分开
+保存：
+
+```text
+$HOME/robot320_maps/patrol_gazebo
+$HOME/robot320_maps/patrol_isaac
+```
+
+升级或切换发行版后先彻底清理并重新构建：
+
+```bash
+cd ~/Develop/ROS_ws/hongshi_patrol_ws
+rm -rf build log install   # 仅在确认当前目录是该 colcon 工作区后执行
+source /opt/ros/lyrical/setup.bash
+colcon build --symlink-install
+source install/setup.bash
+```
+
+如果使用 zsh，请对应 source `setup.zsh`。不要在已经 source Jazzy 的终端上继续 source
+Lyrical；应打开全新终端。
 
 ## 上位机快速开始
 
@@ -77,11 +150,30 @@ apt 安装的 `rclpy`。`uv_run.sh nuc` 会加载 ROS 2 和仓库的 `install/se
 
 ## Gazebo 仿真
 
-在 ROS 2 Lyrical + Gazebo 设备上启动仿真和项目专用 RViz：
+当前 Lyrical 平台的推荐启动方式是从空白 Gazebo 专用地图开始，同时启动
+SLAM Toolbox、Nav2、RViz 和 Gazebo GUI：
 
 ```bash
+cd ~/Develop/ROS_ws/hongshi_patrol_ws
 source /opt/ros/lyrical/setup.bash
 source install/setup.bash
+export ROS_DOMAIN_ID=0
+export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+
+ros2 launch robot320_localization_bringup robot320_simulation.launch.py \
+  gazebo:=true mode:=mapping \
+  persistent_map:=$HOME/robot320_maps/patrol_gazebo \
+  navigation:=true exploration:=false rviz:=true gui:=true
+```
+
+确认新图有效并保存后，才切换为 `mode:=continuing`。不要用 Isaac Sim 生成的
+`patrol_current.posegraph` 验证 Gazebo；2026-08-28 实测这种混用会让规划器报
+`Start occupied`。完整测试中 `/livox/lidar`、`/filtered_points` 和 `/scan` 均约为
+10 Hz，1 m 前向 Nav2 目标执行成功。
+
+只检查模型、关节和手动 `/cmd_vel` 时可使用较小的 description launch：
+
+```bash
 ros2 launch patrol_robot_description patrol_robot_sim.launch.py \
   gui:=true rviz:=true
 ```
@@ -96,14 +188,14 @@ NVIDIA Isaac Sim 6 后端：
   --gui --cmd-vel-topic /cmd_vel_isaac
 ```
 
-### Isaac Sim 6 完整启动步骤（192.168.3.117）
+### Isaac Sim 6 完整启动步骤（Lyrical 主机，实验性）
 
 工作空间为 `/home/arnold/Develop/ROS_ws/hongshi_patrol_ws`，仓库位于其
 `src/hongshi_patrol_robot`。首次拉取代码或修改 ROS 包后先编译：
 
 ```bash
 cd ~/Develop/ROS_ws/hongshi_patrol_ws
-source /opt/ros/jazzy/setup.bash
+source /opt/ros/lyrical/setup.bash
 colcon build --symlink-install
 source install/setup.bash
 ```
@@ -112,7 +204,7 @@ source install/setup.bash
 
 ```bash
 cd ~/Develop/ROS_ws/hongshi_patrol_ws
-source /opt/ros/jazzy/setup.bash
+source /opt/ros/lyrical/setup.bash
 source install/setup.bash
 export ROS_DOMAIN_ID=0
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
@@ -137,7 +229,7 @@ src/hongshi_patrol_robot/patrol_robot_description/scripts/run_isaac_sim.sh \
 
 ```bash
 cd ~/Develop/ROS_ws/hongshi_patrol_ws
-source /opt/ros/jazzy/setup.bash
+source /opt/ros/lyrical/setup.bash
 source install/setup.bash
 export ROS_DOMAIN_ID=0
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
@@ -152,7 +244,7 @@ ros2 launch robot320_localization_bringup robot320_simulation.launch.py \
 
 ```bash
 cd ~/Develop/ROS_ws/hongshi_patrol_ws/src/hongshi_patrol_robot
-source /opt/ros/jazzy/setup.bash
+source /opt/ros/lyrical/setup.bash
 source ~/Develop/ROS_ws/hongshi_patrol_ws/install/setup.bash
 export ROS_DOMAIN_ID=0
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
@@ -191,14 +283,16 @@ Nav2 和 Isaac Sim 三个终端按 `Ctrl+C`，并确认 `/cmd_vel_isaac` 已归�
 带障碍物的 Gazebo SLAM/导航仿真：
 
 ```bash
-cd ~/Develop/ROS2_ws/patrol_ws
+cd ~/Develop/ROS_ws/hongshi_patrol_ws
 source src/hongshi_patrol_robot/scripts/source_lyrical_sim.sh
 
 ros2 launch robot320_localization_bringup robot320_simulation.launch.py \
-  mode:=continuing navigation:=true exploration:=true rviz:=true gui:=true
+  gazebo:=true mode:=continuing \
+  persistent_map:=$HOME/robot320_maps/patrol_gazebo \
+  navigation:=true exploration:=true rviz:=true gui:=true
 ```
 
-`continuing` 是默认模式：从 `$HOME/robot320_maps/patrol_current` 加载完整 SLAM pose
+`continuing` 是默认模式：从指定的 `persistent_map` 加载完整 SLAM pose
 graph，持续扩建 `/map`，并每 30 秒自动更新 pose graph、YAML 和 PGM。首次找不到
 pose graph 时会创建新图；传统 `mode:=localization` 只加载静态地图。
 
@@ -206,7 +300,7 @@ pose graph 时会创建新图；传统 `mode:=localization` 只加载静态地�
 
 ```bash
 ./scripts/uv_run.sh desktop robot320_navigation_gui \
-  --domain-id 20 --use-sim-time
+  --domain-id 0 --use-sim-time
 ```
 
 具体操作见 [`remote_control/README.md`](remote_control/README.md)。

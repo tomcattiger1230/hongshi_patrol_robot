@@ -406,7 +406,7 @@ def _build_scene(robot_usd: Path) -> WheeledRobot:
 
 
 def _mid360_attributes() -> dict[str, object]:
-    """Build a four-frame RTX profile from Livox's published scan pattern."""
+    """Build an RTX profile from Livox's published scan pattern."""
     if not MID360_PATTERN_PATH.is_file():
         raise FileNotFoundError(
             f"MID-360 scan pattern not found: {MID360_PATTERN_PATH}"
@@ -425,8 +425,8 @@ def _mid360_attributes() -> dict[str, object]:
     # official sample so the scan trajectory and field of view stay intact.
     pattern = pattern[:, ::5]
 
-    # Four official 0.1 s windows are cycled as emitter states so successive
-    # frames retain the characteristic non-repetitive Livox distribution.
+    # Use one official 0.1 s window as the emitter state. Multiple states make
+    # Isaac Sim 6 select its non-working multi-tick ROS point-cloud path.
     attributes: dict[str, object] = {
         "omni:sensor:modelName": "Livox_MID360_Approximation",
         "omni:sensor:Core:scanType": "SOLID_STATE",
@@ -441,7 +441,12 @@ def _mid360_attributes() -> dict[str, object]:
         "omni:sensor:Core:scanRateBaseHz": 10,
         "omni:sensor:Core:patternFiringRateHz": 10,
         "omni:sensor:Core:numberOfEmitters": MID360_RAYS_PER_FRAME,
-        "omni:sensor:Core:numberOfChannels": 4,
+        # RTX channel IDs index the per-ray calibration table; they are not
+        # the four physical Livox emitters. NVIDIA's solid-state profiles use
+        # one channel per emitter ray.
+        "omni:sensor:Core:numberOfChannels": MID360_RAYS_PER_FRAME,
+        "omni:sensor:Core:emitterStateCount": 1,
+        "omni:sensor:Core:stateResolutionStep": 1,
         "omni:sensor:Core:numLines": 4,
         "omni:sensor:Core:numRaysPerLine": Vt.UIntArray([1_000] * 4),
         "omni:sensor:Core:azimuthErrorMean": 0.0,
@@ -456,9 +461,9 @@ def _mid360_attributes() -> dict[str, object]:
     # distortion/failure at the cost of not modelling intra-frame skew.
     fire_times = Vt.UIntArray([0] * MID360_RAYS_PER_FRAME)
     channel_ids = Vt.UIntArray(
-        (np.arange(MID360_RAYS_PER_FRAME) % 4 + 1).tolist()
+        (np.arange(MID360_RAYS_PER_FRAME) + 1).tolist()
     )
-    for state_index, state in enumerate(pattern, start=1):
+    for state_index, state in enumerate(pattern[:1], start=1):
         prefix = f"omni:sensor:Core:emitterState:s{state_index:03}"
         attributes[f"{prefix}:azimuthDeg"] = Vt.FloatArray(
             state[:, 0].tolist()
@@ -472,7 +477,7 @@ def _mid360_attributes() -> dict[str, object]:
 
 
 def _create_mid360s_lidar() -> LidarSensor:
-    """Create a motion-aware 10 Hz MID-360 RTX lidar and ROS output."""
+    """Create a 10 Hz MID-360 RTX lidar and ROS output."""
     lidar_root_path = f"{ISAAC_BASE_LINK_PATH}/mid360s_lidar"
     if ARGS.lidar_usd_path is not None:
         lidar_usd_path = ARGS.lidar_usd_path.expanduser().resolve()

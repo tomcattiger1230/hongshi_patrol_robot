@@ -2,17 +2,18 @@
 
 ## Isaac Sim MID-360 model
 
-The Isaac Sim sensor uses four consecutive 0.1-second windows from Livox's
-official `scan_mode/mid360.csv` data as a compact four-state RTX scan pattern.
+The Isaac Sim sensor uses a 0.1-second window from Livox's official
+`scan_mode/mid360.csv` data as its RTX scan pattern.
 It publishes 4,000 rays per frame at 10 Hz (40,000 points/s), a uniform 1:5
 performance sample of the real 200,000 points/s stream, with a nominal
 0.1--70 m range and the measured pattern's 360-degree horizontal and
 -7.18--52.16-degree vertical coverage. The bundled
 `isaac_sim/mid360_pattern.npz` was generated from rows 1--80,000 of:
 
-Isaac Sim 6 casts each 10 Hz frame as a single snapshot because its ROS writer
-does not currently emit data for this custom profile with multi-tick motion
-BVH. Consequently, intra-frame motion skew is not simulated.
+Isaac Sim 6 casts each 10 Hz frame as a repeated single-state snapshot because
+its ROS writer does not currently emit data for this custom profile with
+multi-state/multi-tick motion BVH. Consequently, the longer-term
+non-repetition and intra-frame motion skew are not simulated.
 
 https://github.com/Livox-SDK/livox_laser_simulation/blob/main/scan_mode/mid360.csv
 

@@ -115,7 +115,7 @@ TIRE_STATIC_FRICTION = 0.9
 TIRE_DYNAMIC_FRICTION = 0.8
 MID360_POSITION = np.array([0.40, 0.0, 1.50])
 MID360_PATTERN_PATH = Path(__file__).with_name("mid360_pattern.npz")
-MID360_RAYS_PER_FRAME = 4_000
+MID360_RAYS_PER_FRAME = 1_000
 ISAAC_ROBOT_PATH = "/World/PatrolRobot"
 ISAAC_BASE_LINK_PATH = "/World/PatrolRobot/Geometry/base_footprint"
 STEERING_DOF_NAMES = [
@@ -424,10 +424,9 @@ def _mid360_attributes() -> dict[str, object]:
             "MID-360 scan pattern must have shape (4, 20000, 2), got "
             f"{pattern.shape}"
         )
-    # A full 20,000-ray frame makes Isaac Sim 6 spend many minutes building
-    # the motion-aware RTX sensor on the Spark. Uniformly retain every fifth
-    # official sample so the scan trajectory and field of view stay intact.
-    pattern = pattern[:, ::5]
+    # The Isaac GMO path accepts at most 1,024 emitter/channel IDs. Uniformly
+    # retain every twentieth official sample so trajectory and FOV stay intact.
+    pattern = pattern[:, ::20]
 
     # Use one official 0.1 s window as the emitter state. Multiple states make
     # Isaac Sim 6 select its non-working multi-tick ROS point-cloud path.
@@ -448,11 +447,10 @@ def _mid360_attributes() -> dict[str, object]:
         # profile; its multi-tick path does not yield valid returns here.
         "omni:sensor:Core:instantLidar": True,
         "omni:sensor:Core:numberOfEmitters": MID360_RAYS_PER_FRAME,
-        # RTX allocates this table per emitter, while GMO channel IDs are only
-        # 10 bits. Allocate all rays but reuse IDs 1..1000 across four lines.
+        # RTX allocates one calibration channel per retained emitter ray.
         "omni:sensor:Core:numberOfChannels": MID360_RAYS_PER_FRAME,
         "omni:sensor:Core:numLines": 4,
-        "omni:sensor:Core:numRaysPerLine": Vt.UIntArray([1_000] * 4),
+        "omni:sensor:Core:numRaysPerLine": Vt.UIntArray([250] * 4),
         "omni:sensor:Core:azimuthErrorMean": 0.0,
         "omni:sensor:Core:azimuthErrorStd": 0.0,
         "omni:sensor:Core:elevationErrorMean": 0.0,
@@ -462,10 +460,10 @@ def _mid360_attributes() -> dict[str, object]:
     # Distribute the retained samples over the real 100 ms frame. Motion BVH
     # is enabled above so moving-platform returns use the corresponding pose.
     fire_times = Vt.UIntArray(
-        (np.arange(MID360_RAYS_PER_FRAME) * 25_000).tolist()
+        (np.arange(MID360_RAYS_PER_FRAME) * 100_000).tolist()
     )
     channel_ids = Vt.UIntArray(
-        (np.arange(MID360_RAYS_PER_FRAME) % 1_000 + 1).tolist()
+        (np.arange(MID360_RAYS_PER_FRAME) + 1).tolist()
     )
     for state_index, state in enumerate(pattern[:1], start=1):
         prefix = f"omni:sensor:Core:emitterState:s{state_index:03}"

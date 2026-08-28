@@ -410,6 +410,7 @@ def _create_mid360s_lidar() -> LidarSensor:
             "omni:sensor:Core:nearRangeM": 0.10,
             "omni:sensor:Core:farRangeM": 70.0,
             "omni:sensor:Core:maxReturns": 2,
+            "omni:sensor:Core:numberOfChannels": 32,
             "omni:sensor:Core:numberOfEmitters": 32,
             "omni:sensor:Core:patternFiringRateHz": 20000,
             "omni:sensor:Core:scanRateBaseHz": 10,
@@ -428,7 +429,7 @@ def _create_mid360s_lidar() -> LidarSensor:
     lidar_prim.GetAttribute(f"{emitter_prefix}fireTimeNs").Set(
         [368 + 1512 * index for index in range(32)]
     )
-    lidar_prim.GetAttribute(f"{emitter_prefix}channelId").Set(list(range(32)))
+    lidar_prim.GetAttribute(f"{emitter_prefix}channelId").Set(list(range(1, 33)))
     sensor = LidarSensor(lidar, annotators=[])
     sensor.attach_writer(
         "RtxLidarROS2PublishPointCloud",

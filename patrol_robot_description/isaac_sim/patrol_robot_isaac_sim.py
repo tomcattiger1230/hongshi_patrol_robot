@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import math
+import os
 import signal
 import sys
 import tempfile
@@ -44,6 +45,12 @@ def _parse_args() -> argparse.Namespace:
         help="Brake if cmd_vel is silent for this many wall-clock seconds.",
     )
     parser.add_argument("--odom-topic", default="/odom")
+    parser.add_argument(
+        "--lidar-usd-path",
+        type=Path,
+        default=(Path(value) if (value := os.environ.get("PATROL_ISAAC_LIDAR_USD_PATH")) else None),
+        help="Use a local RTX lidar USD asset instead of resolving it from Nucleus.",
+    )
     parser.add_argument(
         "--realtime-factor",
         type=float,
@@ -402,9 +409,17 @@ def _create_mid360s_lidar() -> LidarSensor:
     # downward rays from 270-330 degrees, creating a false navigation blind
     # sector. Use the supported USD asset API and the full XT32 rotary profile.
     lidar_root_path = f"{ISAAC_BASE_LINK_PATH}/mid360s_lidar"
+    lidar_asset = {}
+    if ARGS.lidar_usd_path is not None:
+        lidar_usd_path = ARGS.lidar_usd_path.expanduser().resolve()
+        if not lidar_usd_path.is_file():
+            raise FileNotFoundError(f"RTX lidar USD asset not found: {lidar_usd_path}")
+        lidar_asset["usd_path"] = str(lidar_usd_path)
+    else:
+        lidar_asset["config"] = "XT32_SD10"
     lidar = Lidar.create(
         path=lidar_root_path,
-        config="XT32_SD10",
+        **lidar_asset,
         tick_rate=10.0,
         aux_output_level="FULL",
         translations=[MID360_POSITION],

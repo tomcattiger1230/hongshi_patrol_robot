@@ -533,7 +533,9 @@ def _create_mid360s_lidar() -> LidarSensor:
         UsdGeom.XformCommonAPI(lidar_root).SetTranslate(
             Gf.Vec3d(*root_translation)
         )
-    sensor = LidarSensor(lidar, annotators=[])
+    # Isaac Sim 6's LidarSensor runtime test explicitly attaches the generic
+    # model output annotator before any writer consumes RTX returns.
+    sensor = LidarSensor(lidar, annotators=["generic-model-output"])
     sensor.attach_writer(
         "RtxLidarROS2PublishPointCloud",
         topicName="livox/lidar",

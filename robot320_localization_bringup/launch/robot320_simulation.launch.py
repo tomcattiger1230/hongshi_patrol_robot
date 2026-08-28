@@ -239,11 +239,13 @@ def generate_launch_description() -> LaunchDescription:
                 "frame_id": "lidar_link",
                 "sensor_x": 0.40,
                 "sensor_y": 0.0,
-                # RTX rays include the imported wheels and body outside the
-                # nominal navigation footprint. Use the full swept envelope.
-                "self_filter_x_min": -1.50,
-                "self_filter_x_max": 1.50,
-                "self_filter_y_abs": 1.00,
+                # The lidar is 0.365 m behind the nose, 1.165 m ahead of the
+                # tail, and centered in a 0.78 m-wide body. Expressed in the
+                # base frame this is roughly +/-0.765 by +/-0.39 m; retain a
+                # small margin without masking nearby real obstacles.
+                "self_filter_x_min": -0.82,
+                "self_filter_x_max": 0.82,
+                "self_filter_y_abs": 0.44,
             }
         ],
     )

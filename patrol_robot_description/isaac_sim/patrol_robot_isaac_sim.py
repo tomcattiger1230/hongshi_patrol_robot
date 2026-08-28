@@ -448,9 +448,9 @@ def _mid360_attributes() -> dict[str, object]:
         # profile; its multi-tick path does not yield valid returns here.
         "omni:sensor:Core:instantLidar": True,
         "omni:sensor:Core:numberOfEmitters": MID360_RAYS_PER_FRAME,
-        # RTX's GMO contract limits channel IDs to 10 bits. Each of the four
-        # scan lines therefore reuses the same 1,000 calibration channels.
-        "omni:sensor:Core:numberOfChannels": 1_000,
+        # RTX allocates this table per emitter, while GMO channel IDs are only
+        # 10 bits. Allocate all rays but reuse IDs 1..1000 across four lines.
+        "omni:sensor:Core:numberOfChannels": MID360_RAYS_PER_FRAME,
         "omni:sensor:Core:numLines": 4,
         "omni:sensor:Core:numRaysPerLine": Vt.UIntArray([1_000] * 4),
         "omni:sensor:Core:azimuthErrorMean": 0.0,

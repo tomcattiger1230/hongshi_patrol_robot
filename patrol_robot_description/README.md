@@ -3,17 +3,18 @@
 ## Isaac Sim MID-360 model
 
 The Isaac Sim sensor uses a 0.1-second window from Livox's official
-`scan_mode/mid360.csv` data as its RTX scan pattern.
+`scan_mode/mid360.csv` data as a PhysX raycast pattern and publishes the
+resulting hits directly as ROS `PointCloud2`.
 It publishes 1,000 rays per frame at 10 Hz (10,000 points/s), a uniform 1:20
 performance sample of the real 200,000 points/s stream, with a nominal
 0.1--70 m range and the measured pattern's 360-degree horizontal and
 -7.18--52.16-degree vertical coverage. The bundled
 `isaac_sim/mid360_pattern.npz` was generated from rows 1--80,000 of:
 
-Isaac Sim 6 uses its `instantLidar` complete-scan mode because its multi-tick
-path does not yield valid returns for this custom emitter profile. The
-longer-term non-repetition and intra-frame motion skew are therefore not
-simulated.
+The PhysX backend is used because Isaac Sim 6's RTX path produces no valid
+returns for this custom emitter profile. It models scene geometry and
+occlusion, but not return intensity, longer-term non-repetition, or intra-frame
+motion skew.
 
 https://github.com/Livox-SDK/livox_laser_simulation/blob/main/scan_mode/mid360.csv
 

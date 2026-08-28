@@ -76,6 +76,7 @@ SIMULATION_APP = SimulationApp({"headless": not ARGS.gui})
 import isaacsim.core.experimental.utils.app as app_utils
 import isaacsim.core.experimental.utils.stage as stage_utils
 import numpy as np
+from omni.physx import get_physx_scene_query_interface
 import rclpy
 from geometry_msgs.msg import TransformStamped, Twist
 from nav_msgs.msg import Odometry
@@ -83,7 +84,9 @@ from pxr import Gf, PhysxSchema, Usd, UsdGeom, UsdLux, UsdPhysics, UsdShade, Vt
 from rclpy.node import Node
 from rclpy.signals import SignalHandlerOptions
 from rosgraph_msgs.msg import Clock
-from sensor_msgs.msg import JointState
+from sensor_msgs.msg import JointState, PointCloud2
+from sensor_msgs_py import point_cloud2
+from std_msgs.msg import Header
 from tf2_msgs.msg import TFMessage
 
 from isaacsim.asset.importer.urdf.impl import URDFImporter, URDFImporterConfig
@@ -95,7 +98,6 @@ from isaacsim.robot.experimental.wheeled_robots.robots import WheeledRobot
 from isaacsim.sensors.experimental.rtx import (
     Lidar,
     LidarSensor,
-    parse_generic_model_output_data,
 )
 
 
@@ -598,8 +600,25 @@ class IsaacRosInterface(Node):
         )
         self._odom = self.create_publisher(Odometry, ARGS.odom_topic, 10)
         self._joint_states = self.create_publisher(JointState, "/joint_states", 10)
+        self._lidar = self.create_publisher(PointCloud2, "/livox/lidar", 10)
         self._tf = self.create_publisher(TFMessage, "/tf", 10)
         self._clock_publisher = self.create_publisher(Clock, "/clock", 10)
+        with np.load(MID360_PATTERN_PATH) as pattern_file:
+            pattern = np.asarray(
+                pattern_file["azimuth_elevation_deg"][0, ::20],
+                dtype=np.float64,
+            )
+        azimuth = np.deg2rad(pattern[:, 0])
+        elevation = np.deg2rad(pattern[:, 1])
+        horizontal = np.cos(elevation)
+        self._lidar_directions = np.column_stack(
+            (
+                horizontal * np.cos(azimuth),
+                horizontal * np.sin(azimuth),
+                np.sin(elevation),
+            )
+        )
+        self._scene_query = get_physx_scene_query_interface()
 
     def _on_twist(self, message: Twist) -> None:
         self.linear_x = float(message.linear.x)
@@ -627,6 +646,50 @@ class IsaacRosInterface(Node):
         ):
             self.linear_x = 0.0
             self.angular_z = 0.0
+
+    def publish_lidar(
+        self,
+        simulation_time: float,
+        base_position: np.ndarray,
+        orientation_wxyz: np.ndarray,
+    ) -> None:
+        """Raycast the official MID-360 directions into the PhysX scene."""
+        w, x, y, z = (float(value) for value in orientation_wxyz)
+        rotation = np.array(
+            [
+                [1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
+                [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+                [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)],
+            ],
+            dtype=np.float64,
+        )
+        origin = np.asarray(base_position, dtype=np.float64) + rotation @ MID360_POSITION
+        world_directions = self._lidar_directions @ rotation.T
+        ray_origin = Gf.Vec3f(*(float(value) for value in origin))
+        points: list[tuple[float, float, float]] = []
+        for local_direction, world_direction in zip(
+            self._lidar_directions, world_directions, strict=True
+        ):
+            hit = self._scene_query.raycast_closest(
+                ray_origin,
+                Gf.Vec3f(*(float(value) for value in world_direction)),
+                70.0,
+            )
+            if not hit or not hit["hit"]:
+                continue
+            hit_position = np.asarray(hit["position"], dtype=np.float64)
+            distance = float(np.linalg.norm(hit_position - origin))
+            if distance < 0.10:
+                continue
+            point = local_direction * distance
+            points.append((float(point[0]), float(point[1]), float(point[2])))
+
+        sec, nanosec = _stamp(simulation_time)
+        header = Header()
+        header.stamp.sec = sec
+        header.stamp.nanosec = nanosec
+        header.frame_id = "lidar_link"
+        self._lidar.publish(point_cloud2.create_cloud_xyz32(header, points))
 
     def publish_state(
         self,
@@ -701,7 +764,6 @@ def main() -> None:
         work_dir = Path(temporary_dir.name)
         robot_usd = _import_robot(ARGS.urdf_path, work_dir)
         robot = _build_scene(robot_usd)
-        lidar_sensor = _create_mid360s_lidar()
         controller = AckermannController(
             wheel_base=WHEEL_BASE,
             track_width=TRACK_WIDTH,
@@ -826,7 +888,6 @@ def main() -> None:
         wall_start = time.monotonic()
         publish_every = 3
         step = 0
-        lidar_reported = False
         last_steering_targets: np.ndarray | None = None
         last_wheel_targets: np.ndarray | None = None
         print(
@@ -838,20 +899,6 @@ def main() -> None:
 
         while not stop_requested and (not ARGS.gui or SIMULATION_APP.is_running()):
             SIMULATION_APP.update()
-            if not lidar_reported and step > 0 and step % 60 == 0:
-                lidar_data, lidar_info = lidar_sensor.get_data(
-                    "generic-model-output"
-                )
-                if lidar_data is not None:
-                    lidar_gmo = parse_generic_model_output_data(lidar_data)
-                    print(
-                        "PATROL_ISAAC_LIDAR_GMO "
-                        f"shape={getattr(lidar_data, 'shape', None)} "
-                        f"returns={lidar_gmo.numElements} "
-                        f"info_keys={sorted(lidar_info)}",
-                        flush=True,
-                    )
-                    lidar_reported = True
             # Pressing the GUI Stop button invalidates the articulation's
             # physics tensor view. Pause is an inspection state and must keep
             # the application alive without advancing simulated time.
@@ -939,6 +986,12 @@ def main() -> None:
                     actual_linear_x,
                     actual_angular_z,
                 )
+                if step % 6 == 0:
+                    ros_node.publish_lidar(
+                        simulation_time,
+                        positions.numpy()[0],
+                        orientation,
+                    )
 
             simulation_time += PHYSICS_DT
             step += 1
@@ -959,7 +1012,6 @@ def main() -> None:
                 np.zeros(2, dtype=np.float32),
                 dof_indices=steering_dof_indices,
             )
-        lidar_sensor.detach_writer("RtxLidarROS2PublishPointCloud")
         if timeline_stopped:
             print("PATROL_ISAAC_FINAL timeline stopped by user", flush=True)
         else:

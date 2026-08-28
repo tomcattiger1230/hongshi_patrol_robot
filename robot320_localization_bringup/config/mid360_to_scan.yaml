@@ -1,11 +1,12 @@
 pointcloud_to_laserscan:
   ros__parameters:
-    # Keep the scan in its input lidar frame. Heights are therefore relative
-    # to the MID-360 mounted 1.50 m above base_footprint.
+    # Isaac 6's XT32 USD reports rays in its internal optical frame. Select a
+    # narrow band around the horizontal plane; negative-only filtering selects
+    # the nearby ground ring and makes the self filter erase the whole scan.
     target_frame: ""
     transform_tolerance: 0.10
-    min_height: -1.35
-    max_height: -0.10
+    min_height: -0.05
+    max_height: 0.20
     angle_min: -3.141592654
     angle_max: 3.141592654
     angle_increment: 0.008726646

@@ -205,8 +205,8 @@ def generate_launch_description() -> LaunchDescription:
                 # Gazebo can expose a scoped sensor path as the PointCloud2
                 # frame. Normalize it to the URDF/TF lidar link for RViz.
                 "output_frame": "lidar_link",
-                "min_z": -1.35,
-                "max_z": -0.10,
+                "min_z": -0.05,
+                "max_z": 0.20,
                 "voxel_size": 0.05,
             }
         ],

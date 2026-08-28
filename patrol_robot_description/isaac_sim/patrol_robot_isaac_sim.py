@@ -69,7 +69,6 @@ SIMULATION_APP = SimulationApp({"headless": not ARGS.gui})
 import isaacsim.core.experimental.utils.app as app_utils
 import isaacsim.core.experimental.utils.stage as stage_utils
 import numpy as np
-import omni.kit.commands
 import rclpy
 from geometry_msgs.msg import TransformStamped, Twist
 from nav_msgs.msg import Odometry
@@ -398,35 +397,14 @@ def _build_scene(robot_usd: Path) -> WheeledRobot:
 
 def _create_mid360s_lidar() -> LidarSensor:
     """Create an RTX lidar with a MID-360-like range and ROS 2 output."""
-    # Use a complete local 360-degree rotary profile. Creating an unconfigured
-    # OmniLidar uses schema defaults with too few downward rays from 270-330
-    # degrees, producing a false blind sector in the navigation LaserScan.
-    # Isaac Sim 6 ships Hesai_QT64 in the active RTX config directory; the old
-    # XT32 profile only exists in extsDeprecated and is therefore not loaded.
-    staging_path = "/World/mid360s_lidar"
-    lidar_path = f"{ISAAC_BASE_LINK_PATH}/mid360s_lidar"
-    omni.kit.commands.execute(
-        "IsaacSensorCreateRtxLidar",
-        # The legacy creator resolves its built-in config only at a root path.
-        # Move the fully configured prim under the dynamic chassis afterwards.
-        path=staging_path,
-        parent=None,
-        config="Hesai_QT64",
-        translation=Gf.Vec3d(*MID360_POSITION),
-        orientation=Gf.Quatd(1.0, 0.0, 0.0, 0.0),
-    )
-    omni.kit.commands.execute(
-        "MovePrim",
-        path_from=staging_path,
-        path_to=lidar_path,
-    )
-    lidar_prim = stage_utils.get_current_stage().GetPrimAtPath(lidar_path)
-    if not lidar_prim.IsValid():
-        raise RuntimeError(f"Failed to attach RTX lidar at {lidar_path}")
-    if lidar_prim is None or not lidar_prim.IsValid():
-        raise RuntimeError("Isaac Sim failed to create the local RTX lidar")
-    lidar = Lidar(
-        str(lidar_prim.GetPath()),
+    # Isaac Sim 6's legacy IsaacSensorCreateRtxLidar command no longer resolves
+    # JSON profiles in extsDeprecated. Its unconfigured fallback has almost no
+    # downward rays from 270-330 degrees, creating a false navigation blind
+    # sector. Use the supported USD asset API and the full XT32 rotary profile.
+    lidar_root_path = f"{ISAAC_BASE_LINK_PATH}/mid360s_lidar"
+    lidar = Lidar.create(
+        path=lidar_root_path,
+        config="XT32_SD10",
         tick_rate=10.0,
         aux_output_level="FULL",
         attributes={
@@ -435,6 +413,10 @@ def _create_mid360s_lidar() -> LidarSensor:
             "omni:sensor:Core:outputFrameOfReference": "SENSOR",
         },
     )
+    lidar_root = stage_utils.get_current_stage().GetPrimAtPath(lidar_root_path)
+    if not lidar_root.IsValid():
+        raise RuntimeError(f"Failed to attach RTX lidar at {lidar_root_path}")
+    UsdGeom.XformCommonAPI(lidar_root).SetTranslate(Gf.Vec3d(*MID360_POSITION))
     sensor = LidarSensor(lidar, annotators=[])
     sensor.attach_writer(
         "RtxLidarROS2PublishPointCloud",

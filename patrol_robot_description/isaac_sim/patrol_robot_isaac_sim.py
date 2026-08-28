@@ -68,6 +68,7 @@ SIMULATION_APP = SimulationApp({"headless": not ARGS.gui})
 
 import isaacsim.core.experimental.utils.app as app_utils
 import isaacsim.core.experimental.utils.stage as stage_utils
+import carb
 import numpy as np
 import rclpy
 from geometry_msgs.msg import TransformStamped, Twist
@@ -550,6 +551,9 @@ def main() -> None:
     temporary_dir = tempfile.TemporaryDirectory(prefix="patrol_robot_isaac_")
     ros_node = None
     try:
+        # Multi-tick RTX lidar rendering needs Motion BVH when the sensor is
+        # positioned away from the world origin or follows a moving vehicle.
+        carb.settings.get_settings().set("/renderer/raytracingMotion/enabled", True)
         app_utils.enable_extension("isaacsim.ros2.bridge")
         app_utils.enable_extension("isaacsim.sensors.rtx")
         app_utils.enable_extension("isaacsim.sensors.rtx.nodes")

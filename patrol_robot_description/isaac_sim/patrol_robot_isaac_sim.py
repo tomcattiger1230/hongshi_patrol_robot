@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import argparse
 import math
-import os
 import signal
 import sys
 import tempfile
@@ -45,12 +44,6 @@ def _parse_args() -> argparse.Namespace:
         help="Brake if cmd_vel is silent for this many wall-clock seconds.",
     )
     parser.add_argument("--odom-topic", default="/odom")
-    parser.add_argument(
-        "--lidar-usd-path",
-        type=Path,
-        default=(Path(value) if (value := os.environ.get("PATROL_ISAAC_LIDAR_USD_PATH")) else None),
-        help="Use a local RTX lidar USD asset instead of resolving it from Nucleus.",
-    )
     parser.add_argument(
         "--realtime-factor",
         type=float,
@@ -110,12 +103,9 @@ STEERING_DRIVE_DAMPING = 200.0
 TIRE_STATIC_FRICTION = 0.9
 TIRE_DYNAMIC_FRICTION = 0.8
 MID360_POSITION = np.array([0.40, 0.0, 1.50])
-# The HESAI USD reference is authored in units that compose at 1/15 scale below
-# the imported URDF link. Compensate on the reference root; changing the nested
-# OmniLidar transform itself stops RTX returns in Isaac Sim 6.
-XT32_REFERENCE_TRANSLATION_SCALE = 15.0
 ISAAC_ROBOT_PATH = "/World/PatrolRobot"
 ISAAC_BASE_LINK_PATH = "/World/PatrolRobot/Geometry/base_footprint"
+ISAAC_LIDAR_ROOT_PATH = "/World/PatrolRobotLidar"
 STEERING_DOF_NAMES = [
     "front_left_steering_joint",
     "front_right_steering_joint",
@@ -409,47 +399,18 @@ def _build_scene(robot_usd: Path) -> WheeledRobot:
 
 def _create_mid360s_lidar() -> LidarSensor:
     """Create an RTX lidar with a MID-360-like range and ROS 2 output."""
-    lidar_root_path = f"{ISAAC_BASE_LINK_PATH}/mid360s_lidar"
-    lidar_common = {
-        "tick_rate": 10.0,
-        "aux_output_level": "FULL",
-        "attributes": {
+    lidar = Lidar.create(
+        path=ISAAC_LIDAR_ROOT_PATH,
+        tick_rate=10.0,
+        aux_output_level="FULL",
+        positions=[[-10.1, -8.5, 1.501]],
+        orientations=[[1.0, 0.0, 0.0, 0.0]],
+        attributes={
             "omni:sensor:Core:nearRangeM": 0.10,
             "omni:sensor:Core:farRangeM": 70.0,
             "omni:sensor:Core:outputFrameOfReference": "SENSOR",
         },
-    }
-    if ARGS.lidar_usd_path is not None:
-        lidar_usd_path = ARGS.lidar_usd_path.expanduser().resolve()
-        if not lidar_usd_path.is_file():
-            raise FileNotFoundError(f"RTX lidar USD asset not found: {lidar_usd_path}")
-        lidar_path = Lidar._create_from_usd(
-            path=lidar_root_path, usd_path=str(lidar_usd_path)
-        )
-        Lidar._apply_schemas(lidar_path, ["OmniSensorGenericLidarCoreAPI"])
-        lidar = Lidar(path=lidar_path, **lidar_common)
-    else:
-        lidar = Lidar.create(path=lidar_root_path, config="XT32_SD10", **lidar_common)
-    lidar_root = stage_utils.get_current_stage().GetPrimAtPath(lidar_root_path)
-    if not lidar_root.IsValid():
-        raise RuntimeError(f"Failed to attach RTX lidar at {lidar_root_path}")
-    lidar_prim = lidar.prims[0]
-    stage = stage_utils.get_current_stage()
-    base_prim = stage.GetPrimAtPath(ISAAC_BASE_LINK_PATH)
-    base_to_world = UsdGeom.Xformable(base_prim).ComputeLocalToWorldTransform(
-        Usd.TimeCode.Default()
     )
-    lidar_to_world = UsdGeom.Xformable(lidar_prim).ComputeLocalToWorldTransform(
-        Usd.TimeCode.Default()
-    )
-    authored_position = base_to_world.GetInverse().Transform(
-        lidar_to_world.ExtractTranslation()
-    )
-    root_translation = (
-        MID360_POSITION * XT32_REFERENCE_TRANSLATION_SCALE
-        - np.asarray(authored_position, dtype=float)
-    )
-    UsdGeom.XformCommonAPI(lidar_root).SetTranslate(Gf.Vec3d(*root_translation))
     sensor = LidarSensor(lidar, annotators=[])
     sensor.attach_writer(
         "RtxLidarROS2PublishPointCloud",

@@ -291,8 +291,9 @@ mkdir -p /var/lib/robot320/maps
 在 `/odom` 和 `map -> odom -> base_link` 验证完成后可传 `enable_nav2:=true`。否则即使 action
 server 启动，控制器也无法获得连续可靠的底盘速度。
 
-Robot320 初始阿克曼参数为轴距 `0.700 m`、最小转弯半径 `2.350 m`、等效前轮最大转角
-`16.59 deg`，CAN 单一转向执行器命令范围为 `0..350`。这些参数均可通过 launch 参数覆盖。
+Robot320 初始阿克曼参数为前后轴距 `0.890 m`、左右轮距 `0.700 m`、最小转弯半径
+`2.350 m`、等效前轮最大转角 `20.75 deg`，CAN 单一转向执行器命令范围为
+`0..350`。这些参数均可通过 launch 参数覆盖。
 
 ## 6. 验证
 
@@ -326,9 +327,9 @@ Robot320 初始阿克曼参数为轴距 `0.700 m`、最小转弯半径 `2.350 m`
 | `nav_cmd_vel_topic` | `/cmd_vel` | Nav2 速度输出 |
 | `enable_nav2` | `false` | 启动仓库内的 Nav2 Ackermann 配置 |
 | `nav2_params_file` | 包内配置 | Nav2 参数文件 |
-| `wheelbase` | `0.700` | 前后轴距（米） |
+| `wheelbase` | `0.890` | 前后轴距（米） |
 | `min_turning_radius` | `2.350` | 最小转弯半径（米） |
-| `max_wheel_angle` | `16.59` | 等效前轮最大转角（度） |
+| `max_wheel_angle` | `20.75` | 等效前轮最大转角（度） |
 | `max_steering_command` | `350` | CAN 转向执行器最大命令量 |
 
 定位质量主要取决于雷达外参、时间戳、环境几何特征和地图一致性。

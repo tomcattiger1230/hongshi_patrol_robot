@@ -10,9 +10,9 @@ from dataclasses import dataclass
 class AckermannConfig:
     """Geometry and actuator calibration for the single steering command."""
 
-    wheelbase_m: float = 0.700
+    wheelbase_m: float = 0.890
     min_turning_radius_m: float = 2.350
-    max_wheel_angle_deg: float = 16.59
+    max_wheel_angle_deg: float = 20.75
     max_steering_command: int = 350
     min_linear_speed_mps: float = 0.05
 

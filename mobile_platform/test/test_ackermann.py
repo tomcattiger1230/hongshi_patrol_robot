@@ -8,6 +8,12 @@ from mobile_platform.ackermann import AckermannConfig, twist_to_steering
 CONFIG = AckermannConfig()
 
 
+def test_default_vehicle_geometry_matches_robot320():
+    assert CONFIG.wheelbase_m == pytest.approx(0.89)
+    assert CONFIG.min_turning_radius_m == pytest.approx(2.35)
+    assert CONFIG.max_wheel_angle_deg == pytest.approx(20.75)
+
+
 def test_straight_motion_centers_steering():
     command = twist_to_steering(0.5, 0.0, CONFIG)
 
@@ -18,7 +24,7 @@ def test_straight_motion_centers_steering():
 def test_minimum_radius_maps_to_maximum_actuator_command():
     command = twist_to_steering(0.5, 0.5 / 2.35, CONFIG)
 
-    assert math.degrees(command.wheel_angle_rad) == pytest.approx(16.59, abs=0.02)
+    assert math.degrees(command.wheel_angle_rad) == pytest.approx(20.75, abs=0.02)
     assert command.actuator_command == 350
 
 

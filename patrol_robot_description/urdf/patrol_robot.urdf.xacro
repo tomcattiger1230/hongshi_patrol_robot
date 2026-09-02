@@ -3,8 +3,8 @@
   <!-- roboQ-320 dimensions from the vehicle configuration sheet. -->
   <xacro:property name="wheel_radius" value="0.215"/>
   <xacro:property name="wheel_width" value="0.135"/>
-  <xacro:property name="wheel_base" value="0.70"/>
-  <xacro:property name="track_width" value="0.825"/>
+  <xacro:property name="wheel_base" value="0.89"/>
+  <xacro:property name="track_width" value="0.70"/>
   <xacro:property name="steering_joint_limit" value="${radians(35.0)}"/>
   <!-- Bicycle-model limit atan(wheel_base / minimum_turning_radius). -->
   <xacro:property name="steering_control_limit" value="${atan2(wheel_base, 2.35)}"/>

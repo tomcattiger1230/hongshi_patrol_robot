@@ -47,9 +47,9 @@ def generate_launch_description() -> LaunchDescription:
         DeclareLaunchArgument("max_linear_speed", default_value="0.8"),
         DeclareLaunchArgument("max_angular_speed", default_value="1.2"),
         DeclareLaunchArgument("rpm_per_mps", default_value="500"),
-        DeclareLaunchArgument("wheelbase", default_value="0.700"),
+        DeclareLaunchArgument("wheelbase", default_value="0.890"),
         DeclareLaunchArgument("min_turning_radius", default_value="2.350"),
-        DeclareLaunchArgument("max_wheel_angle", default_value="16.59"),
+        DeclareLaunchArgument("max_wheel_angle", default_value="20.75"),
         DeclareLaunchArgument("max_steering_command", default_value="350"),
         DeclareLaunchArgument("min_steering_speed", default_value="0.05"),
     ]

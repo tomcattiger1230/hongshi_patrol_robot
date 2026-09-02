@@ -1,0 +1,36 @@
+ekf_filter_node:
+  ros__parameters:
+    # Phase 1: validate the EKF with wheel odometry only.
+    frequency: 30.0
+    sensor_timeout: 0.5
+    two_d_mode: true
+
+    map_frame: map
+    odom_frame: odom
+    base_link_frame: base_link
+    world_frame: odom
+
+    publish_tf: true
+    publish_tf_to_map: false
+
+    # /odom is the only active measurement in this phase.
+    # State order: x, y, z, roll, pitch, yaw, vx, vy, vz,
+    #              vroll, vpitch, vyaw, ax, ay, az
+    odom0: /wheel/odom_raw
+    odom0_differential: false
+    odom0_relative: false
+    odom0_queue_size: 10
+    odom0_config: [true, true, false, false, false, true, true, false, false, false, false, true, false, false, false]
+
+    # IMU and Cartographer pose are deliberately not configured in phase 1.
+    # robot_localization built-in 15x15 default process and initial covariance
+    # matrices are used; do not add the invalid 6x6 (36-element) matrices.
+
+    # Phase 2: use only bias-corrected gyro Z; do not fuse orientation or acceleration yet.
+    imu0: /livox/imu_corrected
+    imu0_differential: false
+    imu0_relative: false
+    imu0_queue_size: 20
+    imu0_config: [false, false, false, false, false, false,
+                  false, false, false, false, false, true,
+                  false, false, false]

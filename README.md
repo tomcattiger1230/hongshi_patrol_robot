@@ -6,6 +6,23 @@ Ubuntu 24.04 + ROS 2 Jazzy 保留为稳定基线和 Isaac Sim 6 Bridge 环境。
 直接使用 ROS 2，Windows/macOS 使用 standalone Fast DDS，两者共享 ROS 2
 `std_msgs/String` JSON 协议。
 
+## 2026-09-02 实车远程联调结果
+
+已在 `192.168.42.39` 的 Robot320 onboard NUC 上完成定位导航栈冷启动、MID-360
+车体自反射过滤、B9 有符号速度反馈、wheel odom、EKF、Cartographer、Nav2 安全速度链路
+以及低速前进/倒车和静态左右转向测试。
+
+- 定位链路 `map -> odom -> base_link -> livox_frame` 工作正常。
+- B9 速度反馈约 10 Hz，并带 0.5 s 有效性超时；旧 `0x6FA` 只保留诊断用途。
+- 75 RPM（约 0.15 m/s）可以可靠前进，-75 RPM 的反馈和里程计方向为负。
+- 转向执行器正角为物理左转、负角为物理右转、0 为回正，与 ROS 正 `angular.z` 一致。
+- Nav2 采用 `/cmd_vel_nav -> /cmd_vel_smoothed -> /cmd_vel_safe`，启动时必须显式启用
+  collision monitor；控制发送节点只订阅安全输出。
+- 真实转角反馈尚未确认，完整带转弯 Nav2 目标尚未执行，不能把 wheel yaw 当作实测结果。
+
+本次从 NUC 同步的实车脚本、配置、部署位置、安全步骤和完整测试记录见
+[`scripts/robot320_onboard/README.md`](./scripts/robot320_onboard/README.md)。
+
 ```text
 Windows/macOS GUI -> Fast DDS ---+
                                  +---- ROS 2 String topics <---- Ubuntu NUC

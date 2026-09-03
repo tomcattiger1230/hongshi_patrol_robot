@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Robot320 remote client with automatic ROS 2 / Fast DDS transport selection."""
+"""Robot320 client with ROS 2, Fast DDS, and offline demo transports."""
 
 from __future__ import annotations
 
@@ -21,6 +21,7 @@ from robot320_interfaces.messages import (
     RobotTelemetry,
 )
 
+from .demo_transport import DemoRemoteTransport
 from .ros2_transport import Ros2RemoteTransport, Ros2Unavailable, ros2_available
 
 
@@ -35,7 +36,7 @@ class RobotRemoteFastDDSClient:
     ):
         self.client_id = client_id
         self.latest_telemetry: Optional[RobotTelemetry] = None
-        if backend not in {"auto", "ros2", "fastdds"}:
+        if backend not in {"auto", "ros2", "fastdds", "demo"}:
             raise ValueError(f"unsupported transport backend: {backend}")
         self._transport = transport or _create_transport(backend, domain_id, client_id)
         self.backend = getattr(self._transport, "backend", "custom")
@@ -152,7 +153,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Robot320 remote control")
     parser.add_argument("--domain-id", type=int, default=20)
     parser.add_argument("--client-id", default="remote_control")
-    parser.add_argument("--backend", choices=["auto", "ros2", "fastdds"], default="auto")
+    parser.add_argument(
+        "--backend", choices=["auto", "ros2", "fastdds", "demo"], default="auto"
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
     move = sub.add_parser("move")
@@ -241,6 +244,8 @@ def _telemetry_line(telemetry: RobotTelemetry) -> str:
 
 
 def _create_transport(backend: str, domain_id: int, client_id: str):
+    if backend == "demo":
+        return DemoRemoteTransport()
     if backend == "ros2" or (
         backend == "auto" and (ros2_available() or _is_ubuntu())
     ):

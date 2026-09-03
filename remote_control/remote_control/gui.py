@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""PySide6 control panel using ROS 2 when available, otherwise Fast DDS."""
+"""PySide6 control panel using ROS 2, Fast DDS, or an offline demo backend."""
 
 from __future__ import annotations
 
@@ -77,9 +77,13 @@ if QApplication is not None:
             self.poll_timer.timeout.connect(self.poll)
             self.poll_timer.start()
             backend_name = {"ros2": "ROS 2", "fastdds": "Fast DDS"}.get(
-                self.client.backend, self.client.backend
+                self.client.backend,
+                "本地演示" if self.client.backend == "demo" else self.client.backend,
             )
-            self.connection_changed.emit(True, f"{backend_name} 已启动，等待机器人遥测")
+            if self.client.backend == "demo":
+                self.connection_changed.emit(True, "本地演示已启动（未连接机器人）")
+            else:
+                self.connection_changed.emit(True, f"{backend_name} 已启动，等待机器人遥测")
 
         @Slot()
         def poll(self) -> None:
@@ -196,7 +200,8 @@ if QApplication is not None:
             self._motion: tuple[float, float] | None = None
             self._closing = False
 
-            self.setWindowTitle("Robot320 远程控制台")
+            title_suffix = " [离线演示]" if backend == "demo" else ""
+            self.setWindowTitle(f"Robot320 远程控制台{title_suffix}")
             self.resize(1120, 760)
             self._build_ui()
             self._apply_style()
@@ -243,12 +248,23 @@ if QApplication is not None:
             title.setObjectName("title")
             header.addWidget(title)
             header.addStretch()
-            self.connection_label = QLabel(
-                f"● 正在启动 DDS  ·  Domain {self.domain_id}  ·  {self.client_id}"
+            pending_text = (
+                "● 正在启动本地演示（未连接机器人）"
+                if self.backend == "demo"
+                else f"● 正在启动 DDS  ·  Domain {self.domain_id}  ·  {self.client_id}"
             )
+            self.connection_label = QLabel(pending_text)
             self.connection_label.setObjectName("connectionPending")
             header.addWidget(self.connection_label)
             root.addLayout(header)
+
+            if self.backend == "demo":
+                demo_banner = QLabel(
+                    "离线演示模式：所有状态和指令仅在本机内存中模拟，不会发送 DDS/ROS 2 消息。"
+                )
+                demo_banner.setObjectName("demoBanner")
+                demo_banner.setWordWrap(True)
+                root.addWidget(demo_banner)
 
             splitter = QSplitter(Qt.Orientation.Horizontal)
             splitter.addWidget(self._build_status_panel())
@@ -456,8 +472,11 @@ if QApplication is not None:
             self.lift_value.setText(view.lift)
             self.battery_value.setText(view.battery)
             self.faults_value.setText(view.faults)
-            state = "在线" if view.online else "底盘离线"
-            self._set_connection(view.online, f"{state} · Domain {self.domain_id}")
+            if self.backend == "demo":
+                self._set_connection(True, "本地演示（未连接机器人）")
+            else:
+                state = "在线" if view.online else "底盘离线"
+                self._set_connection(view.online, f"{state} · Domain {self.domain_id}")
 
         @Slot(object)
         def _on_reply(self, reply) -> None:
@@ -516,6 +535,9 @@ if QApplication is not None:
                 QLabel#connectionOnline { color: #16803c; font-weight: bold; }
                 QLabel#connectionOffline { color: #c62828; font-weight: bold; }
                 QLabel#connectionPending { color: #9a6700; font-weight: bold; }
+                QLabel#demoBanner { background: #fff4ce; color: #7a4d00;
+                                    border: 1px solid #e5c365; border-radius: 6px;
+                                    padding: 8px; font-weight: bold; }
                 QPlainTextEdit, QDoubleSpinBox, QComboBox { background: white; }
                 """
             )
@@ -541,7 +563,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Robot320 Qt control panel")
     parser.add_argument("--domain-id", type=int, default=20)
     parser.add_argument("--client-id", default="remote_control_gui")
-    parser.add_argument("--backend", choices=["auto", "ros2", "fastdds"], default="auto")
+    parser.add_argument(
+        "--backend", choices=["auto", "ros2", "fastdds", "demo"], default="auto"
+    )
     return parser
 
 

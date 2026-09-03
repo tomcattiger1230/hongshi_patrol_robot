@@ -12,6 +12,20 @@ GUI 支持：
 - 升降杆动作和目标高度
 - 底盘、SLAM 位姿、升降杆、电池、故障和指令应答
 
+### 离线开发模式（不连接机器人）
+
+macOS、Windows 和 Linux 均可使用 `demo` 后端独立开发综合 GUI。该后端不会创建 DDS
+participant、不会连接 ROS 2，也不会访问车辆网络；所有遥测、导航进度、急停和升降杆
+状态只在本机内存中模拟。界面标题和黄色横幅会持续标明“离线演示”。
+
+```bash
+./scripts/uv_run.sh desktop robot320_remote_gui --backend demo
+```
+
+可以在此模式下验证按钮布局、持续按压运动、停止/刹车/急停、坐标导航任务、进度显示、
+取消任务、升降杆和指令应答。地图点击导航窗口仍是独立的 ROS 2 GUI；后续接入 DDS 地图
+数据时，不应移除离线演示后端。
+
 ## 1. Python 环境
 
 仓库的 `desktop` profile 安装 `robot320_interfaces`、`remote_control` 和 PySide6：
@@ -281,7 +295,8 @@ ros2 topic echo /amcl_pose --once
 
 Windows 中先 `call install\setup.bat`，再直接执行对应的 `uv run --locked ...` 命令。
 NUC 的 `ROS_DOMAIN_ID` 与上位机 domain ID 必须一致，默认均为 `20`。可用
-`--backend ros2` 或 `--backend fastdds` 强制选择，通常保留 `auto` 即可。
+`--backend ros2` 或 `--backend fastdds` 强制选择真实通信，通常保留 `auto` 即可；
+`--backend demo` 始终只运行本地模拟。
 
 ## 5. Python API
 

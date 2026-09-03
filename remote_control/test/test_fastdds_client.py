@@ -71,3 +71,12 @@ def test_auto_backend_does_not_fall_back_to_fastdds_on_ubuntu(monkeypatch):
     monkeypatch.setattr(client_module, "Ros2RemoteTransport", lambda *_: marker)
 
     assert _create_transport("auto", 20, "test") is marker
+
+
+def test_demo_backend_does_not_create_a_network_transport():
+    transport = _create_transport("demo", 20, "test")
+    try:
+        assert transport.backend == "demo"
+        assert transport.receive_state().robot_id == "robot320-demo"
+    finally:
+        transport.close()

@@ -1,4 +1,4 @@
-"""Qt-independent presentation helpers for the Fast DDS control panel."""
+"""Qt-independent presentation helpers for the Robot320 control panel."""
 
 from __future__ import annotations
 

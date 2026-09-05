@@ -1,14 +1,12 @@
-// ROS 2 compatible std_msgs/msg/String type for standalone Fast DDS clients.
+// ROS 2 std_msgs/msg/String source IDL for standalone Fast DDS clients.
+// Fast DDS-Gen is invoked with -typeros2 and performs the DDS name mangling.
 module std_msgs
 {
     module msg
     {
-        module dds_
+        struct _String
         {
-            struct String_
-            {
-                string data;
-            };
+            string data;
         };
     };
 };

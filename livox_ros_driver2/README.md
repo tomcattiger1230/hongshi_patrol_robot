@@ -10,7 +10,14 @@ ROS1、Foxy 或 Humble 的独立 build 脚本；本仓库通过根目录 `build.
 
 ## 依赖
 
-先安装 [Livox SDK2](https://github.com/Livox-SDK/Livox-SDK2)：
+推荐由工作区 bootstrap 安装固定版本的
+[Livox SDK2](https://github.com/Livox-SDK/Livox-SDK2)：
+
+```bash
+./scripts/setup_ros_workspace.sh lyrical
+```
+
+SDK 会安装到 `.ros-deps/lyrical/native_ws/install`，无需写入系统目录。若要手工安装：
 
 ```bash
 git clone https://github.com/Livox-SDK/Livox-SDK2.git /tmp/Livox-SDK2

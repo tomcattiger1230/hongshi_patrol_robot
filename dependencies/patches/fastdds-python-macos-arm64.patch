@@ -1,0 +1,37 @@
+diff --git a/fastdds_python/src/swig/fastdds.i b/fastdds_python/src/swig/fastdds.i
+index 2eb7295..6b449c0 100644
+--- a/fastdds_python/src/swig/fastdds.i
++++ b/fastdds_python/src/swig/fastdds.i
+@@ -115 +115,3 @@ bool has_statistics();
+-%template(uint64_t_vector) std::vector<uint64_t>;
++// macOS arm64 defines uint64_t as unsigned long long while SWIG's stdint
++// typemap aliases it to unsigned long. Avoid generating an invalid vector
++// wrapper; the Robot320 String transport does not expose this container.
+diff --git a/fastdds_python/src/swig/fastdds/rtps/common/EntityId_t.i b/fastdds_python/src/swig/fastdds/rtps/common/EntityId_t.i
+index 0972eda..170d102 100644
+--- a/fastdds_python/src/swig/fastdds/rtps/common/EntityId_t.i
++++ b/fastdds_python/src/swig/fastdds/rtps/common/EntityId_t.i
+@@ -76 +76 @@ namespace std {
+-            PyTuple_SetItem(python_tuple, count, PyInt_FromLong($1[count]));
++            PyTuple_SetItem(python_tuple, count, PyLong_FromLong($1[count]));
+diff --git a/fastdds_python/src/swig/fastdds/rtps/common/GuidPrefix_t.i b/fastdds_python/src/swig/fastdds/rtps/common/GuidPrefix_t.i
+index e1bacd1..48c937f 100644
+--- a/fastdds_python/src/swig/fastdds/rtps/common/GuidPrefix_t.i
++++ b/fastdds_python/src/swig/fastdds/rtps/common/GuidPrefix_t.i
+@@ -58 +58 @@ long hash(const eprosima::fastdds::rtps::GuidPrefix_t& prefix)
+-            PyTuple_SetItem(python_tuple, count, PyInt_FromLong($1[count]));
++            PyTuple_SetItem(python_tuple, count, PyLong_FromLong($1[count]));
+diff --git a/fastdds_python/src/swig/fastdds/rtps/common/InstanceHandle.i b/fastdds_python/src/swig/fastdds/rtps/common/InstanceHandle.i
+index b80950d..b81bd49 100644
+--- a/fastdds_python/src/swig/fastdds/rtps/common/InstanceHandle.i
++++ b/fastdds_python/src/swig/fastdds/rtps/common/InstanceHandle.i
+@@ -193 +193 @@ long hash(const eprosima::fastdds::rtps::InstanceHandle_t& handle)
+-                PyTuple_SetItem(python_tuple, count, PyInt_FromLong($self->value[count]));
++                PyTuple_SetItem(python_tuple, count, PyLong_FromLong($self->value[count]));
+diff --git a/fastdds_python/src/swig/fastdds/rtps/common/Locator.i b/fastdds_python/src/swig/fastdds/rtps/common/Locator.i
+index ad2665e..33edaa5 100644
+--- a/fastdds_python/src/swig/fastdds/rtps/common/Locator.i
++++ b/fastdds_python/src/swig/fastdds/rtps/common/Locator.i
+@@ -55 +55 @@
+-            PyTuple_SetItem(python_tuple, count, PyInt_FromLong($1[count]));
++            PyTuple_SetItem(python_tuple, count, PyLong_FromLong($1[count]));

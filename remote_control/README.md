@@ -118,6 +118,18 @@ macOS 没有官方二进制安装器。Fast DDS C++ runtime 和 Fast DDS-Gen 应
 构建，前置条件包括 Homebrew、Xcode Command Line Tools、CMake、Asio、TinyXML2、
 OpenSSL 和 Java。
 
+本项目提供了可复现的一键入口。所有 Fast DDS 源码、构建目录和安装产物默认放在
+`~/Develop/fastdds-python`，项目自己的 Python binding 仍安装到项目 `.venv`：
+
+```bash
+./scripts/setup_macos_fastdds.sh
+source ./scripts/source_dds_lan.sh 192.168.0.218
+./scripts/uv_run.sh desktop robot320_remote_gui --backend fastdds --domain-id 20
+```
+
+脚本使用 `dependencies/macos_fastdds.repos` 中固定的上游 commit，并自动应用 Apple
+Silicon/SWIG 兼容补丁。下面的手动步骤只用于排查脚本失败。
+
 ```bash
 xcode-select --install
 brew install cmake asio tinyxml2 openssl wget openjdk
@@ -134,8 +146,8 @@ cd "$ROBOT320_REPO"
 ./scripts/uv_setup.sh desktop --python 3.12
 export ROBOT320_PYTHON="$ROBOT320_REPO/.venv/bin/python"
 
-mkdir -p ~/fastdds-python/src
-cd ~/fastdds-python
+mkdir -p ~/Develop/fastdds-python/src
+cd ~/Develop/fastdds-python
 curl -L https://raw.githubusercontent.com/eProsima/Fast-DDS-python/master/fastdds_python.repos \
   -o fastdds_python.repos
 uvx --from vcstool vcs import src --input fastdds_python.repos
@@ -159,9 +171,9 @@ ROS 2 String TypeSupport 直接安装/编译到当前 `.venv`，运行时不再�
 
 ```bash
 cd "$ROBOT320_REPO"
-FASTDDS_PREFIX="$HOME/fastdds-python/install" \
-FASTDDS_PYTHON_SOURCE="$HOME/fastdds-python/src/fastdds_python" \
-FASTDDSGEN_SOURCE="$HOME/fastdds-python/src/fastddsgen" \
+FASTDDS_PREFIX="$HOME/Develop/fastdds-python/install" \
+FASTDDS_PYTHON_SOURCE="$HOME/Develop/fastdds-python/src/fastdds_python/fastdds_python" \
+FASTDDSGEN_SOURCE="$HOME/Develop/fastdds-python/src/fastddsgen" \
   ./scripts/setup_fastdds.sh
 ./scripts/uv_run.sh desktop robot320_remote_gui --domain-id 20
 ```

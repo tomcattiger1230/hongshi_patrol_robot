@@ -3,6 +3,11 @@
 set -euo pipefail
 
 readonly REPOSITORY_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+if [[ "$(basename "$(dirname "${REPOSITORY_ROOT}")")" == "src" ]]; then
+  readonly DEFAULT_VENV="$(cd "${REPOSITORY_ROOT}/../.." && pwd)/.venv"
+else
+  readonly DEFAULT_VENV="${REPOSITORY_ROOT}/.venv"
+fi
 readonly PROFILE="${1:-}"
 
 usage() {
@@ -20,7 +25,8 @@ fi
 shift
 
 python="${UV_PYTHON:-}"
-venv_path="${UV_PROJECT_ENVIRONMENT:-.venv}"
+venv_path="${UV_PROJECT_ENVIRONMENT:-${DEFAULT_VENV}}"
+export UV_PROJECT_ENVIRONMENT="${venv_path}"
 with_dev=false
 with_fastdds=false
 while (($#)); do
@@ -68,7 +74,7 @@ uv sync "${sync_args[@]}"
 if [[ "${PROFILE}" == "desktop" && "$(uname -s)" == "Linux" ]] && \
    [[ -r /etc/os-release ]] && \
    (. /etc/os-release && [[ "${ID:-}" == "ubuntu" ]]); then
-  ros_setup="${ROS_SETUP:-/opt/ros/jazzy/setup.bash}"
+  ros_setup="${ROS_SETUP:-/opt/ros/${ROS_DISTRO:-lyrical}/setup.bash}"
   if [[ ! -f "${ros_setup}" ]]; then
     echo "error: ROS 2 setup not found: ${ros_setup}" >&2
     exit 2
@@ -80,7 +86,7 @@ if [[ "${PROFILE}" == "desktop" && "$(uname -s)" == "Linux" ]] && \
   if ! "${venv_path}/bin/python" -c \
     'import rclpy; from std_msgs.msg import String' >/dev/null 2>&1; then
     echo "error: Ubuntu desktop environment cannot import rclpy/std_msgs" >&2
-    echo "verify that ROS 2 is installed at /opt/ros/jazzy and rerun this script" >&2
+    echo "verify ROS_SETUP/ROS_DISTRO and rerun this script" >&2
     exit 2
   fi
 fi

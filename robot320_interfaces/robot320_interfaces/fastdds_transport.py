@@ -60,7 +60,14 @@ class FastDdsParticipant:
         self.participant.get_default_subscriber_qos(subscriber_qos)
         self.subscriber = self.participant.create_subscriber(subscriber_qos)
 
-        self._topic_type = self.types.String_PubSubType()
+        topic_type_class = getattr(
+            self.types,
+            "StringPubSubType",
+            getattr(self.types, "String_PubSubType", None),
+        )
+        if topic_type_class is None:
+            raise FastDDSUnavailable("generated String PubSubType is unavailable")
+        self._topic_type = topic_type_class()
         self._type_support = self.fastdds.TypeSupport(self._topic_type)
         self.participant.register_type(self._type_support)
         self._topics: dict[str, Any] = {}
@@ -72,6 +79,7 @@ class FastDdsParticipant:
         qos = self.fastdds.DataWriterQos()
         self.publisher.get_default_datawriter_qos(qos)
         qos.reliability().kind = self.fastdds.RELIABLE_RELIABILITY_QOS
+        qos.durability().kind = self.fastdds.VOLATILE_DURABILITY_QOS
         writer = self.publisher.create_datawriter(topic, qos)
         if writer is None:
             raise FastDDSUnavailable(f"failed to create writer for {topic_name}")
@@ -79,7 +87,13 @@ class FastDdsParticipant:
 
     def create_reader(self, topic_name: str, callback: Callable[[str], None]):
         topic = self._topic(topic_name)
-        string_class = self.types.String_
+        string_class = getattr(
+            self.types,
+            "String",
+            getattr(self.types, "String_", None),
+        )
+        if string_class is None:
+            raise FastDDSUnavailable("generated String sample type is unavailable")
         fastdds = self.fastdds
 
         class StringListener(fastdds.DataReaderListener):
@@ -102,6 +116,7 @@ class FastDdsParticipant:
         qos = self.fastdds.DataReaderQos()
         self.subscriber.get_default_datareader_qos(qos)
         qos.reliability().kind = self.fastdds.RELIABLE_RELIABILITY_QOS
+        qos.durability().kind = self.fastdds.VOLATILE_DURABILITY_QOS
         reader = self.subscriber.create_datareader(topic, qos, listener)
         if reader is None:
             raise FastDDSUnavailable(f"failed to create reader for {topic_name}")
@@ -109,7 +124,14 @@ class FastDdsParticipant:
         return reader
 
     def write_string(self, writer, payload: str) -> None:
-        sample = self.types.String_()
+        string_class = getattr(
+            self.types,
+            "String",
+            getattr(self.types, "String_", None),
+        )
+        if string_class is None:
+            raise FastDDSUnavailable("generated String sample type is unavailable")
+        sample = string_class()
         sample.data(payload)
         writer.write(sample)
 

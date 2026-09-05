@@ -31,6 +31,9 @@ Ubuntu GUI -------> rclpy -------+                              ROS/Nav2/CAN
                          ROS 2 / Nav2 / Cartographer / CAN / lift adapter
 ```
 
+Mac 与 Ubuntu 在同一局域网通过 DDS 直连的固定方案、网卡选择和调试步骤见
+[`DDS_LAN_SETUP.md`](./DDS_LAN_SETUP.md)。
+
 ## 仓库组成
 
 | 目录 | 用途 |

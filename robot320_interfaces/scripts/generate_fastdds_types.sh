@@ -6,7 +6,8 @@ readonly PACKAGE_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 readonly IDL_FILE="${PACKAGE_ROOT}/robot320_interfaces/dds/Robot320String.idl"
 readonly OUTPUT_DIR="${1:-${PACKAGE_ROOT}/generated/Robot320String}"
 readonly REPOSITORY_ROOT="$(cd -- "${PACKAGE_ROOT}/.." && pwd)"
-readonly FASTDDS_PREFIX="${FASTDDS_PREFIX:-${REPOSITORY_ROOT}/../Fast-DDS/install}"
+readonly FASTDDS_WORKSPACE="${FASTDDS_WORKSPACE:-${HOME}/Develop/fastdds-python}"
+readonly FASTDDS_PREFIX="${FASTDDS_PREFIX:-${FASTDDS_WORKSPACE}/install}"
 readonly PYTHON_BIN="${PYTHON_BIN:-${REPOSITORY_ROOT}/.venv/bin/python}"
 
 if ! command -v cmake >/dev/null 2>&1; then
@@ -20,7 +21,7 @@ run_fastddsgen() {
   elif command -v fastddsgen >/dev/null 2>&1; then
     fastddsgen "$@"
   else
-    local source_root="${FASTDDSGEN_SOURCE:-${REPOSITORY_ROOT}/../Fast-DDS/src/fastddsgen}"
+    local source_root="${FASTDDSGEN_SOURCE:-${FASTDDS_WORKSPACE}/src/fastddsgen}"
     local generator_jar="${source_root}/build/libs/fastddsgen.jar"
     if [[ ! -f "${generator_jar}" ]]; then
       if [[ ! -x "${source_root}/gradlew" ]]; then
@@ -45,7 +46,7 @@ cmake_prefix_path="$(IFS=';'; echo "${prefix_paths[*]}")"
 
 mkdir -p "${OUTPUT_DIR}"
 cd "${OUTPUT_DIR}"
-run_fastddsgen -python -replace "${IDL_FILE}"
+run_fastddsgen -python -typeros2 -replace "${IDL_FILE}"
 cmake -S . -B build \
   -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_PREFIX_PATH="${cmake_prefix_path}" \

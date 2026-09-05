@@ -8,9 +8,10 @@ if [[ "${venv_path}" != /* ]]; then
   venv_path="${REPOSITORY_ROOT}/${venv_path}"
 fi
 readonly VENV_PATH="${venv_path}"
-readonly FASTDDS_PREFIX="${FASTDDS_PREFIX:-${REPOSITORY_ROOT}/../Fast-DDS/install}"
-readonly FASTDDS_PYTHON_SOURCE="${FASTDDS_PYTHON_SOURCE:-${REPOSITORY_ROOT}/../Fast-DDS-python/fastdds_python}"
-readonly BUILD_DIR="${FASTDDS_PYTHON_BUILD_DIR:-${REPOSITORY_ROOT}/build/fastdds_python}"
+readonly FASTDDS_WORKSPACE="${FASTDDS_WORKSPACE:-${HOME}/Develop/fastdds-python}"
+readonly FASTDDS_PREFIX="${FASTDDS_PREFIX:-${FASTDDS_WORKSPACE}/install}"
+readonly FASTDDS_PYTHON_SOURCE="${FASTDDS_PYTHON_SOURCE:-${FASTDDS_WORKSPACE}/src/fastdds_python/fastdds_python}"
+readonly BUILD_DIR="${FASTDDS_PYTHON_BUILD_DIR:-${FASTDDS_WORKSPACE}/build/venv_binding}"
 
 if [[ ! -x "${VENV_PATH}/bin/python" ]]; then
   echo "error: uv environment is missing at ${VENV_PATH}; run ./scripts/uv_setup.sh desktop first" >&2

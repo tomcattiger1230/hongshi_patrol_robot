@@ -1,8 +1,8 @@
 #!/usr/bin/env sh
 # Source the complete ROS 2 Lyrical simulation overlay in bash or zsh.
 
-robot320_nav_ws="${ROBOT320_NAV_WS:-${HOME}/Develop/ROS2_ws/navigation_lyrical_ws}"
-robot320_patrol_ws="${ROBOT320_PATROL_WS:-${HOME}/Develop/ROS2_ws/patrol_ws}"
+robot320_patrol_ws="${ROBOT320_PATROL_WS:-${HOME}/Develop/ROS_ws/patrol_robot}"
+robot320_nav_ws="${ROBOT320_NAV_WS:-${robot320_patrol_ws}/.ros-deps/lyrical/navigation_ws}"
 
 for robot320_setup_file in \
   /opt/ros/lyrical/setup.sh \

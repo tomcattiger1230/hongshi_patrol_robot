@@ -3,6 +3,11 @@
 set -euo pipefail
 
 readonly REPOSITORY_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+if [[ "$(basename "$(dirname "${REPOSITORY_ROOT}")")" == "src" ]]; then
+  readonly DEFAULT_VENV="$(cd "${REPOSITORY_ROOT}/../.." && pwd)/.venv"
+else
+  readonly DEFAULT_VENV="${REPOSITORY_ROOT}/.venv"
+fi
 readonly PROFILE="${1:-}"
 
 source_overlay() {
@@ -38,17 +43,18 @@ if ! command -v uv >/dev/null 2>&1; then
   echo "error: uv is not installed" >&2
   exit 127
 fi
-venv_path="${UV_PROJECT_ENVIRONMENT:-${REPOSITORY_ROOT}/.venv}"
+venv_path="${UV_PROJECT_ENVIRONMENT:-${DEFAULT_VENV}}"
 if [[ "${venv_path}" != /* ]]; then
   venv_path="${REPOSITORY_ROOT}/${venv_path}"
 fi
+export UV_PROJECT_ENVIRONMENT="${venv_path}"
 if [[ ! -x "${venv_path}/bin/python" ]]; then
   echo "error: uv environment is missing at ${venv_path}; run uv_setup.sh first" >&2
   exit 2
 fi
 
 if [[ "${PROFILE}" == "nuc" || "$(uname -s)" == "Linux" ]]; then
-  ros_setup="${ROS_SETUP:-/opt/ros/jazzy/setup.bash}"
+  ros_setup="${ROS_SETUP:-/opt/ros/${ROS_DISTRO:-lyrical}/setup.bash}"
   if [[ "${PROFILE}" == "nuc" && ! -f "${ros_setup}" ]]; then
     echo "error: ROS 2 setup not found: ${ros_setup}" >&2
     exit 2

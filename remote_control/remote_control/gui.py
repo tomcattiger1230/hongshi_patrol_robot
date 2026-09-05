@@ -482,11 +482,12 @@ if QApplication is not None:
             save.clicked.connect(
                 lambda _checked=False: self.save_map_requested.emit()
             )
-            navigate = QPushButton("导航到已选目标")
-            navigate.clicked.connect(self._send_selected_map_goal)
+            self.map_navigate = QPushButton("导航到已选目标")
+            self.map_navigate.setEnabled(False)
+            self.map_navigate.clicked.connect(self._send_selected_map_goal)
             actions.addWidget(mapping)
             actions.addWidget(save)
-            actions.addWidget(navigate)
+            actions.addWidget(self.map_navigate)
             layout.addLayout(actions)
             return page
 
@@ -560,6 +561,7 @@ if QApplication is not None:
             self.goal_x.setValue(x_m)
             self.goal_y.setValue(y_m)
             self.goal_yaw.setValue(yaw_rad)
+            self.map_navigate.setEnabled(True)
             self.statusBar().showMessage(
                 f"已选择目标 ({x_m:.2f}, {y_m:.2f}), 朝向 {yaw_rad:.2f} rad",
                 5000,

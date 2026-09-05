@@ -8,6 +8,8 @@ from robot320_interfaces.messages import (
     RobotCommand,
     RobotTelemetry,
     heartbeat_from_json,
+    remote_map,
+    remote_map_from_json,
     robot_command_from_json,
     telemetry_from_json,
     to_json,
@@ -61,3 +63,20 @@ def test_heartbeat_round_trip():
     heartbeat = Heartbeat("robot320", "robot", 12, 123456)
 
     assert heartbeat_from_json(to_json(heartbeat)) == heartbeat
+
+
+def test_remote_map_round_trip_compresses_signed_occupancy_cells():
+    original = remote_map(
+        width=3,
+        height=2,
+        resolution=0.05,
+        origin_x=-1.0,
+        origin_y=2.0,
+        origin_yaw=0.2,
+        data=(-1, 0, 25, 65, 99, 100),
+    )
+
+    restored = remote_map_from_json(to_json(original))
+
+    assert restored.revision == original.revision
+    assert restored.occupancy_data() == (-1, 0, 25, 65, 99, 100)

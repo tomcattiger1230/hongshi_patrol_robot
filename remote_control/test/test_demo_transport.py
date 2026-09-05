@@ -60,3 +60,15 @@ def test_demo_transport_keeps_emergency_stop_until_reset():
     state = transport.receive_state()
     assert state is not None and state.chassis.emergency_stopped is False
 
+
+def test_demo_transport_provides_map_and_accepts_save():
+    transport = DemoRemoteTransport()
+
+    snapshot = transport.receive_map()
+    assert snapshot is not None
+    assert snapshot.occupancy_data()
+    assert transport.receive_map() is None
+
+    transport.publish_command(command("save_map", 1))
+    reply = transport.receive_reply()
+    assert reply is not None and reply.status == "completed"

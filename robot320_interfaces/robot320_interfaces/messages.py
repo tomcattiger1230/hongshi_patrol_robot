@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import json
+import base64
+import hashlib
 import time
 import uuid
+import zlib
 from dataclasses import asdict, dataclass, field
 from typing import Any, Literal, Optional
 
@@ -20,6 +23,7 @@ CommandKind = Literal[
     "reset_emergency_stop",
     "set_mode",
     "lift",
+    "save_map",
 ]
 LiftAction = Literal["stop", "raise", "lower", "move_to"]
 ReplyStatus = Literal["accepted", "completed", "rejected", "failed"]
@@ -103,6 +107,35 @@ class RobotTelemetry:
     faults: list[str] = field(default_factory=list)
     map_revision: Optional[str] = None
     stamp: float = field(default_factory=time.time)
+
+
+@dataclass(frozen=True)
+class RemoteMap:
+    """Compressed occupancy grid streamed from the AGV to remote clients."""
+
+    revision: str
+    width: int
+    height: int
+    resolution: float
+    origin_x: float
+    origin_y: float
+    origin_yaw: float = 0.0
+    frame_id: str = "map"
+    data_b64: str = ""
+    encoding: str = "zlib+base64+int8"
+    stamp: float = field(default_factory=time.time)
+
+    def occupancy_data(self) -> tuple[int, ...]:
+        if self.encoding != "zlib+base64+int8":
+            raise ValueError(f"unsupported map encoding: {self.encoding}")
+        try:
+            packed = zlib.decompress(base64.b64decode(self.data_b64, validate=True))
+        except (ValueError, zlib.error) as exc:
+            raise ValueError("invalid compressed map payload") from exc
+        expected = self.width * self.height
+        if len(packed) != expected:
+            raise ValueError(f"map has {len(packed)} cells, expected {expected}")
+        return tuple(value if value < 128 else value - 256 for value in packed)
 
 
 @dataclass
@@ -207,6 +240,56 @@ def telemetry_from_json(payload: str | bytes) -> RobotTelemetry:
         map_revision=data.get("map_revision"),
         stamp=data.get("stamp", time.time()),
     )
+
+
+def remote_map(
+    *,
+    width: int,
+    height: int,
+    resolution: float,
+    origin_x: float,
+    origin_y: float,
+    origin_yaw: float,
+    data,
+    frame_id: str = "map",
+    stamp: float | None = None,
+) -> RemoteMap:
+    """Build a validated and compressed map payload."""
+    if width <= 0 or height <= 0:
+        raise ValueError("map width and height must be positive")
+    if resolution <= 0.0:
+        raise ValueError("map resolution must be positive")
+    values = tuple(int(value) for value in data)
+    expected = width * height
+    if len(values) != expected:
+        raise ValueError(f"map has {len(values)} cells, expected {expected}")
+    if any(value < -1 or value > 100 for value in values):
+        raise ValueError("occupancy values must be between -1 and 100")
+    packed = bytes(value & 0xFF for value in values)
+    compressed = zlib.compress(packed, level=6)
+    metadata = (
+        f"{width}:{height}:{resolution:.12g}:{origin_x:.12g}:"
+        f"{origin_y:.12g}:{origin_yaw:.12g}:{frame_id}:"
+    ).encode("utf-8")
+    revision = hashlib.sha256(metadata + compressed).hexdigest()[:16]
+    return RemoteMap(
+        revision=revision,
+        width=width,
+        height=height,
+        resolution=resolution,
+        origin_x=origin_x,
+        origin_y=origin_y,
+        origin_yaw=origin_yaw,
+        frame_id=frame_id or "map",
+        data_b64=base64.b64encode(compressed).decode("ascii"),
+        stamp=time.time() if stamp is None else stamp,
+    )
+
+
+def remote_map_from_json(payload: str | bytes) -> RemoteMap:
+    snapshot = RemoteMap(**_json_object(payload))
+    snapshot.occupancy_data()
+    return snapshot
 
 
 def _json_object(payload: str | bytes) -> dict[str, Any]:

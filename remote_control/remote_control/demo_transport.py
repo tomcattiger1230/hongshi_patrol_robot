@@ -15,8 +15,10 @@ from robot320_interfaces.messages import (
     LiftStatus,
     NavigationStatus,
     Pose2D,
+    RemoteMap,
     RobotCommand,
     RobotTelemetry,
+    remote_map,
 )
 
 
@@ -45,6 +47,8 @@ class DemoRemoteTransport:
         self._navigation_start_pose: Pose2D | None = None
         self._lift = LiftStatus(available=True, height_m=0.0)
         self._battery = BatteryStatus(percentage=96.0, voltage_v=51.2)
+        self._map = _demo_map()
+        self._map_sent = False
 
     def publish_command(self, command: RobotCommand) -> None:
         with self._lock:
@@ -88,6 +92,14 @@ class DemoRemoteTransport:
             return self._replies.get(timeout=max(0.0, timeout_s))
         except queue.Empty:
             return None
+
+    def receive_map(self, timeout_s: float = 0.0) -> RemoteMap | None:
+        del timeout_s
+        with self._lock:
+            if self._closed or self._map_sent:
+                return None
+            self._map_sent = True
+            return self._map
 
     def close(self) -> None:
         with self._lock:
@@ -138,6 +150,8 @@ class DemoRemoteTransport:
             return "accepted", "本地演示导航已取消"
         if command.kind == "lift":
             return self._control_lift(command)
+        if command.kind == "save_map":
+            return "completed", "本地演示地图已保存"
         return "rejected", f"本地演示不支持指令 {command.kind}"
 
     def _start_navigation(self, command: RobotCommand) -> tuple[str, str]:
@@ -241,3 +255,23 @@ class DemoRemoteTransport:
 def _normalize_angle(angle: float) -> float:
     return math.atan2(math.sin(angle), math.cos(angle))
 
+
+def _demo_map() -> RemoteMap:
+    width = 160
+    height = 120
+    values = [-1] * (width * height)
+    for row in range(10, height - 10):
+        for column in range(10, width - 10):
+            occupied = row in {10, height - 11} or column in {10, width - 11}
+            values[row * width + column] = 100 if occupied else 0
+    for row in range(35, 82):
+        values[row * width + 92] = 100
+    return remote_map(
+        width=width,
+        height=height,
+        resolution=0.05,
+        origin_x=-4.0,
+        origin_y=-3.0,
+        origin_yaw=0.0,
+        data=values,
+    )

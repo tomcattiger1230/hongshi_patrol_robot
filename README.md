@@ -141,6 +141,10 @@ GUI 的 `--backend auto` 默认优先选择 ROS 2。只有 Windows、macOS 等�
 需要额外安装 Fast DDS Python binding 和生成 ROS 2 String TypeSupport。具体步骤见
 [`remote_control/README.md`](./remote_control/README.md)。
 
+macOS 综合 GUI 可通过 Fast DDS 接收 Ubuntu/AGV 的压缩栅格地图，在地图上拖拽选择
+Nav2 目标，也可切入人工扫图模式并触发远程保存；Ubuntu 仍负责 SLAM、规划、避障和
+底盘安全控制。
+
 非 Ubuntu 系统上的 Fast DDS Python 是 native 扩展。uv 环境、`fastdds` Python
 binding 和生成的 `Robot320String` 必须使用相同操作系统、CPU 架构和 Python ABI。
 

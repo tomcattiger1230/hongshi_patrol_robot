@@ -8,7 +8,8 @@ GUI 支持：
 - 按住持续发送的前进、后退和转向，松开立即停车
 - 停止、刹车、急停和解除急停
 - Nav2 目标发送、取消、状态和进度
-- ROS 2 地图显示、机器人实时位置和鼠标拖拽目标位姿
+- ROS 2 或 standalone Fast DDS 地图显示、机器人实时位置和鼠标拖拽目标位姿
+- 人工扫图模式、远程地图保存和地图点选导航
 - 升降杆动作和目标高度
 - 底盘、SLAM 位姿、升降杆、电池、故障和指令应答
 
@@ -22,9 +23,8 @@ participant、不会连接 ROS 2，也不会访问车辆网络；所有遥测、
 ./scripts/uv_run.sh desktop robot320_remote_gui --backend demo
 ```
 
-可以在此模式下验证按钮布局、持续按压运动、停止/刹车/急停、坐标导航任务、进度显示、
-取消任务、升降杆和指令应答。地图点击导航窗口仍是独立的 ROS 2 GUI；后续接入 DDS 地图
-数据时，不应移除离线演示后端。
+可以在此模式下验证按钮布局、地图显示与点选、持续按压运动、停止/刹车/急停、坐标导航
+任务、进度显示、取消任务、升降杆和指令应答。
 
 ## 1. Python 环境
 
@@ -180,7 +180,40 @@ FASTDDSGEN_SOURCE="$HOME/Develop/fastdds-python/src/fastddsgen" \
 
 ## 4. 使用 GUI
 
-### 4.1 地图点击导航
+### 4.1 macOS 远程扫图与导航
+
+综合面板会从 `/robot320/map` 接收网关压缩后的 OccupancyGrid，因此 macOS 不需要安装
+ROS 2。推荐让 Ubuntu/AGV 常驻运行 SLAM、Nav2 和通信网关；Mac 只运行 GUI：
+
+```bash
+# Ubuntu/AGV：实车 Cartographer 建图 + Nav2 + 底盘 + DDS 网关
+source /opt/ros/lyrical/setup.bash
+source ~/Develop/ROS_ws/patrol_robot/install/setup.bash
+ros2 launch robot320_localization_bringup robot320_slam.launch.py \
+  mode:=mapping enable_nav2:=true enable_fastdds_gateway:=true \
+  fastdds_domain_id:=20
+
+# macOS
+cd ~/Develop/github_ws/hongshi_patrol_robot
+source ./scripts/source_dds_lan.sh 192.168.0.218
+./scripts/uv_run.sh desktop robot320_remote_gui \
+  --backend fastdds --domain-id 20 --client-id mac-operator
+```
+
+操作顺序：
+
+1. 在“地图扫图与导航”页点“进入人工扫图模式”，然后到“手动与安全”页驾驶 AGV；
+   `/map` 会持续回传并刷新。
+2. 点“保存当前地图”。SLAM Toolbox 持久化管理器存在时保存 pose graph、YAML 和 PGM；
+   Cartographer 模式则保存到 Ubuntu 的
+   `~/robot320_maps/patrol_current.pbstream`。
+3. 在地图上按下并拖动，选定目标位置和车头方向，点“导航到已选目标”。目标仍由 Ubuntu
+   上的 Nav2 规划、避障和执行；Mac 断网不会在本地直接驱动电机。
+
+地图采用 zlib + base64 压缩后封装在 ROS 兼容 `std_msgs/String` topic 中，默认每秒回传
+一次最新快照。GUI 只保留最新两帧，避免网络恢复后重放过时地图。
+
+### 4.2 ROS 2 高级地图点击导航
 
 地图导航窗口需要直接连接 ROS 2，订阅持久化 `/map`，通过 TF 获取
 `map -> base_footprint`，并调用 Nav2 `/navigate_to_pose` action。因此应在 NVIDIA
@@ -295,10 +328,11 @@ ros2 service type /reinitialize_global_localization
 ros2 topic echo /amcl_pose --once
 ```
 
-地图导航功能目前要求 ROS 2 后端。Windows/macOS 的 standalone Fast DDS 模式仍可使用
-原有坐标输入和遥控界面，但不会传输体积较大的完整栅格地图。
+独立的 `robot320_navigation_gui` 提供路径点、全局规划线、雷达投影和地图热加载等高级
+功能，目前仍要求 ROS 2 后端。macOS standalone Fast DDS 使用综合面板中的实时地图、
+单目标导航、人工扫图和远程保存功能。
 
-### 4.2 综合遥控面板
+### 4.3 综合遥控面板
 
 ```bash
 ./scripts/uv_run.sh desktop robot320_remote_gui \
@@ -320,6 +354,8 @@ from remote_control.fastdds_client import RobotRemoteFastDDSClient
 client = RobotRemoteFastDDSClient(domain_id=20, client_id="operator-laptop")
 try:
     client.send_navigation_goal(x_m=3.0, y_m=1.5, yaw_rad=0.0)
+    current_map = client.receive_map(timeout_s=1.0)
+    client.save_map()
     telemetry = client.receive_telemetry(timeout_s=1.0)
     reply = client.receive_reply(timeout_s=1.0)
 finally:

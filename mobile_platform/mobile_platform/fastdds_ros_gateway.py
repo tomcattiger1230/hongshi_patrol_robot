@@ -18,10 +18,12 @@ from robot320_interfaces.messages import (
     Heartbeat,
     LiftStatus,
     NavigationStatus,
+    RemoteMap,
     RobotCommand,
     RobotTelemetry,
     heartbeat_from_json,
     robot_command_from_json,
+    remote_map,
     telemetry_from_json,
     to_json,
 )
@@ -30,18 +32,28 @@ try:
     import rclpy
     from action_msgs.msg import GoalStatus
     from geometry_msgs.msg import Twist, TwistStamped
+    from nav_msgs.msg import OccupancyGrid
     from nav2_msgs.action import NavigateToPose
     from rclpy.action import ActionClient
     from rclpy.node import Node
+    from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
     from std_msgs.msg import Bool, String
+    from std_srvs.srv import Trigger
 except ImportError as exc:  # pragma: no cover - evaluated on the NUC.
     rclpy = None
     Node = object
-    GoalStatus = Twist = TwistStamped = NavigateToPose = ActionClient = None
+    GoalStatus = Twist = TwistStamped = OccupancyGrid = None
+    NavigateToPose = ActionClient = QoSProfile = None
+    DurabilityPolicy = ReliabilityPolicy = Trigger = None
     Bool = String = None
     _ROS_IMPORT_ERROR = exc
 else:
     _ROS_IMPORT_ERROR = None
+
+try:
+    from cartographer_ros_msgs.srv import WriteState
+except ImportError:  # pragma: no cover - optional Cartographer deployment.
+    WriteState = None
 
 
 LOGGER = logging.getLogger(__name__)
@@ -60,6 +72,7 @@ class Ros2RobotTransport:
         self._state_pub = node.create_publisher(String, f"{prefix}/state", 10)
         self._reply_pub = node.create_publisher(String, f"{prefix}/reply", 10)
         self._heartbeat_pub = node.create_publisher(String, f"{prefix}/heartbeat", 10)
+        self._map_pub = node.create_publisher(String, f"{prefix}/map", 10)
         node.create_subscription(String, f"{prefix}/command", self._on_command, 10)
         node.create_subscription(
             String, f"{prefix}/heartbeat", self._on_heartbeat, 10
@@ -87,6 +100,9 @@ class Ros2RobotTransport:
             timestamp_ms=int(time.time() * 1000.0),
         )
         self._heartbeat_pub.publish(_string_message(to_json(heartbeat)))
+
+    def publish_map(self, snapshot: RemoteMap) -> None:
+        self._map_pub.publish(_string_message(to_json(snapshot)))
 
     def close(self) -> None:
         pass
@@ -121,6 +137,10 @@ class Robot320FastDDSRosGateway(Node):
         topic_prefix: str = "/robot320",
         nav_action: str = "/navigate_to_pose",
         nav_cmd_vel_topic: str = "/cmd_vel",
+        map_topic: str = "/map",
+        map_save_service: str = "/robot320/save_persistent_map",
+        cartographer_state_file: str = "~/robot320_maps/patrol_current.pbstream",
+        map_publish_period_s: float = 1.0,
         telemetry_period_s: float = 0.2,
         heartbeat_period_s: float = 1.0,
         max_command_age_s: float = 2.0,
@@ -143,6 +163,7 @@ class Robot320FastDDSRosGateway(Node):
         self._pending_nav_command_id: str | None = None
         self._nav_velocity_enabled = False
         self._initial_goal_distance: float | None = None
+        self._latest_map: RemoteMap | None = None
 
         self.cmd_vel_pub = self.create_publisher(Twist, f"{self.topic_prefix}/cmd_vel", 10)
         self.brake_pub = self.create_publisher(Bool, f"{self.topic_prefix}/brake", 10)
@@ -160,13 +181,27 @@ class Robot320FastDDSRosGateway(Node):
             String, f"{self.topic_prefix}/lift/status", self._on_lift_status, 10
         )
         self.create_subscription(
-            TwistStamped, nav_cmd_vel_topic, self._on_nav_cmd_vel, 10
+            Twist, nav_cmd_vel_topic, self._on_nav_cmd_vel, 10
         )
+        map_qos = QoSProfile(depth=1)
+        map_qos.reliability = ReliabilityPolicy.RELIABLE
+        map_qos.durability = DurabilityPolicy.TRANSIENT_LOCAL
+        self.create_subscription(OccupancyGrid, map_topic, self._on_map, map_qos)
         self.nav_client = ActionClient(self, NavigateToPose, nav_action)
+        self.map_save_client = self.create_client(Trigger, map_save_service)
+        self.cartographer_state_file = os.path.abspath(
+            os.path.expanduser(cartographer_state_file)
+        )
+        self.cartographer_save_client = (
+            self.create_client(WriteState, "/write_state")
+            if WriteState is not None
+            else None
+        )
 
         self.create_timer(0.05, self._poll_commands)
         self.create_timer(telemetry_period_s, self._publish_state)
         self.create_timer(heartbeat_period_s, self._publish_heartbeat)
+        self.create_timer(map_publish_period_s, self._publish_map)
         self.get_logger().info(
             f"ROS 2 communication gateway started: domain={domain_id}, robot={robot_id}"
         )
@@ -225,6 +260,8 @@ class Robot320FastDDSRosGateway(Node):
             self._cancel_navigation(command)
         elif command.kind == "lift":
             self._send_lift_command(command)
+        elif command.kind == "save_map":
+            self._save_map(command)
         else:
             self._reply(command, "rejected", f"unsupported command: {command.kind}")
 
@@ -381,11 +418,11 @@ class Robot320FastDDSRosGateway(Node):
         self._navigation.stamp = time.time()
         return True
 
-    def _on_nav_cmd_vel(self, msg: TwistStamped) -> None:
+    def _on_nav_cmd_vel(self, msg) -> None:
         """Relay Nav2 velocity output to the Robot320 chassis command topic."""
         if not self._nav_velocity_enabled:
             return
-        self.cmd_vel_pub.publish(msg.twist)
+        self.cmd_vel_pub.publish(getattr(msg, "twist", msg))
 
     def _send_lift_command(self, command: RobotCommand) -> None:
         msg = String()
@@ -416,6 +453,73 @@ class Robot320FastDDSRosGateway(Node):
         except (TypeError, ValueError, json.JSONDecodeError) as exc:
             self.get_logger().warning(f"invalid lift status ignored: {exc}")
 
+    def _on_map(self, msg: OccupancyGrid) -> None:
+        try:
+            self._latest_map = _remote_map_from_occupancy_grid(msg)
+        except (TypeError, ValueError) as exc:
+            self.get_logger().warning(f"invalid occupancy grid ignored: {exc}")
+
+    def _publish_map(self) -> None:
+        if self._latest_map is not None:
+            self.transport.publish_map(self._latest_map)
+
+    def _save_map(self, command: RobotCommand) -> None:
+        if self.map_save_client.service_is_ready():
+            future = self.map_save_client.call_async(Trigger.Request())
+            future.add_done_callback(
+                lambda result, original=command: self._on_save_map_result(
+                    original, result
+                )
+            )
+            return
+        if (
+            self.cartographer_save_client is not None
+            and self.cartographer_save_client.service_is_ready()
+        ):
+            os.makedirs(os.path.dirname(self.cartographer_state_file), exist_ok=True)
+            request = WriteState.Request()
+            request.filename = self.cartographer_state_file
+            request.include_unfinished_submaps = True
+            future = self.cartographer_save_client.call_async(request)
+            future.add_done_callback(
+                lambda result, original=command: self._on_cartographer_save_result(
+                    original, result
+                )
+            )
+            return
+        self._reply(
+            command,
+            "rejected",
+            "no SLAM Toolbox or Cartographer map save service is available",
+        )
+
+    def _on_save_map_result(self, command: RobotCommand, future) -> None:
+        try:
+            result = future.result()
+        except Exception as exc:
+            self._reply(command, "failed", f"map save request failed: {exc}")
+            return
+        status = "completed" if result.success else "failed"
+        self._reply(command, status, result.message or "map save finished")
+
+    def _on_cartographer_save_result(self, command: RobotCommand, future) -> None:
+        try:
+            result = future.result()
+        except Exception as exc:
+            self._reply(command, "failed", f"Cartographer save failed: {exc}")
+            return
+        status_object = getattr(result, "status", None)
+        code = int(getattr(status_object, "code", 0))
+        message = str(getattr(status_object, "message", ""))
+        if code == 0:
+            self._reply(
+                command,
+                "completed",
+                message or f"Cartographer state saved: {self.cartographer_state_file}",
+            )
+        else:
+            self._reply(command, "failed", message or f"Cartographer status {code}")
+
     def _publish_state(self) -> None:
         telemetry = self._latest_telemetry or RobotTelemetry(robot_id=self.robot_id)
         telemetry.robot_id = self.robot_id
@@ -425,6 +529,9 @@ class Robot320FastDDSRosGateway(Node):
         )
         telemetry.lift = self._lift_status
         telemetry.navigation = self._navigation
+        telemetry.map_revision = (
+            self._latest_map.revision if self._latest_map is not None else None
+        )
         telemetry.stamp = time.time()
         self._state_sequence += 1
         self.transport.publish_state(telemetry, self._state_sequence)
@@ -480,6 +587,15 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--topic-prefix", default="/robot320")
     parser.add_argument("--nav-action", default="/navigate_to_pose")
     parser.add_argument("--nav-cmd-vel-topic", default="/cmd_vel")
+    parser.add_argument("--map-topic", default="/map")
+    parser.add_argument(
+        "--map-save-service", default="/robot320/save_persistent_map"
+    )
+    parser.add_argument(
+        "--cartographer-state-file",
+        default="~/robot320_maps/patrol_current.pbstream",
+    )
+    parser.add_argument("--map-publish-period", type=float, default=1.0)
     parser.add_argument("--telemetry-period", type=float, default=0.2)
     parser.add_argument("--heartbeat-period", type=float, default=1.0)
     parser.add_argument("--max-command-age", type=float, default=2.0)
@@ -498,6 +614,10 @@ def main(argv: list[str] | None = None) -> int:
         topic_prefix=args.topic_prefix,
         nav_action=args.nav_action,
         nav_cmd_vel_topic=args.nav_cmd_vel_topic,
+        map_topic=args.map_topic,
+        map_save_service=args.map_save_service,
+        cartographer_state_file=args.cartographer_state_file,
+        map_publish_period_s=args.map_publish_period,
         telemetry_period_s=args.telemetry_period,
         heartbeat_period_s=args.heartbeat_period,
         max_command_age_s=args.max_command_age,
@@ -510,6 +630,29 @@ def main(argv: list[str] | None = None) -> int:
     finally:
         node.destroy_node()
         rclpy.shutdown()
+
+
+def _remote_map_from_occupancy_grid(message) -> RemoteMap:
+    orientation = message.info.origin.orientation
+    sin_yaw = 2.0 * (
+        orientation.w * orientation.z + orientation.x * orientation.y
+    )
+    cos_yaw = 1.0 - 2.0 * (
+        orientation.y * orientation.y + orientation.z * orientation.z
+    )
+    stamp = message.header.stamp
+    stamp_seconds = float(stamp.sec) + float(stamp.nanosec) / 1_000_000_000.0
+    return remote_map(
+        width=int(message.info.width),
+        height=int(message.info.height),
+        resolution=float(message.info.resolution),
+        origin_x=float(message.info.origin.position.x),
+        origin_y=float(message.info.origin.position.y),
+        origin_yaw=math.atan2(sin_yaw, cos_yaw),
+        data=message.data,
+        frame_id=message.header.frame_id or "map",
+        stamp=stamp_seconds or time.time(),
+    )
 
 
 if __name__ == "__main__":

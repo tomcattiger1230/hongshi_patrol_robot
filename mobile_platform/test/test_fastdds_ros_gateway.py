@@ -9,6 +9,7 @@ from robot320_interfaces.messages import (
     NavigationStatus,
     RobotCommand,
     RobotTelemetry,
+    remote_map,
     to_json,
 )
 
@@ -111,3 +112,47 @@ def test_ros2_transport_uses_string_json_topics(monkeypatch):
     transport.publish_state(RobotTelemetry(), 1)
     state_message = node.publishers["/robot320/state"].messages[-1]
     assert '"robot_id":"robot-test"' in state_message.data
+
+    snapshot = remote_map(
+        width=2,
+        height=1,
+        resolution=0.05,
+        origin_x=0.0,
+        origin_y=0.0,
+        origin_yaw=0.0,
+        data=(-1, 100),
+    )
+    transport.publish_map(snapshot)
+    assert snapshot.revision in node.publishers["/robot320/map"].messages[-1].data
+
+
+def test_occupancy_grid_is_compressed_for_remote_transport():
+    class Value:
+        pass
+
+    message = Value()
+    message.header = Value()
+    message.header.frame_id = "map"
+    message.header.stamp = Value()
+    message.header.stamp.sec = 12
+    message.header.stamp.nanosec = 500_000_000
+    message.info = Value()
+    message.info.width = 3
+    message.info.height = 2
+    message.info.resolution = 0.1
+    message.info.origin = Value()
+    message.info.origin.position = Value()
+    message.info.origin.position.x = -1.0
+    message.info.origin.position.y = 2.0
+    message.info.origin.orientation = Value()
+    message.info.origin.orientation.x = 0.0
+    message.info.origin.orientation.y = 0.0
+    message.info.origin.orientation.z = 0.0
+    message.info.origin.orientation.w = 1.0
+    message.data = [-1, 0, 10, 50, 99, 100]
+
+    snapshot = gateway_module._remote_map_from_occupancy_grid(message)
+
+    assert snapshot.frame_id == "map"
+    assert snapshot.stamp == 12.5
+    assert snapshot.occupancy_data() == tuple(message.data)

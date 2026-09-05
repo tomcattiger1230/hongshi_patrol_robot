@@ -37,9 +37,12 @@ except ImportError:  # pragma: no cover - depends on desktop environment.
 
 
 if QApplication is not None:
+    from .map_model import map_snapshot
+    from .navigation_gui import MapView
 
     class CommunicationWorker(QObject):
         telemetry_received = Signal(object)
+        map_received = Signal(object)
         reply_received = Signal(object)
         command_sent = Signal(str, str)
         connection_changed = Signal(bool, str)
@@ -93,6 +96,9 @@ if QApplication is not None:
                 telemetry = self.client.receive_telemetry(timeout_s=0.0)
                 if telemetry is not None:
                     self.telemetry_received.emit(telemetry)
+                snapshot = self.client.receive_map(timeout_s=0.0)
+                if snapshot is not None:
+                    self.map_received.emit(snapshot)
                 for _ in range(20):
                     reply = self.client.receive_reply(timeout_s=0.0)
                     if reply is None:
@@ -159,6 +165,16 @@ if QApplication is not None:
             if self.client:
                 self._send("取消导航", self.client.cancel_navigation)
 
+        @Slot(str)
+        def set_mode(self, mode: str) -> None:
+            if self.client:
+                self._send(f"切换到 {mode} 模式", self.client.set_mode, mode)
+
+        @Slot()
+        def save_map(self) -> None:
+            if self.client:
+                self._send("保存当前地图", self.client.save_map)
+
         @Slot(str, object)
         def lift(self, action: str, target_height_m: object) -> None:
             if self.client:
@@ -189,6 +205,8 @@ if QApplication is not None:
         reset_requested = Signal()
         navigation_requested = Signal(float, float, float)
         cancel_navigation_requested = Signal()
+        mode_requested = Signal(str)
+        save_map_requested = Signal()
         lift_requested = Signal(str, object)
 
         def __init__(self, domain_id: int, client_id: str, backend: str = "auto"):
@@ -202,7 +220,7 @@ if QApplication is not None:
 
             title_suffix = " [离线演示]" if backend == "demo" else ""
             self.setWindowTitle(f"Robot320 远程控制台{title_suffix}")
-            self.resize(1120, 760)
+            self.resize(1280, 820)
             self._build_ui()
             self._apply_style()
 
@@ -230,8 +248,11 @@ if QApplication is not None:
             self.reset_requested.connect(self.worker.reset_idle)
             self.navigation_requested.connect(self.worker.navigation_goal)
             self.cancel_navigation_requested.connect(self.worker.cancel_navigation)
+            self.mode_requested.connect(self.worker.set_mode)
+            self.save_map_requested.connect(self.worker.save_map)
             self.lift_requested.connect(self.worker.lift)
             self.worker.telemetry_received.connect(self._on_telemetry)
+            self.worker.map_received.connect(self._on_map)
             self.worker.reply_received.connect(self._on_reply)
             self.worker.command_sent.connect(self._on_command_sent)
             self.worker.connection_changed.connect(self._on_connection_changed)
@@ -312,6 +333,7 @@ if QApplication is not None:
             tabs = QTabWidget()
             tabs.addTab(self._build_manual_tab(), "手动与安全")
             tabs.addTab(self._build_navigation_tab(), "导航")
+            tabs.addTab(self._build_map_tab(), "地图扫图与导航")
             tabs.addTab(self._build_lift_tab(), "升降杆")
             return tabs
 
@@ -416,6 +438,58 @@ if QApplication is not None:
             layout.addStretch()
             return page
 
+        def _build_map_tab(self) -> QWidget:
+            page = QWidget()
+            layout = QVBoxLayout(page)
+            hint = QLabel(
+                "左键点击并拖动选择目标与朝向；中键拖动画布；滚轮缩放。"
+                "扫图时先进入人工模式，再到“手动与安全”驾驶。"
+            )
+            hint.setWordWrap(True)
+            layout.addWidget(hint)
+
+            self.map_view = MapView()
+            self.map_view.setMinimumSize(520, 400)
+            self.map_view.goal_changed.connect(self._on_map_goal)
+            self.map_view.cursor_changed.connect(self._on_map_cursor)
+            layout.addWidget(self.map_view, 1)
+
+            info = QHBoxLayout()
+            self.map_status = QLabel("等待 AGV 地图…")
+            self.map_cursor = QLabel("光标: --")
+            info.addWidget(self.map_status)
+            info.addStretch()
+            info.addWidget(self.map_cursor)
+            layout.addLayout(info)
+
+            view_actions = QHBoxLayout()
+            fit = QPushButton("适应窗口")
+            fit.clicked.connect(self.map_view.fit_map)
+            zoom_in = QPushButton("放大")
+            zoom_in.clicked.connect(self.map_view.zoom_in)
+            zoom_out = QPushButton("缩小")
+            zoom_out.clicked.connect(self.map_view.zoom_out)
+            for button in (fit, zoom_in, zoom_out):
+                view_actions.addWidget(button)
+            layout.addLayout(view_actions)
+
+            actions = QHBoxLayout()
+            mapping = QPushButton("进入人工扫图模式")
+            mapping.clicked.connect(
+                lambda _checked=False: self.mode_requested.emit("manual")
+            )
+            save = QPushButton("保存当前地图")
+            save.clicked.connect(
+                lambda _checked=False: self.save_map_requested.emit()
+            )
+            navigate = QPushButton("导航到已选目标")
+            navigate.clicked.connect(self._send_selected_map_goal)
+            actions.addWidget(mapping)
+            actions.addWidget(save)
+            actions.addWidget(navigate)
+            layout.addLayout(actions)
+            return page
+
         @staticmethod
         def _spin(
             minimum: float,
@@ -460,6 +534,47 @@ if QApplication is not None:
             self.lift_requested.emit(action, target)
 
         @Slot(object)
+        def _on_map(self, remote_map) -> None:
+            try:
+                snapshot = map_snapshot(
+                    width=remote_map.width,
+                    height=remote_map.height,
+                    resolution=remote_map.resolution,
+                    origin_x=remote_map.origin_x,
+                    origin_y=remote_map.origin_y,
+                    origin_yaw=remote_map.origin_yaw,
+                    data=remote_map.occupancy_data(),
+                    frame_id=remote_map.frame_id,
+                )
+            except (TypeError, ValueError) as exc:
+                self._on_error(f"地图数据无效：{exc}")
+                return
+            self.map_view.set_map(snapshot)
+            self.map_status.setText(
+                f"地图 {remote_map.width}×{remote_map.height} · "
+                f"{remote_map.resolution:.3f} m/cell · {remote_map.revision[:8]}"
+            )
+
+        @Slot(float, float, float)
+        def _on_map_goal(self, x_m: float, y_m: float, yaw_rad: float) -> None:
+            self.goal_x.setValue(x_m)
+            self.goal_y.setValue(y_m)
+            self.goal_yaw.setValue(yaw_rad)
+            self.statusBar().showMessage(
+                f"已选择目标 ({x_m:.2f}, {y_m:.2f}), 朝向 {yaw_rad:.2f} rad",
+                5000,
+            )
+
+        @Slot(float, float)
+        def _on_map_cursor(self, x_m: float, y_m: float) -> None:
+            self.map_cursor.setText(f"光标: {x_m:.2f}, {y_m:.2f} m")
+
+        def _send_selected_map_goal(self) -> None:
+            self.navigation_requested.emit(
+                self.goal_x.value(), self.goal_y.value(), self.goal_yaw.value()
+            )
+
+        @Slot(object)
         def _on_telemetry(self, telemetry) -> None:
             self._last_telemetry_at = time.monotonic()
             view = telemetry_view(telemetry)
@@ -472,6 +587,12 @@ if QApplication is not None:
             self.lift_value.setText(view.lift)
             self.battery_value.setText(view.battery)
             self.faults_value.setText(view.faults)
+            if telemetry.pose is not None:
+                self.map_view.set_robot_pose(
+                    telemetry.pose.x_m,
+                    telemetry.pose.y_m,
+                    telemetry.pose.yaw_rad,
+                )
             if self.backend == "demo":
                 self._set_connection(True, "本地演示（未连接机器人）")
             else:

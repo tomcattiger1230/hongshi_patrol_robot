@@ -11,9 +11,11 @@ from typing import Optional
 from robot320_interfaces.messages import (
     CommandReply,
     Heartbeat,
+    RemoteMap,
     RobotCommand,
     RobotTelemetry,
     heartbeat_from_json,
+    remote_map_from_json,
     reply_from_json,
     telemetry_from_json,
     to_json,
@@ -68,6 +70,7 @@ class Ros2RemoteTransport:
         self._states: queue.Queue[RobotTelemetry] = queue.Queue()
         self._replies: queue.Queue[CommandReply] = queue.Queue()
         self._heartbeats: queue.Queue[Heartbeat] = queue.Queue()
+        self._maps: queue.Queue[RemoteMap] = queue.Queue(maxsize=2)
         self._node = rclpy.create_node(f"robot320_remote_{_safe_node_name(client_id)}")
         self._command_pub = self._node.create_publisher(String, f"{prefix}/command", 10)
         self._heartbeat_pub = self._node.create_publisher(
@@ -78,6 +81,7 @@ class Ros2RemoteTransport:
         self._node.create_subscription(
             String, f"{prefix}/heartbeat", self._on_heartbeat, 10
         )
+        self._node.create_subscription(String, f"{prefix}/map", self._on_map, 10)
         self._executor = SingleThreadedExecutor()
         self._executor.add_node(self._node)
         self._spin_thread = threading.Thread(
@@ -109,6 +113,9 @@ class Ros2RemoteTransport:
     def receive_heartbeat(self, timeout_s: float = 0.1) -> Optional[Heartbeat]:
         return _queue_get(self._heartbeats, timeout_s)
 
+    def receive_map(self, timeout_s: float = 0.1) -> Optional[RemoteMap]:
+        return _queue_get(self._maps, timeout_s)
+
     def close(self) -> None:
         if self._closed:
             return
@@ -130,6 +137,17 @@ class Ros2RemoteTransport:
         heartbeat = heartbeat_from_json(message.data)
         if heartbeat.role == "robot":
             self._heartbeats.put(heartbeat)
+
+    def _on_map(self, message: String) -> None:
+        snapshot = remote_map_from_json(message.data)
+        try:
+            self._maps.put_nowait(snapshot)
+        except queue.Full:
+            try:
+                self._maps.get_nowait()
+            except queue.Empty:
+                pass
+            self._maps.put_nowait(snapshot)
 
 
 def _string_message(payload: str):

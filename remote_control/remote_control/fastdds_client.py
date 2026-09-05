@@ -17,6 +17,7 @@ from robot320_interfaces.fastdds_transport import (
 from robot320_interfaces.messages import (
     CommandReply,
     Pose2D,
+    RemoteMap,
     RobotCommand,
     RobotTelemetry,
 )
@@ -82,6 +83,9 @@ class RobotRemoteFastDDSClient:
             RobotCommand(kind="cancel_navigation", client_id=self.client_id)
         )
 
+    def save_map(self) -> str:
+        return self._send(RobotCommand(kind="save_map", client_id=self.client_id))
+
     def brake(self) -> str:
         return self._send(RobotCommand(kind="brake", client_id=self.client_id))
 
@@ -122,6 +126,10 @@ class RobotRemoteFastDDSClient:
 
     def receive_reply(self, timeout_s: float = 0.1) -> Optional[CommandReply]:
         return self._transport.receive_reply(timeout_s)
+
+    def receive_map(self, timeout_s: float = 0.1) -> Optional[RemoteMap]:
+        receiver = getattr(self._transport, "receive_map", None)
+        return receiver(timeout_s) if receiver is not None else None
 
     def close(self) -> None:
         if not self._running:
@@ -173,6 +181,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("estop")
     sub.add_parser("reset")
     sub.add_parser("cancel")
+    sub.add_parser("save-map")
 
     lift = sub.add_parser("lift")
     lift.add_argument("action", choices=["stop", "raise", "lower", "move_to"])
@@ -213,6 +222,8 @@ def main(argv: list[str] | None = None) -> int:
             client.reset_idle()
         elif args.command == "cancel":
             client.cancel_navigation()
+        elif args.command == "save-map":
+            client.save_map()
         elif args.command == "lift":
             client.control_lift(args.action, args.height)
         elif args.command == "watch":

@@ -11,9 +11,11 @@ from typing import Any, Callable, Optional
 from .messages import (
     CommandReply,
     Heartbeat,
+    RemoteMap,
     RobotCommand,
     RobotTelemetry,
     heartbeat_from_json,
+    remote_map_from_json,
     reply_from_json,
     robot_command_from_json,
     telemetry_from_json,
@@ -25,6 +27,7 @@ COMMAND_TOPIC = "/robot320/command"
 STATE_TOPIC = "/robot320/state"
 REPLY_TOPIC = "/robot320/reply"
 HEARTBEAT_TOPIC = "/robot320/heartbeat"
+MAP_TOPIC = "/robot320/map"
 
 
 class FastDDSUnavailable(RuntimeError):
@@ -167,11 +170,13 @@ class FastDdsRemoteTransport:
         self._states: queue.Queue[RobotTelemetry] = queue.Queue()
         self._replies: queue.Queue[CommandReply] = queue.Queue()
         self._heartbeats: queue.Queue[Heartbeat] = queue.Queue()
+        self._maps: queue.Queue[RemoteMap] = queue.Queue(maxsize=2)
         self._command_writer = self.runtime.create_writer(COMMAND_TOPIC)
         self._heartbeat_writer = self.runtime.create_writer(HEARTBEAT_TOPIC)
         self.runtime.create_reader(STATE_TOPIC, self._on_state)
         self.runtime.create_reader(REPLY_TOPIC, self._on_reply)
         self.runtime.create_reader(HEARTBEAT_TOPIC, self._on_heartbeat)
+        self.runtime.create_reader(MAP_TOPIC, self._on_map)
 
     def publish_command(self, command: RobotCommand) -> None:
         self.runtime.write_string(self._command_writer, to_json(command))
@@ -194,6 +199,9 @@ class FastDdsRemoteTransport:
     def receive_heartbeat(self, timeout_s: float = 0.1) -> Optional[Heartbeat]:
         return _queue_get(self._heartbeats, timeout_s)
 
+    def receive_map(self, timeout_s: float = 0.1) -> Optional[RemoteMap]:
+        return _queue_get(self._maps, timeout_s)
+
     def close(self) -> None:
         self.runtime.close()
 
@@ -207,6 +215,9 @@ class FastDdsRemoteTransport:
         heartbeat = heartbeat_from_json(payload)
         if heartbeat.role == "robot":
             self._heartbeats.put(heartbeat)
+
+    def _on_map(self, payload: str) -> None:
+        _queue_put_latest(self._maps, remote_map_from_json(payload))
 
 
 class FastDdsRobotTransport:
@@ -222,6 +233,7 @@ class FastDdsRobotTransport:
         self._state_writer = self.runtime.create_writer(STATE_TOPIC)
         self._reply_writer = self.runtime.create_writer(REPLY_TOPIC)
         self._heartbeat_writer = self.runtime.create_writer(HEARTBEAT_TOPIC)
+        self._map_writer = self.runtime.create_writer(MAP_TOPIC)
         self.runtime.create_reader(COMMAND_TOPIC, self._on_command)
         self.runtime.create_reader(HEARTBEAT_TOPIC, self._on_heartbeat)
 
@@ -247,6 +259,9 @@ class FastDdsRobotTransport:
             timestamp_ms=int(time.time() * 1000.0),
         )
         self.runtime.write_string(self._heartbeat_writer, to_json(heartbeat))
+
+    def publish_map(self, snapshot: RemoteMap) -> None:
+        self.runtime.write_string(self._map_writer, to_json(snapshot))
 
     def close(self) -> None:
         self.runtime.close()
@@ -298,3 +313,14 @@ def _queue_get(items: queue.Queue, timeout_s: float):
         return items.get(timeout=max(0.0, timeout_s))
     except queue.Empty:
         return None
+
+
+def _queue_put_latest(items: queue.Queue, value) -> None:
+    try:
+        items.put_nowait(value)
+    except queue.Full:
+        try:
+            items.get_nowait()
+        except queue.Empty:
+            pass
+        items.put_nowait(value)

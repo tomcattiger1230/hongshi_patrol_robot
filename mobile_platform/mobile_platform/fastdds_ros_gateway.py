@@ -537,6 +537,8 @@ class Robot320FastDDSRosGateway(Node):
         if enabled:
             self._request_nav_cancel()
             self._publish_mode("navigation")
+        else:
+            self._publish_twist(0.0, 0.0)
         request = SetBool.Request()
         request.data = enabled
         future = self.exploration_client.call_async(request)

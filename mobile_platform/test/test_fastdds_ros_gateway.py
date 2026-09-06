@@ -71,10 +71,31 @@ def test_command_validation_rejects_stale_and_duplicate_commands():
     duplicate = RobotCommand(
         kind="stop", client_id="remote-a", sequence=3, stamp=time.time()
     )
-    gateway._last_sequences["remote-a"] = 3
+    gateway._last_sequences["remote-a:legacy"] = 3
 
     assert "stale" in gateway._validate_command(stale)
     assert "duplicate" in gateway._validate_command(duplicate)
+
+
+def test_command_sequence_restarts_are_allowed_for_a_new_session():
+    gateway = _gateway_for_validation()
+    old = RobotCommand(
+        kind="stop",
+        client_id="remote-a",
+        session_id="old-session",
+        sequence=746,
+        stamp=time.time(),
+    )
+    restarted = RobotCommand(
+        kind="stop",
+        client_id="remote-a",
+        session_id="new-session",
+        sequence=1,
+        stamp=time.time(),
+    )
+    gateway._last_sequences[gateway._sequence_key(old)] = old.sequence
+
+    assert gateway._validate_command(restarted) is None
 
 
 def test_nav_velocity_relay_is_closed_immediately_on_cancel():

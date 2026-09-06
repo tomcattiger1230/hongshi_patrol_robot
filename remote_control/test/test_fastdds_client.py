@@ -57,6 +57,8 @@ def test_remote_client_builds_high_level_commands():
     assert transport.commands[4].exploration_enabled is True
     assert transport.commands[5].lift_target_height_m == 1.4
     assert all(item.sequence > 0 for item in transport.commands)
+    assert len({item.session_id for item in transport.commands}) == 1
+    assert transport.commands[0].session_id
     assert transport.heartbeats
     assert transport.closed is True
 

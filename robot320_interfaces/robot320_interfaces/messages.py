@@ -147,6 +147,7 @@ class RobotCommand:
     kind: CommandKind
     command_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     client_id: str = "remote_control"
+    session_id: str = ""
     sequence: int = 0
     stamp: float = field(default_factory=time.time)
     linear_speed_mps: float = 0.0

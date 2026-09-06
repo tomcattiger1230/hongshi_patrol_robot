@@ -8,6 +8,7 @@ import platform
 import sys
 import threading
 import time
+import uuid
 from typing import Optional
 
 from robot320_interfaces.fastdds_transport import (
@@ -36,6 +37,7 @@ class RobotRemoteFastDDSClient:
         backend: str = "auto",
     ):
         self.client_id = client_id
+        self.session_id = uuid.uuid4().hex
         self.latest_telemetry: Optional[RobotTelemetry] = None
         if backend not in {"auto", "ros2", "fastdds", "demo"}:
             raise ValueError(f"unsupported transport backend: {backend}")
@@ -148,6 +150,7 @@ class RobotRemoteFastDDSClient:
         self._transport.close()
 
     def _send(self, command: RobotCommand) -> str:
+        command.session_id = self.session_id
         command.sequence = self._next_sequence()
         command.stamp = time.time()
         self._transport.publish_command(command)

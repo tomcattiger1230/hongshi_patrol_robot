@@ -238,7 +238,7 @@ class Robot320FastDDSRosGateway(Node):
             if reason:
                 self._reply(command, "rejected", reason)
                 continue
-            self._last_sequences[command.client_id] = command.sequence
+            self._last_sequences[self._sequence_key(command)] = command.sequence
             try:
                 self._dispatch(command)
             except Exception as exc:
@@ -677,10 +677,15 @@ class Robot320FastDDSRosGateway(Node):
             return f"stale command ({age:.2f}s old)"
         if age < -self.max_command_age_s:
             return "command timestamp is too far in the future"
-        previous = self._last_sequences.get(command.client_id, -1)
+        previous = self._last_sequences.get(self._sequence_key(command), -1)
         if command.sequence <= previous:
             return f"duplicate or out-of-order sequence {command.sequence}"
         return None
+
+    @staticmethod
+    def _sequence_key(command: RobotCommand) -> str:
+        session = command.session_id or "legacy"
+        return f"{command.client_id}:{session}"
 
     def _reply(self, command: RobotCommand, status: str, message: str) -> None:
         self.transport.publish_reply(

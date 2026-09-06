@@ -21,7 +21,10 @@ fi
 
 mkdir -p "${robot320_runtime_dir}"
 robot320_profile="${robot320_runtime_dir}/fastdds_lan.xml"
-sed "s/@ROBOT320_LAN_ADDRESS@/${robot320_address}/g" "${robot320_template}" >"${robot320_profile}"
+sed \
+  -e "s/@ROBOT320_LAN_ADDRESS@/${robot320_address}/g" \
+  -e "s/@ROBOT320_PEER_ADDRESS@/${robot320_peer}/g" \
+  "${robot320_template}" >"${robot320_profile}"
 export FASTDDS_DEFAULT_PROFILES_FILE="${robot320_profile}"
 export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-20}"
 

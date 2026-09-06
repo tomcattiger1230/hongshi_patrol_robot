@@ -1,9 +1,13 @@
 import time
+from pathlib import Path
+
+import pytest
 
 import mobile_platform.fastdds_ros_gateway as gateway_module
 from mobile_platform.fastdds_ros_gateway import (
     Robot320FastDDSRosGateway,
     Ros2RobotTransport,
+    _validated_map_prefix,
 )
 from robot320_interfaces.messages import (
     NavigationStatus,
@@ -96,6 +100,41 @@ def test_command_sequence_restarts_are_allowed_for_a_new_session():
     gateway._last_sequences[gateway._sequence_key(old)] = old.sequence
 
     assert gateway._validate_command(restarted) is None
+
+
+def test_map_prefix_is_confined_to_configured_storage(tmp_path):
+    root = tmp_path / "maps"
+    root.mkdir()
+
+    assert _validated_map_prefix(str(root / "site-a"), root) == root / "site-a"
+    with pytest.raises(ValueError, match="directly inside"):
+        _validated_map_prefix(str(root / "nested" / "site-a"), root)
+    with pytest.raises(ValueError, match="unsupported"):
+        _validated_map_prefix(str(root / "site a"), root)
+
+
+def test_lyrical_parameter_response_continues_map_load():
+    class Result:
+        successful = True
+        reason = ""
+
+    class Response:
+        results = [Result()]
+
+    class Future:
+        def result(self):
+            return Response()
+
+    gateway = Robot320FastDDSRosGateway.__new__(Robot320FastDDSRosGateway)
+    calls = []
+    gateway._deserialize_map = lambda command, prefix: calls.append((command, prefix))
+    gateway._finish_map_operation = lambda *args: calls.append(args)
+    command = RobotCommand(kind="load_map")
+    prefix = Path("/tmp/maps/site-a")
+
+    gateway._on_map_prefix_changed(command, prefix, Future())
+
+    assert calls == [(command, prefix)]
 
 
 def test_nav_velocity_relay_is_closed_immediately_on_cancel():

@@ -44,6 +44,19 @@ def test_navigation_goal_round_trip():
     assert restored.goal.yaw_rad == math.pi / 2
 
 
+def test_map_session_command_round_trip():
+    command = RobotCommand(
+        kind="load_map",
+        map_prefix="~/robot320_maps/site_a",
+        map_mode="continuing",
+    )
+
+    restored = robot_command_from_json(to_json(command))
+
+    assert restored.map_prefix == "~/robot320_maps/site_a"
+    assert restored.map_mode == "continuing"
+
+
 def test_extended_telemetry_round_trip():
     telemetry = RobotTelemetry(
         lift=LiftStatus(available=True, height_m=1.1, moving=True),

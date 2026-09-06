@@ -197,16 +197,23 @@ ros2 launch robot320_localization_bringup robot320_slam.launch.py \
 cd ~/Develop/github_ws/hongshi_patrol_robot
 source ./scripts/source_dds_lan.sh 192.168.0.218
 ./scripts/uv_run.sh desktop robot320_remote_gui \
-  --backend fastdds --domain-id 20 --client-id mac-operator
+  --backend fastdds --domain-id 20 --client-id mac-operator \
+  --robot-ssh arnold@192.168.0.218 \
+  --remote-map-directory '~/robot320_maps'
 ```
 
 操作顺序：
 
 1. 在“地图扫图与导航”页点“进入人工扫图模式”，然后到“手动与安全”页驾驶 AGV；
    `/map` 会持续回传并刷新。
-2. 点“保存当前地图”。SLAM Toolbox 持久化管理器存在时保存 pose graph、YAML 和 PGM；
+2. 点“保存到机器人”。SLAM Toolbox 持久化管理器存在时保存 pose graph、YAML 和 PGM；
    Cartographer 模式则保存到 Ubuntu 的
    `~/robot320_maps/patrol_current.pbstream`。
+   “导出栅格到 Mac…”直接将当前 DDS 地图写成 `.yaml/.pgm`；“保存完整会话到 Mac…”
+   先通过 DDS 请求机器人生成 `.yaml/.pgm/.posegraph/.data`，完成后通过 SSH 公钥连接
+   下载。“从 Mac 载入地图…”会上传所选 YAML 及其图像；存在同名 `.posegraph/.data`
+   时按 continuing 会话载入，否则尝试调用 map_server 的 localization 地图载入服务。
+   载入前会要求确认，并停止自由探索、当前导航和底盘速度。
 3. 在地图上按下并拖动，选定目标位置和车头方向，点“导航到已选目标”。目标仍由 Ubuntu
    上的 Nav2 规划、避障和执行；Mac 断网不会在本地直接驱动电机。
 4. 点“启动自由探索”后，Ubuntu 的 frontier explorer 会持续寻找已知空闲区与未知区的

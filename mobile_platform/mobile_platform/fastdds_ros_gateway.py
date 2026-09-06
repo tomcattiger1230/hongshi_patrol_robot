@@ -8,7 +8,9 @@ import json
 import logging
 import math
 import os
+from pathlib import Path
 import queue
+import re
 import sys
 import time
 from dataclasses import fields
@@ -36,8 +38,11 @@ try:
     from geometry_msgs.msg import Twist, TwistStamped
     from nav_msgs.msg import OccupancyGrid, Odometry
     from nav2_msgs.action import NavigateToPose
+    from nav2_msgs.srv import LoadMap
     from rclpy.action import ActionClient
     from rclpy.node import Node
+    from rclpy.parameter import Parameter
+    from rclpy.parameter_client import AsyncParameterClient
     from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
     from std_msgs.msg import Bool, String
     from std_srvs.srv import SetBool, Trigger
@@ -46,7 +51,8 @@ except ImportError as exc:  # pragma: no cover - evaluated on the NUC.
     Node = object
     GoalStatus = Twist = TwistStamped = OccupancyGrid = Odometry = None
     NavigateToPose = ActionClient = QoSProfile = None
-    DurabilityPolicy = ReliabilityPolicy = SetBool = Trigger = None
+    Parameter = AsyncParameterClient = None
+    DurabilityPolicy = ReliabilityPolicy = SetBool = Trigger = LoadMap = None
     Bool = String = None
     _ROS_IMPORT_ERROR = exc
 else:
@@ -56,6 +62,11 @@ try:
     from cartographer_ros_msgs.srv import WriteState
 except ImportError:  # pragma: no cover - optional Cartographer deployment.
     WriteState = None
+
+try:
+    from slam_toolbox.srv import DeserializePoseGraph, SaveMap, SerializePoseGraph
+except ImportError:  # pragma: no cover - optional outside SLAM deployments.
+    DeserializePoseGraph = SaveMap = SerializePoseGraph = None
 
 
 LOGGER = logging.getLogger(__name__)
@@ -141,6 +152,7 @@ class Robot320FastDDSRosGateway(Node):
         nav_cmd_vel_topic: str = "/cmd_vel",
         map_topic: str = "/map",
         map_save_service: str = "/robot320/save_persistent_map",
+        map_storage_directory: str = "~/robot320_maps",
         exploration_service: str = "/robot320/set_exploration_enabled",
         exploration_status_topic: str = "/robot320/exploration_enabled",
         cartographer_state_file: str = "~/robot320_maps/patrol_current.pbstream",
@@ -174,6 +186,10 @@ class Robot320FastDDSRosGateway(Node):
         self._last_odometry_received = 0.0
         self.odometry_pose_frame = odometry_pose_frame or "map"
         self._exploration_enabled = False
+        self._map_operation_command: RobotCommand | None = None
+        self.map_storage_directory = Path(
+            os.path.expanduser(map_storage_directory)
+        ).resolve()
 
         self.cmd_vel_pub = self.create_publisher(Twist, f"{self.topic_prefix}/cmd_vel", 10)
         self.brake_pub = self.create_publisher(Bool, f"{self.topic_prefix}/brake", 10)
@@ -207,6 +223,29 @@ class Robot320FastDDSRosGateway(Node):
         )
         self.nav_client = ActionClient(self, NavigateToPose, nav_action)
         self.map_save_client = self.create_client(Trigger, map_save_service)
+        self.slam_serialize_client = (
+            self.create_client(SerializePoseGraph, "/slam_toolbox/serialize_map")
+            if SerializePoseGraph is not None
+            else None
+        )
+        self.slam_save_map_client = (
+            self.create_client(SaveMap, "/slam_toolbox/save_map")
+            if SaveMap is not None
+            else None
+        )
+        self.slam_deserialize_client = (
+            self.create_client(DeserializePoseGraph, "/slam_toolbox/deserialize_map")
+            if DeserializePoseGraph is not None
+            else None
+        )
+        self.map_load_client = (
+            self.create_client(LoadMap, "/map_server/load_map")
+            if LoadMap is not None
+            else None
+        )
+        self.map_manager_parameter_client = AsyncParameterClient(
+            self, "persistent_map_manager"
+        )
         self.exploration_client = self.create_client(SetBool, exploration_service)
         self.cartographer_state_file = os.path.abspath(
             os.path.expanduser(cartographer_state_file)
@@ -286,6 +325,8 @@ class Robot320FastDDSRosGateway(Node):
             self._send_lift_command(command)
         elif command.kind == "save_map":
             self._save_map(command)
+        elif command.kind == "load_map":
+            self._load_map(command)
         elif command.kind == "set_exploration":
             self._set_exploration(command)
         else:
@@ -572,6 +613,36 @@ class Robot320FastDDSRosGateway(Node):
             self.transport.publish_map(self._latest_map)
 
     def _save_map(self, command: RobotCommand) -> None:
+        if command.map_prefix:
+            try:
+                prefix = _validated_map_prefix(
+                    command.map_prefix, self.map_storage_directory
+                )
+            except ValueError as exc:
+                self._reply(command, "rejected", str(exc))
+                return
+            if self._map_operation_command is not None:
+                self._reply(command, "rejected", "another map operation is running")
+                return
+            if (
+                self.slam_serialize_client is None
+                or self.slam_save_map_client is None
+                or not self.slam_serialize_client.service_is_ready()
+                or not self.slam_save_map_client.service_is_ready()
+            ):
+                self._reply(command, "rejected", "SLAM Toolbox save services are unavailable")
+                return
+            prefix.parent.mkdir(parents=True, exist_ok=True)
+            self._map_operation_command = command
+            request = SerializePoseGraph.Request()
+            request.filename = str(prefix)
+            future = self.slam_serialize_client.call_async(request)
+            future.add_done_callback(
+                lambda result, original=command, target=prefix: self._on_posegraph_saved(
+                    original, target, result
+                )
+            )
+            return
         if self.map_save_client.service_is_ready():
             future = self.map_save_client.call_async(Trigger.Request())
             future.add_done_callback(
@@ -600,6 +671,174 @@ class Robot320FastDDSRosGateway(Node):
             "rejected",
             "no SLAM Toolbox or Cartographer map save service is available",
         )
+
+    def _on_posegraph_saved(self, command: RobotCommand, prefix: Path, future) -> None:
+        try:
+            result = future.result()
+        except Exception as exc:
+            self._finish_map_operation(command, "failed", f"pose graph save failed: {exc}")
+            return
+        if result.result != SerializePoseGraph.Response.RESULT_SUCCESS:
+            self._finish_map_operation(
+                command, "failed", f"pose graph save returned result {result.result}"
+            )
+            return
+        request = SaveMap.Request()
+        request.name.data = str(prefix)
+        future = self.slam_save_map_client.call_async(request)
+        future.add_done_callback(
+            lambda result, original=command, target=prefix: self._on_session_map_saved(
+                original, target, result
+            )
+        )
+
+    def _on_session_map_saved(self, command: RobotCommand, prefix: Path, future) -> None:
+        try:
+            result = future.result()
+        except Exception as exc:
+            self._finish_map_operation(command, "failed", f"occupancy map save failed: {exc}")
+            return
+        if result.result != SaveMap.Response.RESULT_SUCCESS:
+            self._finish_map_operation(
+                command, "failed", f"occupancy map save returned result {result.result}"
+            )
+            return
+        self._finish_map_operation(command, "completed", f"map session saved: {prefix}")
+
+    def _load_map(self, command: RobotCommand) -> None:
+        if not command.map_prefix:
+            self._reply(command, "rejected", "map prefix is missing")
+            return
+        try:
+            prefix = _validated_map_prefix(command.map_prefix, self.map_storage_directory)
+        except ValueError as exc:
+            self._reply(command, "rejected", str(exc))
+            return
+        if self._map_operation_command is not None:
+            self._reply(command, "rejected", "another map operation is running")
+            return
+        self._disable_exploration_for_operator()
+        self._request_nav_cancel()
+        self._publish_twist(0.0, 0.0)
+        mode = command.map_mode or "continuing"
+        self._map_operation_command = command
+        if mode == "continuing":
+            if (
+                self.slam_deserialize_client is None
+                or not self.slam_deserialize_client.service_is_ready()
+            ):
+                self._finish_map_operation(
+                    command, "rejected", "SLAM Toolbox deserialize service is unavailable"
+                )
+                return
+            if not Path(f"{prefix}.posegraph").is_file() or not Path(
+                f"{prefix}.data"
+            ).is_file():
+                self._finish_map_operation(
+                    command, "rejected", "map session is missing .posegraph or .data"
+                )
+                return
+            if self.map_manager_parameter_client.services_are_ready():
+                future = self.map_manager_parameter_client.set_parameters(
+                    [
+                        Parameter(
+                            "map_prefix",
+                            Parameter.Type.STRING,
+                            str(prefix),
+                        )
+                    ]
+                )
+                future.add_done_callback(
+                    lambda result, original=command, target=prefix: self._on_map_prefix_changed(
+                        original, target, result
+                    )
+                )
+            else:
+                self.get_logger().warning(
+                    "persistent_map_manager is unavailable; loaded map will not auto-save"
+                )
+                self._deserialize_map(command, prefix)
+            return
+        if mode == "localization":
+            if self.map_load_client is None or not self.map_load_client.service_is_ready():
+                self._finish_map_operation(
+                    command, "rejected", "map_server load service is unavailable"
+                )
+                return
+            yaml_path = Path(f"{prefix}.yaml")
+            if not yaml_path.is_file():
+                self._finish_map_operation(command, "rejected", "map YAML is missing")
+                return
+            request = LoadMap.Request()
+            request.map_url = str(yaml_path)
+            future = self.map_load_client.call_async(request)
+            future.add_done_callback(
+                lambda result, original=command, target=prefix: self._on_map_loaded(
+                    original, target, mode, result
+                )
+            )
+            return
+        self._finish_map_operation(command, "rejected", f"unsupported map mode: {mode}")
+
+    def _on_map_prefix_changed(
+        self, command: RobotCommand, prefix: Path, future
+    ) -> None:
+        try:
+            response = future.result()
+        except Exception as exc:
+            self._finish_map_operation(
+                command, "failed", f"automatic save path update failed: {exc}"
+            )
+            return
+        results = getattr(response, "results", response)
+        reason = next(
+            (result.reason for result in results if not result.successful),
+            "",
+        )
+        if reason:
+            self._finish_map_operation(
+                command, "failed", f"automatic save path update failed: {reason}"
+            )
+            return
+        self._deserialize_map(command, prefix)
+
+    def _deserialize_map(self, command: RobotCommand, prefix: Path) -> None:
+        request = DeserializePoseGraph.Request()
+        request.filename = str(prefix)
+        request.match_type = DeserializePoseGraph.Request.START_AT_FIRST_NODE
+        future = self.slam_deserialize_client.call_async(request)
+        future.add_done_callback(
+            lambda result, original=command, target=prefix: self._on_map_loaded(
+                original, target, "continuing", result
+            )
+        )
+
+    def _on_map_loaded(
+        self, command: RobotCommand, prefix: Path, mode: str, future
+    ) -> None:
+        try:
+            result = future.result()
+        except Exception as exc:
+            self._finish_map_operation(command, "failed", f"map load failed: {exc}")
+            return
+        success_code = (
+            DeserializePoseGraph.Response.RESULT_SUCCESS
+            if mode == "continuing"
+            else LoadMap.Response.RESULT_SUCCESS
+        )
+        if result.result != success_code:
+            self._finish_map_operation(
+                command, "failed", f"map load returned result {result.result}"
+            )
+            return
+        self._finish_map_operation(command, "completed", f"map loaded: {prefix} ({mode})")
+
+    def _finish_map_operation(
+        self, command: RobotCommand, status: str, message: str
+    ) -> None:
+        if self._map_operation_command is command:
+            self._map_operation_command = None
+        self._reply(command, status, message)
 
     def _on_save_map_result(self, command: RobotCommand, future) -> None:
         try:
@@ -699,6 +938,19 @@ class Robot320FastDDSRosGateway(Node):
         )
 
 
+def _validated_map_prefix(value: str, storage_directory: Path) -> Path:
+    """Resolve a client-provided prefix while confining it to the map directory."""
+    if not value.strip():
+        raise ValueError("map prefix is missing")
+    expanded = Path(os.path.expanduser(value)).resolve()
+    root = storage_directory.resolve()
+    if expanded.parent != root:
+        raise ValueError(f"map prefix must be directly inside {root}")
+    if not re.fullmatch(r"[A-Za-z0-9._-]{1,80}", expanded.name):
+        raise ValueError("map name contains unsupported characters")
+    return expanded
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Robot320 Fast DDS ROS 2 gateway")
     parser.add_argument("--domain-id", type=int, default=20)
@@ -707,6 +959,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--nav-action", default="/navigate_to_pose")
     parser.add_argument("--nav-cmd-vel-topic", default="/cmd_vel")
     parser.add_argument("--map-topic", default="/map")
+    parser.add_argument("--map-storage-directory", default="~/robot320_maps")
     parser.add_argument(
         "--map-save-service", default="/robot320/save_persistent_map"
     )
@@ -747,6 +1000,7 @@ def main(argv: list[str] | None = None) -> int:
         nav_cmd_vel_topic=args.nav_cmd_vel_topic,
         map_topic=args.map_topic,
         map_save_service=args.map_save_service,
+        map_storage_directory=args.map_storage_directory,
         exploration_service=args.exploration_service,
         exploration_status_topic=args.exploration_status_topic,
         cartographer_state_file=args.cartographer_state_file,

@@ -136,7 +136,17 @@ class FastDdsParticipant:
             raise FastDDSUnavailable("generated String sample type is unavailable")
         sample = string_class()
         sample.data(payload)
-        writer.write(sample)
+        result = writer.write(sample)
+        if result != self.fastdds.RETCODE_OK:
+            raise FastDDSUnavailable(f"DDS write failed with return code {result}")
+
+    def wait_for_acknowledgments(self, writer, timeout_s: float = 2.0) -> bool:
+        seconds = max(0, int(timeout_s))
+        nanoseconds = max(0, int((timeout_s - seconds) * 1_000_000_000))
+        result = writer.wait_for_acknowledgments(
+            self.fastdds.Duration_t(seconds, nanoseconds)
+        )
+        return result == self.fastdds.RETCODE_OK
 
     def close(self) -> None:
         if self._closed:
@@ -180,6 +190,20 @@ class FastDdsRemoteTransport:
 
     def publish_command(self, command: RobotCommand) -> None:
         self.runtime.write_string(self._command_writer, to_json(command))
+        if not self.runtime.wait_for_acknowledgments(self._command_writer, 10.0):
+            raise TimeoutError("robot did not acknowledge the DDS command within 10 seconds")
+
+    def wait_for_command_match(self, timeout_s: float = 5.0) -> bool:
+        """Wait until the ROS gateway command reader has matched this writer."""
+        status = self.runtime.fastdds.PublicationMatchedStatus()
+        deadline = time.monotonic() + max(0.0, timeout_s)
+        while True:
+            self._command_writer.get_publication_matched_status(status)
+            if status.current_count > 0:
+                return True
+            if time.monotonic() >= deadline:
+                return False
+            time.sleep(0.05)
 
     def publish_heartbeat(self, sequence: int) -> None:
         heartbeat = Heartbeat(

@@ -24,8 +24,10 @@ CommandKind = Literal[
     "set_mode",
     "lift",
     "save_map",
+    "load_map",
     "set_exploration",
 ]
+MapMode = Literal["continuing", "localization"]
 LiftAction = Literal["stop", "raise", "lower", "move_to"]
 ReplyStatus = Literal["accepted", "completed", "rejected", "failed"]
 
@@ -157,6 +159,8 @@ class RobotCommand:
     lift_action: Optional[LiftAction] = None
     lift_target_height_m: Optional[float] = None
     exploration_enabled: Optional[bool] = None
+    map_prefix: Optional[str] = None
+    map_mode: Optional[MapMode] = None
 
     def to_chassis_command(self) -> ChassisCommand:
         if self.kind == "manual_motion":

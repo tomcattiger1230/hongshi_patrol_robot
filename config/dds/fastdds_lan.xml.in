@@ -5,6 +5,7 @@
       <transport_descriptor>
         <transport_id>robot320_udp</transport_id>
         <type>UDPv4</type>
+        <maxInitialPeersRange>64</maxInitialPeersRange>
         <interfaceWhiteList>
           <address>@ROBOT320_LAN_ADDRESS@</address>
         </interfaceWhiteList>
@@ -12,6 +13,15 @@
     </transport_descriptors>
     <participant profile_name="robot320_lan" is_default_profile="true">
       <rtps>
+        <builtin>
+          <initialPeersList>
+            <locator>
+              <udpv4>
+                <address>@ROBOT320_PEER_ADDRESS@</address>
+              </udpv4>
+            </locator>
+          </initialPeersList>
+        </builtin>
         <userTransports>
           <transport_id>robot320_udp</transport_id>
         </userTransports>

@@ -4,7 +4,10 @@
 from __future__ import annotations
 
 import argparse
+import os
+from pathlib import Path
 import sys
+import threading
 import time
 from typing import Callable
 
@@ -18,12 +21,14 @@ try:
         QApplication,
         QComboBox,
         QDoubleSpinBox,
+        QFileDialog,
         QFormLayout,
         QGridLayout,
         QGroupBox,
         QHBoxLayout,
         QLabel,
         QMainWindow,
+        QMessageBox,
         QPlainTextEdit,
         QProgressBar,
         QPushButton,
@@ -37,7 +42,8 @@ except ImportError:  # pragma: no cover - depends on desktop environment.
 
 
 if QApplication is not None:
-    from .map_model import map_snapshot
+    from .map_model import load_map_yaml, map_snapshot, save_map_yaml
+    from .map_transfer import SshMapSessionTransfer
     from .navigation_gui import MapView
 
     class CommunicationWorker(QObject):
@@ -45,6 +51,7 @@ if QApplication is not None:
         map_received = Signal(object)
         reply_received = Signal(object)
         command_sent = Signal(str, str)
+        map_save_sent = Signal(str)
         connection_changed = Signal(bool, str)
         error = Signal(str)
 
@@ -170,10 +177,27 @@ if QApplication is not None:
             if self.client:
                 self._send(f"切换到 {mode} 模式", self.client.set_mode, mode)
 
-        @Slot()
-        def save_map(self) -> None:
+        @Slot(object)
+        def save_map(self, map_prefix: object = None) -> None:
             if self.client:
-                self._send("保存当前地图", self.client.save_map)
+                prefix = str(map_prefix) if map_prefix else None
+                try:
+                    command_id = self.client.save_map(prefix)
+                except Exception as exc:
+                    self.error.emit(f"发送“保存当前地图”失败：{exc}")
+                    return
+                self.command_sent.emit(command_id, "保存当前地图")
+                self.map_save_sent.emit(command_id)
+
+        @Slot(str, str)
+        def load_map(self, map_prefix: str, mode: str) -> None:
+            if self.client:
+                self._send(
+                    f"载入地图 {map_prefix} ({mode})",
+                    self.client.load_map,
+                    map_prefix,
+                    mode,
+                )
 
         @Slot(bool)
         def set_exploration(self, enabled: bool) -> None:
@@ -216,19 +240,38 @@ if QApplication is not None:
         navigation_requested = Signal(float, float, float)
         cancel_navigation_requested = Signal()
         mode_requested = Signal(str)
-        save_map_requested = Signal()
+        save_map_requested = Signal(object)
+        load_map_requested = Signal(str, str)
         exploration_requested = Signal(bool)
         lift_requested = Signal(str, object)
+        transfer_completed = Signal(str, object)
+        transfer_failed = Signal(str, str)
 
-        def __init__(self, domain_id: int, client_id: str, backend: str = "auto"):
+        def __init__(
+            self,
+            domain_id: int,
+            client_id: str,
+            backend: str = "auto",
+            ssh_target: str = "",
+            remote_map_directory: str = "~/robot320_maps",
+        ):
             super().__init__()
             self.domain_id = domain_id
             self.client_id = client_id
             self.backend = backend
             self._last_telemetry_at = 0.0
             self._last_map_revision: str | None = None
+            self._map_snapshot = None
             self._motion: tuple[float, float] | None = None
             self._closing = False
+            self._pending_download = None
+            self._download_commands: dict[str, tuple[str, str]] = {}
+            self._local_command_ids: set[str] = set()
+            self.map_transfer = (
+                SshMapSessionTransfer(ssh_target, remote_map_directory)
+                if ssh_target and backend != "demo"
+                else None
+            )
 
             title_suffix = " [离线演示]" if backend == "demo" else ""
             self.setWindowTitle(f"Robot320 远程控制台{title_suffix}")
@@ -262,14 +305,18 @@ if QApplication is not None:
             self.cancel_navigation_requested.connect(self.worker.cancel_navigation)
             self.mode_requested.connect(self.worker.set_mode)
             self.save_map_requested.connect(self.worker.save_map)
+            self.load_map_requested.connect(self.worker.load_map)
             self.exploration_requested.connect(self.worker.set_exploration)
             self.lift_requested.connect(self.worker.lift)
             self.worker.telemetry_received.connect(self._on_telemetry)
             self.worker.map_received.connect(self._on_map)
             self.worker.reply_received.connect(self._on_reply)
             self.worker.command_sent.connect(self._on_command_sent)
+            self.worker.map_save_sent.connect(self._on_map_save_sent)
             self.worker.connection_changed.connect(self._on_connection_changed)
             self.worker.error.connect(self._on_error)
+            self.transfer_completed.connect(self._on_transfer_completed)
+            self.transfer_failed.connect(self._on_transfer_failed)
 
         def _build_ui(self) -> None:
             central = QWidget()
@@ -494,17 +541,31 @@ if QApplication is not None:
             mapping.clicked.connect(
                 lambda _checked=False: self.mode_requested.emit("manual")
             )
-            save = QPushButton("保存当前地图")
+            save = QPushButton("保存到机器人")
             save.clicked.connect(
-                lambda _checked=False: self.save_map_requested.emit()
+                lambda _checked=False: self.save_map_requested.emit(None)
             )
+            export = QPushButton("导出栅格到 Mac…")
+            export.clicked.connect(self._export_grid_map)
             self.map_navigate = QPushButton("导航到已选目标")
             self.map_navigate.setEnabled(False)
             self.map_navigate.clicked.connect(self._send_selected_map_goal)
             actions.addWidget(mapping)
             actions.addWidget(save)
+            actions.addWidget(export)
             actions.addWidget(self.map_navigate)
             layout.addLayout(actions)
+
+            session_actions = QHBoxLayout()
+            self.download_session = QPushButton("保存完整会话到 Mac…")
+            self.download_session.setEnabled(self.map_transfer is not None)
+            self.download_session.clicked.connect(self._save_full_session_to_mac)
+            self.upload_session = QPushButton("从 Mac 载入地图…")
+            self.upload_session.setEnabled(self.map_transfer is not None)
+            self.upload_session.clicked.connect(self._load_map_from_mac)
+            session_actions.addWidget(self.download_session)
+            session_actions.addWidget(self.upload_session)
+            layout.addLayout(session_actions)
 
             exploration_actions = QHBoxLayout()
             self.start_exploration = QPushButton("▶ 启动自由探索")
@@ -583,6 +644,7 @@ if QApplication is not None:
                 self._on_error(f"地图数据无效：{exc}")
                 return
             self.map_view.set_map(snapshot)
+            self._map_snapshot = snapshot
             self._last_map_revision = remote_map.revision
             self.map_status.setText(
                 f"地图 {remote_map.width}×{remote_map.height} · "
@@ -608,6 +670,119 @@ if QApplication is not None:
             self.navigation_requested.emit(
                 self.goal_x.value(), self.goal_y.value(), self.goal_yaw.value()
             )
+
+        def _export_grid_map(self) -> None:
+            if self._map_snapshot is None:
+                self._on_error("尚未收到地图，无法导出")
+                return
+            default = str(Path.home() / "robot320_maps" / "patrol_current.yaml")
+            selected, _filter = QFileDialog.getSaveFileName(
+                self, "导出 Robot320 栅格地图", default, "ROS 地图 (*.yaml)"
+            )
+            if not selected:
+                return
+            try:
+                yaml_path, pgm_path = save_map_yaml(self._map_snapshot, selected)
+            except Exception as exc:
+                self._on_error(f"导出地图失败：{exc}")
+                return
+            self._append_log(f"地图已导出到 Mac：{yaml_path}、{pgm_path}")
+
+        def _save_full_session_to_mac(self) -> None:
+            if self.map_transfer is None:
+                self._on_error("未配置机器人 SSH 目标")
+                return
+            if self._pending_download is not None:
+                self._on_error("已有地图保存任务正在等待机器人完成")
+                return
+            default = str(Path.home() / "robot320_maps" / "patrol_current.yaml")
+            selected, _filter = QFileDialog.getSaveFileName(
+                self, "保存完整 SLAM 会话到 Mac", default, "ROS 地图 (*.yaml)"
+            )
+            if not selected:
+                return
+            try:
+                remote_prefix = self.map_transfer.remote_prefix(Path(selected).stem)
+            except ValueError as exc:
+                self._on_error(str(exc))
+                return
+            self._pending_download = (remote_prefix, selected)
+            self.download_session.setEnabled(False)
+            self._append_log(f"请求机器人生成完整地图会话：{remote_prefix}")
+            self.save_map_requested.emit(remote_prefix)
+
+        @Slot(str)
+        def _on_map_save_sent(self, command_id: str) -> None:
+            if self._pending_download is None:
+                return
+            self._download_commands[command_id] = self._pending_download
+            self._pending_download = None
+
+        def _load_map_from_mac(self) -> None:
+            if self.map_transfer is None:
+                self._on_error("未配置机器人 SSH 目标")
+                return
+            selected, _filter = QFileDialog.getOpenFileName(
+                self,
+                "从 Mac 载入 Robot320 地图",
+                str(Path.home() / "robot320_maps"),
+                "ROS 地图 (*.yaml *.yml)",
+            )
+            if not selected:
+                return
+            try:
+                snapshot = load_map_yaml(selected)
+            except Exception as exc:
+                self._on_error(f"读取地图失败：{exc}")
+                return
+            answer = QMessageBox.question(
+                self,
+                "确认载入地图",
+                "载入会停止自由探索和当前导航，并替换机器人使用的地图。是否继续？",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+            self.map_view.set_map(snapshot)
+            self.map_status.setText(f"本机预览 · {Path(selected).name}")
+            self.upload_session.setEnabled(False)
+            self._append_log(f"正在通过 SSH 上传地图会话：{selected}")
+            self._run_transfer("upload", self.map_transfer.upload, selected)
+
+        def _run_transfer(self, operation: str, function: Callable, *args) -> None:
+            def run() -> None:
+                try:
+                    result = function(*args)
+                except Exception as exc:
+                    message = getattr(exc, "stderr", None) or str(exc)
+                    self.transfer_failed.emit(operation, str(message).strip())
+                    return
+                self.transfer_completed.emit(operation, result)
+
+            threading.Thread(target=run, name=f"robot320-map-{operation}", daemon=True).start()
+
+        @Slot(str, object)
+        def _on_transfer_completed(self, operation: str, result: object) -> None:
+            if operation == "upload":
+                self.upload_session.setEnabled(True)
+                self._append_log(
+                    f"地图已上传，正在通知机器人载入：{result.remote_prefix}"
+                )
+                self.load_map_requested.emit(result.remote_prefix, result.mode)
+                return
+            self.download_session.setEnabled(True)
+            paths = ", ".join(str(path) for path in result)
+            self._append_log(f"完整地图会话已保存到 Mac：{paths}")
+            self.statusBar().showMessage("完整地图会话已保存到 Mac", 8000)
+
+        @Slot(str, str)
+        def _on_transfer_failed(self, operation: str, message: str) -> None:
+            if operation == "upload":
+                self.upload_session.setEnabled(True)
+            else:
+                self.download_session.setEnabled(True)
+            self._on_error(f"地图文件传输失败：{message}")
 
         @Slot(object)
         def _on_telemetry(self, telemetry) -> None:
@@ -640,12 +815,28 @@ if QApplication is not None:
 
         @Slot(object)
         def _on_reply(self, reply) -> None:
+            if reply.command_id not in self._local_command_ids:
+                return
             self._append_log(
                 f"应答 {reply.status.upper()}  {reply.command_id[:8]}  {reply.message}"
+            )
+            download = self._download_commands.get(reply.command_id)
+            if download is None or reply.status not in {"completed", "failed", "rejected"}:
+                return
+            self._download_commands.pop(reply.command_id, None)
+            if reply.status != "completed":
+                self.download_session.setEnabled(True)
+                self._on_error(f"机器人保存完整地图失败：{reply.message}")
+                return
+            remote_prefix, local_path = download
+            self._append_log("机器人保存完成，正在下载地图文件…")
+            self._run_transfer(
+                "download", self.map_transfer.download, remote_prefix, local_path
             )
 
         @Slot(str, str)
         def _on_command_sent(self, command_id: str, description: str) -> None:
+            self._local_command_ids.add(command_id)
             self._append_log(f"发送 {command_id[:8]}  {description}")
 
         @Slot(bool, str)
@@ -726,6 +917,16 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--backend", choices=["auto", "ros2", "fastdds", "demo"], default="auto"
     )
+    parser.add_argument(
+        "--robot-ssh",
+        default=os.environ.get("ROBOT320_SSH_TARGET", "arnold@192.168.0.218"),
+        help="SSH target used for map-session file transfer",
+    )
+    parser.add_argument(
+        "--remote-map-directory",
+        default=os.environ.get("ROBOT320_REMOTE_MAP_DIR", "~/robot320_maps"),
+        help="robot-side directory allowed for map sessions",
+    )
     return parser
 
 
@@ -739,7 +940,13 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     app = QApplication(sys.argv[:1])
     app.setApplicationName("Robot320 Remote Control")
-    window = RemoteControlWindow(args.domain_id, args.client_id, args.backend)
+    window = RemoteControlWindow(
+        args.domain_id,
+        args.client_id,
+        args.backend,
+        args.robot_ssh,
+        args.remote_map_directory,
+    )
     window.show()
     return app.exec()
 

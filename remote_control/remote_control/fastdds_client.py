@@ -85,8 +85,26 @@ class RobotRemoteFastDDSClient:
             RobotCommand(kind="cancel_navigation", client_id=self.client_id)
         )
 
-    def save_map(self) -> str:
-        return self._send(RobotCommand(kind="save_map", client_id=self.client_id))
+    def save_map(self, map_prefix: str | None = None) -> str:
+        return self._send(
+            RobotCommand(
+                kind="save_map",
+                client_id=self.client_id,
+                map_prefix=map_prefix,
+            )
+        )
+
+    def load_map(self, map_prefix: str, mode: str = "continuing") -> str:
+        if mode not in {"continuing", "localization"}:
+            raise ValueError(f"unsupported map mode: {mode}")
+        return self._send(
+            RobotCommand(
+                kind="load_map",
+                client_id=self.client_id,
+                map_prefix=map_prefix,
+                map_mode=mode,
+            )
+        )
 
     def set_exploration(self, enabled: bool) -> str:
         return self._send(
@@ -150,6 +168,9 @@ class RobotRemoteFastDDSClient:
         self._transport.close()
 
     def _send(self, command: RobotCommand) -> str:
+        wait_for_match = getattr(self._transport, "wait_for_command_match", None)
+        if wait_for_match is not None and not wait_for_match(5.0):
+            raise TimeoutError("robot command reader was not discovered within 5 seconds")
         command.session_id = self.session_id
         command.sequence = self._next_sequence()
         command.stamp = time.time()
@@ -193,7 +214,13 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("estop")
     sub.add_parser("reset")
     sub.add_parser("cancel")
-    sub.add_parser("save-map")
+    save_map = sub.add_parser("save-map")
+    save_map.add_argument("--prefix")
+    load_map = sub.add_parser("load-map")
+    load_map.add_argument("--prefix", required=True)
+    load_map.add_argument(
+        "--mode", choices=["continuing", "localization"], default="continuing"
+    )
     exploration = sub.add_parser("exploration")
     exploration.add_argument("state", choices=["start", "stop"])
 
@@ -237,7 +264,9 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "cancel":
             client.cancel_navigation()
         elif args.command == "save-map":
-            client.save_map()
+            client.save_map(args.prefix)
+        elif args.command == "load-map":
+            client.load_map(args.prefix, args.mode)
         elif args.command == "exploration":
             client.set_exploration(args.state == "start")
         elif args.command == "lift":

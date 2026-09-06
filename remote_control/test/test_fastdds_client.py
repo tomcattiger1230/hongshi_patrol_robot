@@ -38,6 +38,7 @@ def test_remote_client_builds_high_level_commands():
         client.send_navigation_goal(1.0, 2.0, 0.5)
         client.cancel_navigation()
         client.save_map()
+        client.load_map("~/robot320_maps/site_a", "continuing")
         client.set_exploration(True)
         client.control_lift("move_to", 1.4)
         time.sleep(0.02)
@@ -49,13 +50,16 @@ def test_remote_client_builds_high_level_commands():
         "navigation_goal",
         "cancel_navigation",
         "save_map",
+        "load_map",
         "set_exploration",
         "lift",
     ]
     assert transport.commands[0].linear_speed_mps == 0.3
     assert transport.commands[1].goal.x_m == 1.0
-    assert transport.commands[4].exploration_enabled is True
-    assert transport.commands[5].lift_target_height_m == 1.4
+    assert transport.commands[4].map_prefix == "~/robot320_maps/site_a"
+    assert transport.commands[4].map_mode == "continuing"
+    assert transport.commands[5].exploration_enabled is True
+    assert transport.commands[6].lift_target_height_m == 1.4
     assert all(item.sequence > 0 for item in transport.commands)
     assert len({item.session_id for item in transport.commands}) == 1
     assert transport.commands[0].session_id

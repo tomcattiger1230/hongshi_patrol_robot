@@ -1,4 +1,4 @@
-"""Map-session transfer helpers for the macOS remote GUI."""
+"""Map-session transfer helpers for the cross-platform remote GUI."""
 
 from __future__ import annotations
 

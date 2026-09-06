@@ -141,8 +141,8 @@ GUI 的 `--backend auto` 默认优先选择 ROS 2。只有 Windows、macOS 等�
 需要额外安装 Fast DDS Python binding 和生成 ROS 2 String TypeSupport。具体步骤见
 [`remote_control/README.md`](./remote_control/README.md)。
 
-macOS 综合 GUI 可通过 Fast DDS 接收 Ubuntu/AGV 的压缩栅格地图，在地图上拖拽选择
-Nav2 目标，也可切入人工扫图模式，将栅格或完整 SLAM 会话保存到 Mac，并从 Mac 上传
+跨平台综合 GUI 可通过 Fast DDS 接收 Ubuntu/AGV 的压缩栅格地图，在地图上拖拽选择
+Nav2 期望目标，也可切入人工扫图模式，将栅格或完整 SLAM 会话保存到本机，并从本机上传
 和载入地图；地图文件通过 SSH 公钥连接传输，DDS 负责保存/载入命令及结果。Ubuntu 仍
 负责 SLAM、规划、避障和底盘安全控制。
 

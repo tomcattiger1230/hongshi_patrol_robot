@@ -147,6 +147,25 @@ def goal_yaw(
     return math.atan2(delta_y, delta_x)
 
 
+def navigation_target_error(
+    snapshot: MapSnapshot | None,
+    world_x: float,
+    world_y: float,
+    occupied_threshold: int = 65,
+) -> str | None:
+    """Return a user-facing reason why a navigation target is unsafe."""
+    if snapshot is None:
+        return "尚未收到地图"
+    occupancy = snapshot.occupancy_at_world(world_x, world_y)
+    if occupancy is None:
+        return "目标位于地图范围外"
+    if occupancy < 0:
+        return "目标位于未知区域"
+    if occupancy >= occupied_threshold:
+        return "目标位于障碍物区域"
+    return None
+
+
 def pose_uncertainty(covariance: Sequence[float]) -> tuple[float, float]:
     """Return conservative planar position and yaw standard deviations."""
     if len(covariance) != 36:

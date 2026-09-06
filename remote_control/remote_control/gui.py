@@ -42,7 +42,12 @@ except ImportError:  # pragma: no cover - depends on desktop environment.
 
 
 if QApplication is not None:
-    from .map_model import load_map_yaml, map_snapshot, save_map_yaml
+    from .map_model import (
+        load_map_yaml,
+        map_snapshot,
+        navigation_target_error,
+        save_map_yaml,
+    )
     from .map_transfer import SshMapSessionTransfer
     from .navigation_gui import MapView
 
@@ -267,6 +272,7 @@ if QApplication is not None:
             self._pending_download = None
             self._download_commands: dict[str, tuple[str, str]] = {}
             self._local_command_ids: set[str] = set()
+            self._active_navigation_command_id: str | None = None
             self.map_transfer = (
                 SshMapSessionTransfer(ssh_target, remote_map_directory)
                 if ssh_target and backend != "demo"
@@ -465,13 +471,9 @@ if QApplication is not None:
             form.addRow("目标 Y", self.goal_y)
             form.addRow("目标朝向", self.goal_yaw)
             layout.addLayout(form)
-            send = QPushButton("发送导航目标")
+            send = QPushButton("发送期望目标")
             send.setMinimumHeight(52)
-            send.clicked.connect(
-                lambda _checked=False: self.navigation_requested.emit(
-                    self.goal_x.value(), self.goal_y.value(), self.goal_yaw.value()
-                )
-            )
+            send.clicked.connect(self._send_coordinate_goal)
             cancel = QPushButton("取消当前导航")
             cancel.clicked.connect(
                 lambda _checked=False: self.cancel_navigation_requested.emit()
@@ -525,6 +527,10 @@ if QApplication is not None:
             info.addWidget(self.map_cursor)
             layout.addLayout(info)
 
+            self.selected_goal_status = QLabel("期望目标：尚未选择")
+            self.selected_goal_status.setWordWrap(True)
+            layout.addWidget(self.selected_goal_status)
+
             view_actions = QHBoxLayout()
             fit = QPushButton("适应窗口")
             fit.clicked.connect(self.map_view.fit_map)
@@ -545,9 +551,9 @@ if QApplication is not None:
             save.clicked.connect(
                 lambda _checked=False: self.save_map_requested.emit(None)
             )
-            export = QPushButton("导出栅格到 Mac…")
+            export = QPushButton("导出栅格地图…")
             export.clicked.connect(self._export_grid_map)
-            self.map_navigate = QPushButton("导航到已选目标")
+            self.map_navigate = QPushButton("发送已选期望目标")
             self.map_navigate.setEnabled(False)
             self.map_navigate.clicked.connect(self._send_selected_map_goal)
             actions.addWidget(mapping)
@@ -557,10 +563,10 @@ if QApplication is not None:
             layout.addLayout(actions)
 
             session_actions = QHBoxLayout()
-            self.download_session = QPushButton("保存完整会话到 Mac…")
+            self.download_session = QPushButton("保存完整会话到本机…")
             self.download_session.setEnabled(self.map_transfer is not None)
             self.download_session.clicked.connect(self._save_full_session_to_mac)
-            self.upload_session = QPushButton("从 Mac 载入地图…")
+            self.upload_session = QPushButton("从本机载入地图…")
             self.upload_session.setEnabled(self.map_transfer is not None)
             self.upload_session.clicked.connect(self._load_map_from_mac)
             session_actions.addWidget(self.download_session)
@@ -653,10 +659,20 @@ if QApplication is not None:
 
         @Slot(float, float, float)
         def _on_map_goal(self, x_m: float, y_m: float, yaw_rad: float) -> None:
+            error = navigation_target_error(self._map_snapshot, x_m, y_m)
+            if error:
+                self.map_view.clear_goal()
+                self.map_navigate.setEnabled(False)
+                self.selected_goal_status.setText(f"期望目标不可用：{error}")
+                self.statusBar().showMessage(f"期望目标未选择：{error}", 6000)
+                return
             self.goal_x.setValue(x_m)
             self.goal_y.setValue(y_m)
             self.goal_yaw.setValue(yaw_rad)
             self.map_navigate.setEnabled(True)
+            self.selected_goal_status.setText(
+                f"期望目标：x={x_m:.2f} m，y={y_m:.2f} m，yaw={yaw_rad:.2f} rad"
+            )
             self.statusBar().showMessage(
                 f"已选择目标 ({x_m:.2f}, {y_m:.2f}), 朝向 {yaw_rad:.2f} rad",
                 5000,
@@ -667,9 +683,30 @@ if QApplication is not None:
             self.map_cursor.setText(f"光标: {x_m:.2f}, {y_m:.2f} m")
 
         def _send_selected_map_goal(self) -> None:
-            self.navigation_requested.emit(
+            self._send_expected_goal(
                 self.goal_x.value(), self.goal_y.value(), self.goal_yaw.value()
             )
+
+        def _send_coordinate_goal(self) -> None:
+            x_m = self.goal_x.value()
+            y_m = self.goal_y.value()
+            yaw_rad = self.goal_yaw.value()
+            if self._map_snapshot is not None:
+                self.map_view.set_goal(x_m, y_m, yaw_rad)
+            self._send_expected_goal(x_m, y_m, yaw_rad)
+
+        def _send_expected_goal(self, x_m: float, y_m: float, yaw_rad: float) -> None:
+            error = navigation_target_error(self._map_snapshot, x_m, y_m)
+            if error:
+                self.map_navigate.setEnabled(False)
+                self.selected_goal_status.setText(f"期望目标未发送：{error}")
+                self._on_error(f"期望目标未发送：{error}")
+                return
+            self.map_navigate.setEnabled(True)
+            self.selected_goal_status.setText(
+                f"期望目标发送中：x={x_m:.2f} m，y={y_m:.2f} m，yaw={yaw_rad:.2f} rad"
+            )
+            self.navigation_requested.emit(x_m, y_m, yaw_rad)
 
         def _export_grid_map(self) -> None:
             if self._map_snapshot is None:
@@ -677,7 +714,7 @@ if QApplication is not None:
                 return
             default = str(Path.home() / "robot320_maps" / "patrol_current.yaml")
             selected, _filter = QFileDialog.getSaveFileName(
-                self, "导出 Robot320 栅格地图", default, "ROS 地图 (*.yaml)"
+                self, "导出 Robot320 栅格地图到本机", default, "ROS 地图 (*.yaml)"
             )
             if not selected:
                 return
@@ -686,7 +723,7 @@ if QApplication is not None:
             except Exception as exc:
                 self._on_error(f"导出地图失败：{exc}")
                 return
-            self._append_log(f"地图已导出到 Mac：{yaml_path}、{pgm_path}")
+            self._append_log(f"地图已导出到本机：{yaml_path}、{pgm_path}")
 
         def _save_full_session_to_mac(self) -> None:
             if self.map_transfer is None:
@@ -697,7 +734,7 @@ if QApplication is not None:
                 return
             default = str(Path.home() / "robot320_maps" / "patrol_current.yaml")
             selected, _filter = QFileDialog.getSaveFileName(
-                self, "保存完整 SLAM 会话到 Mac", default, "ROS 地图 (*.yaml)"
+                self, "保存完整 SLAM 会话到本机", default, "ROS 地图 (*.yaml)"
             )
             if not selected:
                 return
@@ -724,7 +761,7 @@ if QApplication is not None:
                 return
             selected, _filter = QFileDialog.getOpenFileName(
                 self,
-                "从 Mac 载入 Robot320 地图",
+                "从本机载入 Robot320 地图",
                 str(Path.home() / "robot320_maps"),
                 "ROS 地图 (*.yaml *.yml)",
             )
@@ -747,7 +784,7 @@ if QApplication is not None:
             self.map_view.set_map(snapshot)
             self.map_status.setText(f"本机预览 · {Path(selected).name}")
             self.upload_session.setEnabled(False)
-            self._append_log(f"正在通过 SSH 上传地图会话：{selected}")
+            self._append_log(f"正在通过 SSH 上传本机地图会话：{selected}")
             self._run_transfer("upload", self.map_transfer.upload, selected)
 
         def _run_transfer(self, operation: str, function: Callable, *args) -> None:
@@ -773,8 +810,8 @@ if QApplication is not None:
                 return
             self.download_session.setEnabled(True)
             paths = ", ".join(str(path) for path in result)
-            self._append_log(f"完整地图会话已保存到 Mac：{paths}")
-            self.statusBar().showMessage("完整地图会话已保存到 Mac", 8000)
+            self._append_log(f"完整地图会话已保存到本机：{paths}")
+            self.statusBar().showMessage("完整地图会话已保存到本机", 8000)
 
         @Slot(str, str)
         def _on_transfer_failed(self, operation: str, message: str) -> None:
@@ -820,6 +857,17 @@ if QApplication is not None:
             self._append_log(
                 f"应答 {reply.status.upper()}  {reply.command_id[:8]}  {reply.message}"
             )
+            if reply.command_id == self._active_navigation_command_id:
+                if reply.status == "accepted":
+                    self.selected_goal_status.setText("期望目标已被 Nav2 接受，正在执行")
+                elif reply.status in {"completed", "failed", "rejected"}:
+                    status_text = {
+                        "completed": "期望目标执行完成",
+                        "failed": "期望目标执行失败",
+                        "rejected": "期望目标被拒绝",
+                    }[reply.status]
+                    self.selected_goal_status.setText(f"{status_text}：{reply.message}")
+                    self._active_navigation_command_id = None
             download = self._download_commands.get(reply.command_id)
             if download is None or reply.status not in {"completed", "failed", "rejected"}:
                 return
@@ -837,6 +885,9 @@ if QApplication is not None:
         @Slot(str, str)
         def _on_command_sent(self, command_id: str, description: str) -> None:
             self._local_command_ids.add(command_id)
+            if description.startswith("导航目标"):
+                self._active_navigation_command_id = command_id
+                self.selected_goal_status.setText("期望目标已发送，等待 Nav2 接受")
             self._append_log(f"发送 {command_id[:8]}  {description}")
 
         @Slot(bool, str)

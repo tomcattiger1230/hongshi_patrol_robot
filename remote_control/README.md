@@ -180,10 +180,11 @@ FASTDDSGEN_SOURCE="$HOME/Develop/fastdds-python/src/fastddsgen" \
 
 ## 4. 使用 GUI
 
-### 4.1 macOS 远程扫图与导航
+### 4.1 跨平台远程扫图与导航
 
-综合面板会从 `/robot320/map` 接收网关压缩后的 OccupancyGrid，因此 macOS 不需要安装
-ROS 2。推荐让 Ubuntu/AGV 常驻运行 SLAM、Nav2 和通信网关；Mac 只运行 GUI：
+综合面板会从 `/robot320/map` 接收网关压缩后的 OccupancyGrid。推荐让
+Ubuntu/AGV 常驻运行 SLAM、Nav2 和通信网关；任意支持 Python、PySide6 和
+Fast DDS 的桌面平台只运行 GUI，无需安装 ROS 2：
 
 ```bash
 # Ubuntu/AGV：实车 Cartographer 建图 + Nav2 + 底盘 + DDS 网关
@@ -193,7 +194,7 @@ ros2 launch robot320_localization_bringup robot320_slam.launch.py \
   mode:=mapping enable_nav2:=true enable_fastdds_gateway:=true \
   fastdds_domain_id:=20
 
-# macOS
+# 桌面端（以 macOS 路径为例）
 cd ~/Develop/github_ws/hongshi_patrol_robot
 source ./scripts/source_dds_lan.sh 192.168.0.218
 ./scripts/uv_run.sh desktop robot320_remote_gui \
@@ -209,13 +210,15 @@ source ./scripts/source_dds_lan.sh 192.168.0.218
 2. 点“保存到机器人”。SLAM Toolbox 持久化管理器存在时保存 pose graph、YAML 和 PGM；
    Cartographer 模式则保存到 Ubuntu 的
    `~/robot320_maps/patrol_current.pbstream`。
-   “导出栅格到 Mac…”直接将当前 DDS 地图写成 `.yaml/.pgm`；“保存完整会话到 Mac…”
+   “导出栅格地图…”直接将当前 DDS 地图写成 `.yaml/.pgm`；“保存完整会话到本机…”
    先通过 DDS 请求机器人生成 `.yaml/.pgm/.posegraph/.data`，完成后通过 SSH 公钥连接
-   下载。“从 Mac 载入地图…”会上传所选 YAML 及其图像；存在同名 `.posegraph/.data`
+   下载。“从本机载入地图…”会上传所选 YAML 及其图像；存在同名 `.posegraph/.data`
    时按 continuing 会话载入，否则尝试调用 map_server 的 localization 地图载入服务。
    载入前会要求确认，并停止自由探索、当前导航和底盘速度。
-3. 在地图上按下并拖动，选定目标位置和车头方向，点“导航到已选目标”。目标仍由 Ubuntu
-   上的 Nav2 规划、避障和执行；Mac 断网不会在本地直接驱动电机。
+3. 在地图上按下并拖动，选定目标位置和车头方向，点“发送已选期望目标”；
+   也可在“导航目标”页输入 `x/y/yaw` 后发送。GUI 会拒绝地图范围外、未知区和
+   障碍物单元上的目标，并显示 Nav2 接受、完成或失败状态。目标仍由 Ubuntu 上的
+   Nav2 规划、避障和执行；桌面端断网不会在本地直接驱动电机。
 4. 点“启动自由探索”后，Ubuntu 的 frontier explorer 会持续寻找已知空闲区与未知区的
    边界并自动发送 Nav2 目标；点“停止自由探索”、人工驾驶、发送单点目标、刹车或急停
    都会取消探索控制权。停止探索不会清空或回滚已经建立的地图。

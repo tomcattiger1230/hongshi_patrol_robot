@@ -7,6 +7,7 @@ from remote_control.map_model import (
     goal_yaw,
     load_map_yaml,
     map_snapshot,
+    navigation_target_error,
     polyline_length,
     pose_uncertainty,
     project_laser_scan,
@@ -52,6 +53,24 @@ def test_map_geometry_round_trip_with_rotated_origin():
 def test_goal_yaw_uses_drag_direction_and_click_fallback():
     assert goal_yaw(1.0, 2.0, 1.0, 3.0) == pytest.approx(math.pi / 2.0)
     assert goal_yaw(1.0, 2.0, 1.01, 2.01, fallback=-0.4) == pytest.approx(-0.4)
+
+
+def test_navigation_target_validation_rejects_unsafe_cells():
+    snapshot = map_snapshot(
+        width=3,
+        height=1,
+        resolution=1.0,
+        origin_x=0.0,
+        origin_y=0.0,
+        origin_yaw=0.0,
+        data=[0, -1, 100],
+    )
+
+    assert navigation_target_error(None, 0.5, 0.5) == "尚未收到地图"
+    assert navigation_target_error(snapshot, 0.5, 0.5) is None
+    assert navigation_target_error(snapshot, 1.5, 0.5) == "目标位于未知区域"
+    assert navigation_target_error(snapshot, 2.5, 0.5) == "目标位于障碍物区域"
+    assert navigation_target_error(snapshot, 4.0, 0.5) == "目标位于地图范围外"
 
 
 def test_map_snapshot_rejects_wrong_cell_count():

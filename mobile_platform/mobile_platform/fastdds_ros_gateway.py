@@ -546,9 +546,6 @@ class Robot320FastDDSRosGateway(Node):
         )
         speed_mps = math.hypot(msg.twist.twist.linear.x, msg.twist.twist.linear.y)
         localized_pose = getattr(self, "_latest_localization_pose", None)
-        localization_age = time.monotonic() - getattr(
-            self, "_last_localization_pose_received", 0.0
-        )
         self._simulation_telemetry = RobotTelemetry(
             robot_id=self.robot_id,
             online=True,
@@ -557,11 +554,7 @@ class Robot320FastDDSRosGateway(Node):
                 enabled=True,
                 speed_kmh=speed_mps * 3.6,
             ),
-            pose=(
-                localized_pose
-                if localized_pose is not None and localization_age < 2.0
-                else odometry_pose
-            ),
+            pose=localized_pose or odometry_pose,
         )
         self._last_odometry_received = time.monotonic()
 

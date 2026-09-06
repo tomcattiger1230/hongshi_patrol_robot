@@ -257,7 +257,7 @@ def test_simulation_odometry_provides_online_pose_and_speed():
     assert gateway._last_odometry_received > 0.0
 
 
-def test_simulation_odometry_prefers_fresh_map_localization_pose():
+def test_simulation_odometry_keeps_last_map_localization_pose():
     class Value:
         pass
 
@@ -270,7 +270,7 @@ def test_simulation_odometry_prefers_fresh_map_localization_pose():
         yaw_rad=0.5,
         frame_id="map",
     )
-    gateway._last_localization_pose_received = time.monotonic()
+    gateway._last_localization_pose_received = time.monotonic() - 30.0
     message = Value()
     message.header = Value()
     message.header.frame_id = "odom"

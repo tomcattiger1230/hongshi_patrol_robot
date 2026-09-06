@@ -273,6 +273,7 @@ if QApplication is not None:
             self._download_commands: dict[str, tuple[str, str]] = {}
             self._local_command_ids: set[str] = set()
             self._active_navigation_command_id: str | None = None
+            self._pending_navigation_reply_id: str | None = None
             self.map_transfer = (
                 SshMapSessionTransfer(ssh_target, remote_map_directory)
                 if ssh_target and backend != "demo"
@@ -855,6 +856,7 @@ if QApplication is not None:
                 f"应答 {reply.status.upper()}  {reply.command_id[:8]}  {reply.message}"
             )
             if reply.command_id == self._active_navigation_command_id:
+                self._pending_navigation_reply_id = None
                 if reply.status == "accepted":
                     self.selected_goal_status.setText("期望目标已被 Nav2 接受，正在执行")
                 elif reply.status in {"completed", "failed", "rejected"}:
@@ -884,8 +886,26 @@ if QApplication is not None:
             self._local_command_ids.add(command_id)
             if description.startswith("导航目标"):
                 self._active_navigation_command_id = command_id
+                self._pending_navigation_reply_id = command_id
                 self.selected_goal_status.setText("期望目标已发送，等待 Nav2 接受")
+                QTimer.singleShot(
+                    10_000,
+                    lambda expected_id=command_id: self._on_navigation_reply_timeout(
+                        expected_id
+                    ),
+                )
             self._append_log(f"发送 {command_id[:8]}  {description}")
+
+        def _on_navigation_reply_timeout(self, command_id: str) -> None:
+            if self._pending_navigation_reply_id != command_id:
+                return
+            self._pending_navigation_reply_id = None
+            self.selected_goal_status.setText(
+                "Nav2 未在 10 秒内确认期望目标，请取消后重试"
+            )
+            self._append_log(
+                f"警告 {command_id[:8]}  Nav2 目标确认超时，未收到应答"
+            )
 
         @Slot(bool, str)
         def _on_connection_changed(self, connected: bool, message: str) -> None:

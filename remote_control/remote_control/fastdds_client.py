@@ -170,7 +170,9 @@ class RobotRemoteFastDDSClient:
     def _send(self, command: RobotCommand) -> str:
         wait_for_match = getattr(self._transport, "wait_for_command_match", None)
         if wait_for_match is not None and not wait_for_match(5.0):
-            raise TimeoutError("robot command reader was not discovered within 5 seconds")
+            raise TimeoutError(
+                "robot command/reply path was not discovered within 5 seconds"
+            )
         command.session_id = self.session_id
         command.sequence = self._next_sequence()
         command.stamp = time.time()

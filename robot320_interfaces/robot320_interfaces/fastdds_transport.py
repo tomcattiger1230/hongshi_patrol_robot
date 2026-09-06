@@ -184,7 +184,7 @@ class FastDdsRemoteTransport:
         self._command_writer = self.runtime.create_writer(COMMAND_TOPIC)
         self._heartbeat_writer = self.runtime.create_writer(HEARTBEAT_TOPIC)
         self.runtime.create_reader(STATE_TOPIC, self._on_state)
-        self.runtime.create_reader(REPLY_TOPIC, self._on_reply)
+        self._reply_reader = self.runtime.create_reader(REPLY_TOPIC, self._on_reply)
         self.runtime.create_reader(HEARTBEAT_TOPIC, self._on_heartbeat)
         self.runtime.create_reader(MAP_TOPIC, self._on_map)
 
@@ -194,12 +194,14 @@ class FastDdsRemoteTransport:
             raise TimeoutError("robot did not acknowledge the DDS command within 10 seconds")
 
     def wait_for_command_match(self, timeout_s: float = 5.0) -> bool:
-        """Wait until the ROS gateway command reader has matched this writer."""
-        status = self.runtime.fastdds.PublicationMatchedStatus()
+        """Wait until both sides of the command/reply path are matched."""
+        writer_status = self.runtime.fastdds.PublicationMatchedStatus()
+        reader_status = self.runtime.fastdds.SubscriptionMatchedStatus()
         deadline = time.monotonic() + max(0.0, timeout_s)
         while True:
-            self._command_writer.get_publication_matched_status(status)
-            if status.current_count > 0:
+            self._command_writer.get_publication_matched_status(writer_status)
+            self._reply_reader.get_subscription_matched_status(reader_status)
+            if writer_status.current_count > 0 and reader_status.current_count > 0:
                 return True
             if time.monotonic() >= deadline:
                 return False

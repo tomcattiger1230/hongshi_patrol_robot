@@ -220,11 +220,14 @@ class Robot320FastDDSRosGateway(Node):
         if odometry_topic:
             self.create_subscription(Odometry, odometry_topic, self._on_odometry, 10)
         if localization_pose_topic:
+            localization_qos = QoSProfile(depth=1)
+            localization_qos.reliability = ReliabilityPolicy.RELIABLE
+            localization_qos.durability = DurabilityPolicy.TRANSIENT_LOCAL
             self.create_subscription(
                 PoseWithCovarianceStamped,
                 localization_pose_topic,
                 self._on_localization_pose,
-                10,
+                localization_qos,
             )
         self.create_subscription(
             Bool,

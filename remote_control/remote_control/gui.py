@@ -400,10 +400,9 @@ if QApplication is not None:
         def _build_control_tabs(self) -> QWidget:
             tabs = QTabWidget()
             tabs.addTab(self._build_manual_tab(), "手动与安全")
-            tabs.addTab(self._build_navigation_tab(), "导航")
-            tabs.addTab(self._build_map_tab(), "地图扫图与导航")
+            tabs.addTab(self._build_navigation_tab(), "导航与地图")
             tabs.addTab(self._build_lift_tab(), "升降杆")
-            tabs.setCurrentIndex(2)
+            tabs.setCurrentIndex(1)
             return tabs
 
         def _build_manual_tab(self) -> QWidget:
@@ -460,29 +459,6 @@ if QApplication is not None:
             layout.addStretch()
             return page
 
-        def _build_navigation_tab(self) -> QWidget:
-            page = QWidget()
-            layout = QVBoxLayout(page)
-            form = QFormLayout()
-            self.goal_x = self._spin(-1000.0, 1000.0, 0.1, 0.0, " m")
-            self.goal_y = self._spin(-1000.0, 1000.0, 0.1, 0.0, " m")
-            self.goal_yaw = self._spin(-3.1416, 3.1416, 0.05, 0.0, " rad")
-            form.addRow("目标 X", self.goal_x)
-            form.addRow("目标 Y", self.goal_y)
-            form.addRow("目标朝向", self.goal_yaw)
-            layout.addLayout(form)
-            send = QPushButton("发送期望目标")
-            send.setMinimumHeight(52)
-            send.clicked.connect(self._send_coordinate_goal)
-            cancel = QPushButton("取消当前导航")
-            cancel.clicked.connect(
-                lambda _checked=False: self.cancel_navigation_requested.emit()
-            )
-            layout.addWidget(send)
-            layout.addWidget(cancel)
-            layout.addStretch()
-            return page
-
         def _build_lift_tab(self) -> QWidget:
             page = QWidget()
             layout = QVBoxLayout(page)
@@ -503,7 +479,7 @@ if QApplication is not None:
             layout.addStretch()
             return page
 
-        def _build_map_tab(self) -> QWidget:
+        def _build_navigation_tab(self) -> QWidget:
             page = QWidget()
             layout = QVBoxLayout(page)
             hint = QLabel(
@@ -514,7 +490,7 @@ if QApplication is not None:
             layout.addWidget(hint)
 
             self.map_view = MapView()
-            self.map_view.setMinimumSize(520, 400)
+            self.map_view.setMinimumSize(520, 340)
             self.map_view.goal_changed.connect(self._on_map_goal)
             self.map_view.cursor_changed.connect(self._on_map_cursor)
             layout.addWidget(self.map_view, 1)
@@ -530,6 +506,31 @@ if QApplication is not None:
             self.selected_goal_status = QLabel("期望目标：尚未选择")
             self.selected_goal_status.setWordWrap(True)
             layout.addWidget(self.selected_goal_status)
+
+            target = QGroupBox("期望目标（map 坐标系）")
+            target_layout = QGridLayout(target)
+            self.goal_x = self._spin(-1000.0, 1000.0, 0.1, 0.0, " m")
+            self.goal_y = self._spin(-1000.0, 1000.0, 0.1, 0.0, " m")
+            self.goal_yaw = self._spin(-3.1416, 3.1416, 0.05, 0.0, " rad")
+            target_layout.addWidget(QLabel("X"), 0, 0)
+            target_layout.addWidget(self.goal_x, 0, 1)
+            target_layout.addWidget(QLabel("Y"), 0, 2)
+            target_layout.addWidget(self.goal_y, 0, 3)
+            target_layout.addWidget(QLabel("朝向"), 0, 4)
+            target_layout.addWidget(self.goal_yaw, 0, 5)
+            self.map_navigate = QPushButton("发送地图所选目标")
+            self.map_navigate.setEnabled(False)
+            self.map_navigate.clicked.connect(self._send_selected_map_goal)
+            send_coordinates = QPushButton("发送输入坐标")
+            send_coordinates.clicked.connect(self._send_coordinate_goal)
+            cancel_navigation = QPushButton("取消当前导航")
+            cancel_navigation.clicked.connect(
+                lambda _checked=False: self.cancel_navigation_requested.emit()
+            )
+            target_layout.addWidget(self.map_navigate, 1, 0, 1, 2)
+            target_layout.addWidget(send_coordinates, 1, 2, 1, 2)
+            target_layout.addWidget(cancel_navigation, 1, 4, 1, 2)
+            layout.addWidget(target)
 
             view_actions = QHBoxLayout()
             fit = QPushButton("适应窗口")
@@ -553,13 +554,9 @@ if QApplication is not None:
             )
             export = QPushButton("导出栅格地图…")
             export.clicked.connect(self._export_grid_map)
-            self.map_navigate = QPushButton("发送已选期望目标")
-            self.map_navigate.setEnabled(False)
-            self.map_navigate.clicked.connect(self._send_selected_map_goal)
             actions.addWidget(mapping)
             actions.addWidget(save)
             actions.addWidget(export)
-            actions.addWidget(self.map_navigate)
             layout.addLayout(actions)
 
             session_actions = QHBoxLayout()

@@ -334,9 +334,12 @@ def generate_launch_description() -> LaunchDescription:
                 "min_frontier_size": 8,
                 "clearance_radius": 1.25,
                 "goal_timeout": 90.0,
+                "enabled": exploration,
             }
         ],
-        condition=IfCondition(exploration),
+        condition=IfCondition(
+            PythonExpression(["'", mode, "' != 'localization'"])
+        ),
     )
     rviz_node = Node(
         package="rviz2",

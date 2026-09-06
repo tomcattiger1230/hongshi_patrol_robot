@@ -209,6 +209,9 @@ source ./scripts/source_dds_lan.sh 192.168.0.218
    `~/robot320_maps/patrol_current.pbstream`。
 3. 在地图上按下并拖动，选定目标位置和车头方向，点“导航到已选目标”。目标仍由 Ubuntu
    上的 Nav2 规划、避障和执行；Mac 断网不会在本地直接驱动电机。
+4. 点“启动自由探索”后，Ubuntu 的 frontier explorer 会持续寻找已知空闲区与未知区的
+   边界并自动发送 Nav2 目标；点“停止自由探索”、人工驾驶、发送单点目标、刹车或急停
+   都会取消探索控制权。停止探索不会清空或回滚已经建立的地图。
 
 地图采用 zlib + base64 压缩后封装在 ROS 兼容 `std_msgs/String` topic 中，默认每秒回传
 一次最新快照。GUI 只保留最新两帧，避免网络恢复后重放过时地图。

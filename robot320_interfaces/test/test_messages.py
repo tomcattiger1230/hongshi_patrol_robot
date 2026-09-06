@@ -50,6 +50,7 @@ def test_extended_telemetry_round_trip():
         battery=BatteryStatus(percentage=75.0, voltage_v=48.2),
         pose=Pose2D(x_m=2.0, y_m=4.0),
         faults=["example_fault"],
+        exploration_enabled=True,
     )
     restored = telemetry_from_json(to_json(telemetry))
     assert restored.lift.available is True
@@ -57,6 +58,7 @@ def test_extended_telemetry_round_trip():
     assert restored.battery.percentage == 75.0
     assert restored.pose is not None and restored.pose.x_m == 2.0
     assert restored.faults == ["example_fault"]
+    assert restored.exploration_enabled is True
 
 
 def test_heartbeat_round_trip():

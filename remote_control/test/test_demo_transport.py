@@ -72,3 +72,11 @@ def test_demo_transport_provides_map_and_accepts_save():
     transport.publish_command(command("save_map", 1))
     reply = transport.receive_reply()
     assert reply is not None and reply.status == "completed"
+
+    transport.publish_command(
+        command("set_exploration", 2, exploration_enabled=True)
+    )
+    state = transport.receive_state()
+    reply = transport.receive_reply()
+    assert state is not None and state.exploration_enabled is True
+    assert reply is not None and reply.status == "completed"

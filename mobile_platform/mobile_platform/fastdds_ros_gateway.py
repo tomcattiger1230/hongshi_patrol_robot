@@ -40,13 +40,13 @@ try:
     from rclpy.node import Node
     from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
     from std_msgs.msg import Bool, String
-    from std_srvs.srv import Trigger
+    from std_srvs.srv import SetBool, Trigger
 except ImportError as exc:  # pragma: no cover - evaluated on the NUC.
     rclpy = None
     Node = object
     GoalStatus = Twist = TwistStamped = OccupancyGrid = Odometry = None
     NavigateToPose = ActionClient = QoSProfile = None
-    DurabilityPolicy = ReliabilityPolicy = Trigger = None
+    DurabilityPolicy = ReliabilityPolicy = SetBool = Trigger = None
     Bool = String = None
     _ROS_IMPORT_ERROR = exc
 else:
@@ -141,6 +141,8 @@ class Robot320FastDDSRosGateway(Node):
         nav_cmd_vel_topic: str = "/cmd_vel",
         map_topic: str = "/map",
         map_save_service: str = "/robot320/save_persistent_map",
+        exploration_service: str = "/robot320/set_exploration_enabled",
+        exploration_status_topic: str = "/robot320/exploration_enabled",
         cartographer_state_file: str = "~/robot320_maps/patrol_current.pbstream",
         map_publish_period_s: float = 1.0,
         odometry_topic: str = "",
@@ -171,6 +173,7 @@ class Robot320FastDDSRosGateway(Node):
         self._simulation_telemetry: RobotTelemetry | None = None
         self._last_odometry_received = 0.0
         self.odometry_pose_frame = odometry_pose_frame or "map"
+        self._exploration_enabled = False
 
         self.cmd_vel_pub = self.create_publisher(Twist, f"{self.topic_prefix}/cmd_vel", 10)
         self.brake_pub = self.create_publisher(Bool, f"{self.topic_prefix}/brake", 10)
@@ -196,8 +199,15 @@ class Robot320FastDDSRosGateway(Node):
         self.create_subscription(OccupancyGrid, map_topic, self._on_map, map_qos)
         if odometry_topic:
             self.create_subscription(Odometry, odometry_topic, self._on_odometry, 10)
+        self.create_subscription(
+            Bool,
+            exploration_status_topic,
+            self._on_exploration_status,
+            10,
+        )
         self.nav_client = ActionClient(self, NavigateToPose, nav_action)
         self.map_save_client = self.create_client(Trigger, map_save_service)
+        self.exploration_client = self.create_client(SetBool, exploration_service)
         self.cartographer_state_file = os.path.abspath(
             os.path.expanduser(cartographer_state_file)
         )
@@ -239,19 +249,23 @@ class Robot320FastDDSRosGateway(Node):
 
     def _dispatch(self, command: RobotCommand) -> None:
         if command.kind == "manual_motion":
+            self._disable_exploration_for_operator()
             self._request_nav_cancel()
             self._publish_twist(command.linear_speed_mps, command.angular_speed_radps)
             self._publish_mode("manual")
             self._reply(command, "accepted", "manual motion forwarded")
         elif command.kind == "stop":
+            self._disable_exploration_for_operator()
             self._request_nav_cancel()
             self._publish_twist(0.0, 0.0)
             self._reply(command, "accepted", "stop forwarded")
         elif command.kind == "brake":
+            self._disable_exploration_for_operator()
             self._request_nav_cancel()
             self._publish_bool(self.brake_pub, True)
             self._reply(command, "accepted", "brake forwarded")
         elif command.kind == "emergency_stop":
+            self._disable_exploration_for_operator()
             self._request_nav_cancel()
             self._publish_bool(self.estop_pub, True)
             self._reply(command, "accepted", "emergency stop forwarded")
@@ -264,6 +278,7 @@ class Robot320FastDDSRosGateway(Node):
             self._publish_mode(command.mode or "idle")
             self._reply(command, "accepted", "mode forwarded")
         elif command.kind == "navigation_goal":
+            self._disable_exploration_for_operator()
             self._send_navigation_goal(command)
         elif command.kind == "cancel_navigation":
             self._cancel_navigation(command)
@@ -271,6 +286,8 @@ class Robot320FastDDSRosGateway(Node):
             self._send_lift_command(command)
         elif command.kind == "save_map":
             self._save_map(command)
+        elif command.kind == "set_exploration":
+            self._set_exploration(command)
         else:
             self._reply(command, "rejected", f"unsupported command: {command.kind}")
 
@@ -506,6 +523,48 @@ class Robot320FastDDSRosGateway(Node):
         )
         self._last_odometry_received = time.monotonic()
 
+    def _on_exploration_status(self, msg: Bool) -> None:
+        self._exploration_enabled = bool(msg.data)
+
+    def _set_exploration(self, command: RobotCommand) -> None:
+        if command.exploration_enabled is None:
+            self._reply(command, "rejected", "exploration state is missing")
+            return
+        if not self.exploration_client.service_is_ready():
+            self._reply(command, "rejected", "frontier exploration service is unavailable")
+            return
+        enabled = bool(command.exploration_enabled)
+        if enabled:
+            self._request_nav_cancel()
+            self._publish_mode("navigation")
+        request = SetBool.Request()
+        request.data = enabled
+        future = self.exploration_client.call_async(request)
+        future.add_done_callback(
+            lambda result, original=command: self._on_exploration_result(
+                original, result
+            )
+        )
+
+    def _on_exploration_result(self, command: RobotCommand, future) -> None:
+        try:
+            result = future.result()
+        except Exception as exc:
+            self._reply(command, "failed", f"exploration request failed: {exc}")
+            return
+        if result.success:
+            self._exploration_enabled = bool(command.exploration_enabled)
+        status = "completed" if result.success else "failed"
+        self._reply(command, status, result.message or "exploration state updated")
+
+    def _disable_exploration_for_operator(self) -> None:
+        if not self._exploration_enabled or not self.exploration_client.service_is_ready():
+            return
+        request = SetBool.Request()
+        request.data = False
+        self._exploration_enabled = False
+        self.exploration_client.call_async(request)
+
     def _publish_map(self) -> None:
         if self._latest_map is not None:
             self.transport.publish_map(self._latest_map)
@@ -584,6 +643,7 @@ class Robot320FastDDSRosGateway(Node):
         telemetry.map_revision = (
             self._latest_map.revision if self._latest_map is not None else None
         )
+        telemetry.exploration_enabled = self._exploration_enabled
         telemetry.stamp = time.time()
         self._state_sequence += 1
         self.transport.publish_state(telemetry, self._state_sequence)
@@ -644,6 +704,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--map-save-service", default="/robot320/save_persistent_map"
     )
     parser.add_argument(
+        "--exploration-service", default="/robot320/set_exploration_enabled"
+    )
+    parser.add_argument(
+        "--exploration-status-topic", default="/robot320/exploration_enabled"
+    )
+    parser.add_argument(
         "--cartographer-state-file",
         default="~/robot320_maps/patrol_current.pbstream",
     )
@@ -674,6 +740,8 @@ def main(argv: list[str] | None = None) -> int:
         nav_cmd_vel_topic=args.nav_cmd_vel_topic,
         map_topic=args.map_topic,
         map_save_service=args.map_save_service,
+        exploration_service=args.exploration_service,
+        exploration_status_topic=args.exploration_status_topic,
         cartographer_state_file=args.cartographer_state_file,
         map_publish_period_s=args.map_publish_period,
         odometry_topic=args.odometry_topic,

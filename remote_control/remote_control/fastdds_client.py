@@ -86,6 +86,15 @@ class RobotRemoteFastDDSClient:
     def save_map(self) -> str:
         return self._send(RobotCommand(kind="save_map", client_id=self.client_id))
 
+    def set_exploration(self, enabled: bool) -> str:
+        return self._send(
+            RobotCommand(
+                kind="set_exploration",
+                client_id=self.client_id,
+                exploration_enabled=bool(enabled),
+            )
+        )
+
     def brake(self) -> str:
         return self._send(RobotCommand(kind="brake", client_id=self.client_id))
 
@@ -182,6 +191,8 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("reset")
     sub.add_parser("cancel")
     sub.add_parser("save-map")
+    exploration = sub.add_parser("exploration")
+    exploration.add_argument("state", choices=["start", "stop"])
 
     lift = sub.add_parser("lift")
     lift.add_argument("action", choices=["stop", "raise", "lower", "move_to"])
@@ -224,6 +235,8 @@ def main(argv: list[str] | None = None) -> int:
             client.cancel_navigation()
         elif args.command == "save-map":
             client.save_map()
+        elif args.command == "exploration":
+            client.set_exploration(args.state == "start")
         elif args.command == "lift":
             client.control_lift(args.action, args.height)
         elif args.command == "watch":

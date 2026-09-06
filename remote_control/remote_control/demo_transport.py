@@ -49,6 +49,7 @@ class DemoRemoteTransport:
         self._battery = BatteryStatus(percentage=96.0, voltage_v=51.2)
         self._map = _demo_map()
         self._map_sent = False
+        self._exploration_enabled = False
 
     def publish_command(self, command: RobotCommand) -> None:
         with self._lock:
@@ -85,6 +86,7 @@ class DemoRemoteTransport:
                 pose=copy.deepcopy(self._pose),
                 navigation=copy.deepcopy(self._navigation),
                 map_revision="demo-map-v1",
+                exploration_enabled=self._exploration_enabled,
             )
 
     def receive_reply(self, timeout_s: float = 0.0) -> CommandReply | None:
@@ -152,6 +154,10 @@ class DemoRemoteTransport:
             return self._control_lift(command)
         if command.kind == "save_map":
             return "completed", "本地演示地图已保存"
+        if command.kind == "set_exploration":
+            self._exploration_enabled = bool(command.exploration_enabled)
+            state = "启动" if self._exploration_enabled else "停止"
+            return "completed", f"本地演示自由探索已{state}"
         return "rejected", f"本地演示不支持指令 {command.kind}"
 
     def _start_navigation(self, command: RobotCommand) -> tuple[str, str]:

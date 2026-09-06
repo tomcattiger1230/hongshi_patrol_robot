@@ -83,6 +83,19 @@ ros2 launch robot320_localization_bringup robot320_simulation.launch.py \
   mode:=continuing navigation:=true exploration:=true rviz:=true gui:=true
 ```
 
+在 `mapping` 和 `continuing` 模式下，frontier explorer 会常驻并提供运行时开关。launch
+参数 `exploration` 只决定初始状态，也可在不重启 SLAM/Nav2 的情况下切换：
+
+```bash
+ros2 service call /robot320/set_exploration_enabled std_srvs/srv/SetBool \
+  '{data: true}'
+ros2 service call /robot320/set_exploration_enabled std_srvs/srv/SetBool \
+  '{data: false}'
+```
+
+macOS 综合 GUI 的“启动自由探索”和“停止自由探索”按钮通过 DDS 调用同一服务。停止时
+会立即取消当前 frontier Nav2 goal；人工控制、单点导航、刹车和急停也会优先关闭探索。
+
 需要立即保存时：
 
 ```bash

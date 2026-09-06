@@ -24,6 +24,7 @@ CommandKind = Literal[
     "set_mode",
     "lift",
     "save_map",
+    "set_exploration",
 ]
 LiftAction = Literal["stop", "raise", "lower", "move_to"]
 ReplyStatus = Literal["accepted", "completed", "rejected", "failed"]
@@ -106,6 +107,7 @@ class RobotTelemetry:
     navigation: NavigationStatus = field(default_factory=NavigationStatus)
     faults: list[str] = field(default_factory=list)
     map_revision: Optional[str] = None
+    exploration_enabled: bool = False
     stamp: float = field(default_factory=time.time)
 
 
@@ -153,6 +155,7 @@ class RobotCommand:
     mode: Optional[ControlMode] = None
     lift_action: Optional[LiftAction] = None
     lift_target_height_m: Optional[float] = None
+    exploration_enabled: Optional[bool] = None
 
     def to_chassis_command(self) -> ChassisCommand:
         if self.kind == "manual_motion":
@@ -238,6 +241,7 @@ def telemetry_from_json(payload: str | bytes) -> RobotTelemetry:
         navigation=navigation,
         faults=list(data.get("faults", [])),
         map_revision=data.get("map_revision"),
+        exploration_enabled=bool(data.get("exploration_enabled", False)),
         stamp=data.get("stamp", time.time()),
     )
 

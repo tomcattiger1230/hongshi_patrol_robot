@@ -175,6 +175,16 @@ if QApplication is not None:
             if self.client:
                 self._send("保存当前地图", self.client.save_map)
 
+        @Slot(bool)
+        def set_exploration(self, enabled: bool) -> None:
+            if self.client:
+                action = "启动" if enabled else "停止"
+                self._send(
+                    f"{action}自由探索",
+                    self.client.set_exploration,
+                    enabled,
+                )
+
         @Slot(str, object)
         def lift(self, action: str, target_height_m: object) -> None:
             if self.client:
@@ -207,6 +217,7 @@ if QApplication is not None:
         cancel_navigation_requested = Signal()
         mode_requested = Signal(str)
         save_map_requested = Signal()
+        exploration_requested = Signal(bool)
         lift_requested = Signal(str, object)
 
         def __init__(self, domain_id: int, client_id: str, backend: str = "auto"):
@@ -251,6 +262,7 @@ if QApplication is not None:
             self.cancel_navigation_requested.connect(self.worker.cancel_navigation)
             self.mode_requested.connect(self.worker.set_mode)
             self.save_map_requested.connect(self.worker.save_map)
+            self.exploration_requested.connect(self.worker.set_exploration)
             self.lift_requested.connect(self.worker.lift)
             self.worker.telemetry_received.connect(self._on_telemetry)
             self.worker.map_received.connect(self._on_map)
@@ -313,6 +325,7 @@ if QApplication is not None:
             self.pose_value = QLabel("不可用")
             self.navigation_value = QLabel("idle")
             self.navigation_value.setWordWrap(True)
+            self.exploration_value = QLabel("已停止")
             self.nav_progress = QProgressBar()
             self.nav_progress.setRange(0, 100)
             self.lift_value = QLabel("不可用")
@@ -324,6 +337,7 @@ if QApplication is not None:
             layout.addRow("速度", self.speed_value)
             layout.addRow("SLAM 位姿", self.pose_value)
             layout.addRow("导航", self.navigation_value)
+            layout.addRow("自由探索", self.exploration_value)
             layout.addRow("导航进度", self.nav_progress)
             layout.addRow("升降杆", self.lift_value)
             layout.addRow("电池", self.battery_value)
@@ -491,6 +505,20 @@ if QApplication is not None:
             actions.addWidget(save)
             actions.addWidget(self.map_navigate)
             layout.addLayout(actions)
+
+            exploration_actions = QHBoxLayout()
+            self.start_exploration = QPushButton("▶ 启动自由探索")
+            self.start_exploration.clicked.connect(
+                lambda _checked=False: self.exploration_requested.emit(True)
+            )
+            self.stop_exploration = QPushButton("■ 停止自由探索")
+            self.stop_exploration.setEnabled(False)
+            self.stop_exploration.clicked.connect(
+                lambda _checked=False: self.exploration_requested.emit(False)
+            )
+            exploration_actions.addWidget(self.start_exploration)
+            exploration_actions.addWidget(self.stop_exploration)
+            layout.addLayout(exploration_actions)
             return page
 
         @staticmethod
@@ -594,6 +622,10 @@ if QApplication is not None:
             self.lift_value.setText(view.lift)
             self.battery_value.setText(view.battery)
             self.faults_value.setText(view.faults)
+            exploring = bool(telemetry.exploration_enabled)
+            self.exploration_value.setText("运行中" if exploring else "已停止")
+            self.start_exploration.setEnabled(not exploring)
+            self.stop_exploration.setEnabled(exploring)
             if telemetry.pose is not None:
                 self.map_view.set_robot_pose(
                     telemetry.pose.x_m,

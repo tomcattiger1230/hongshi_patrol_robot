@@ -13,6 +13,8 @@ from rclpy.action import ActionClient
 from rclpy.duration import Duration
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
+from std_msgs.msg import Bool
+from std_srvs.srv import SetBool
 from tf2_ros import Buffer, TransformException, TransformListener
 
 from .frontier import choose_frontier, find_frontiers
@@ -31,6 +33,11 @@ class FrontierExplorer(Node):
         self.declare_parameter("clearance_radius", 1.25)
         self.declare_parameter("goal_timeout", 90.0)
         self.declare_parameter("retry_radius", 1.0)
+        self.declare_parameter("enabled", False)
+        self.declare_parameter(
+            "control_service", "/robot320/set_exploration_enabled"
+        )
+        self.declare_parameter("status_topic", "/robot320/exploration_enabled")
 
         map_qos = QoSProfile(
             depth=1,
@@ -43,6 +50,7 @@ class FrontierExplorer(Node):
         self._goal_started = self.get_clock().now()
         self._failed_goals: list[tuple[float, float]] = []
         self._empty_cycles = 0
+        self._enabled = bool(self.get_parameter("enabled").value)
         self._tf_buffer = Buffer()
         self._tf_listener = TransformListener(self._tf_buffer, self)
         self._navigator = ActionClient(
@@ -56,15 +64,34 @@ class FrontierExplorer(Node):
             self._map_callback,
             map_qos,
         )
+        status_qos = QoSProfile(
+            depth=1,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+            reliability=ReliabilityPolicy.RELIABLE,
+        )
+        self._status_publisher = self.create_publisher(
+            Bool,
+            str(self.get_parameter("status_topic").value),
+            status_qos,
+        )
+        self.create_service(
+            SetBool,
+            str(self.get_parameter("control_service").value),
+            self._set_enabled,
+        )
         self.create_timer(2.0, self._tick)
+        self._publish_status()
         self.get_logger().info(
-            "Autonomous frontier mapping enabled; waiting for /map and Nav2"
+            "Autonomous frontier mapping ready; "
+            f"initial state={'enabled' if self._enabled else 'disabled'}"
         )
 
     def _map_callback(self, message: OccupancyGrid) -> None:
         self._map = message
 
     def _tick(self) -> None:
+        if not self._enabled:
+            return
         if self._goal_active:
             timeout = float(self.get_parameter("goal_timeout").value)
             if self.get_clock().now() - self._goal_started > Duration(seconds=timeout):
@@ -166,6 +193,10 @@ class FrontierExplorer(Node):
             self._failed_goals.append((goal_x, goal_y))
             self._goal_active = False
             return
+        if not self._enabled:
+            goal_handle.cancel_goal_async()
+            self._goal_active = False
+            return
         self._current_goal_handle = goal_handle
         result = goal_handle.get_result_async()
         result.add_done_callback(
@@ -176,13 +207,41 @@ class FrontierExplorer(Node):
 
     def _goal_result(self, future, goal_x: float, goal_y: float) -> None:
         status = future.result().status
-        if status != GoalStatus.STATUS_SUCCEEDED:
+        if self._enabled and status != GoalStatus.STATUS_SUCCEEDED:
             self._failed_goals.append((goal_x, goal_y))
             self.get_logger().warning(
                 f"Frontier goal failed with status {status}; selecting another"
             )
         self._current_goal_handle = None
         self._goal_active = False
+
+    def _set_enabled(self, request: SetBool.Request, response: SetBool.Response):
+        requested = bool(request.data)
+        changed = requested != self._enabled
+        self._enabled = requested
+        if self._enabled:
+            self._failed_goals.clear()
+            self._empty_cycles = 0
+        else:
+            self._cancel_active_goal()
+        self._publish_status()
+        state = "enabled" if self._enabled else "disabled"
+        response.success = True
+        response.message = f"autonomous frontier exploration {state}"
+        if changed:
+            self.get_logger().info(response.message)
+        return response
+
+    def _cancel_active_goal(self) -> None:
+        if self._current_goal_handle is not None:
+            self._current_goal_handle.cancel_goal_async()
+        self._current_goal_handle = None
+        self._goal_active = False
+
+    def _publish_status(self) -> None:
+        message = Bool()
+        message.data = self._enabled
+        self._status_publisher.publish(message)
 
 
 def main(args: list[str] | None = None) -> None:

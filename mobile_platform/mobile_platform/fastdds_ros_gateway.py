@@ -991,6 +991,10 @@ def main(argv: list[str] | None = None) -> int:
         raise RuntimeError("ROS 2 Python packages are unavailable") from _ROS_IMPORT_ERROR
     args, ros_args = build_parser().parse_known_args(argv)
     os.environ["ROS_DOMAIN_ID"] = str(args.domain_id)
+    # The Lyrical simulation and navigation stack is validated with Cyclone DDS.
+    # Keep an explicit operator override, but never silently fall back to Fast DDS
+    # RMW, which can retain unbounded large-map samples for standalone readers.
+    os.environ.setdefault("RMW_IMPLEMENTATION", "rmw_cyclonedds_cpp")
     rclpy.init(args=ros_args)
     node = Robot320FastDDSRosGateway(
         domain_id=args.domain_id,

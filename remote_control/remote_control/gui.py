@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import math
 import os
 from pathlib import Path
 import sys
@@ -167,7 +168,8 @@ if QApplication is not None:
         def navigation_goal(self, x_m: float, y_m: float, yaw_rad: float) -> None:
             if self.client:
                 self._send(
-                    f"导航目标 ({x_m:.2f}, {y_m:.2f}, {yaw_rad:.2f})",
+                    f"导航目标 ({x_m:.2f}, {y_m:.2f}, "
+                    f"{math.degrees(yaw_rad):.1f}°)",
                     self.client.send_navigation_goal,
                     x_m,
                     y_m,
@@ -593,7 +595,7 @@ if QApplication is not None:
             target_layout = QGridLayout(target)
             self.goal_x = self._spin(-1000.0, 1000.0, 0.1, 0.0, " m")
             self.goal_y = self._spin(-1000.0, 1000.0, 0.1, 0.0, " m")
-            self.goal_yaw = self._spin(-3.1416, 3.1416, 0.05, 0.0, " rad")
+            self.goal_yaw = self._spin(-180.0, 180.0, 1.0, 0.0, " °")
             target_layout.addWidget(QLabel("X"), 0, 0)
             target_layout.addWidget(self.goal_x, 0, 1)
             target_layout.addWidget(QLabel("Y"), 0, 2)
@@ -747,13 +749,14 @@ if QApplication is not None:
                 return
             self.goal_x.setValue(x_m)
             self.goal_y.setValue(y_m)
-            self.goal_yaw.setValue(yaw_rad)
+            yaw_deg = math.degrees(yaw_rad)
+            self.goal_yaw.setValue(yaw_deg)
             self.map_navigate.setEnabled(True)
             self.selected_goal_status.setText(
-                f"期望目标：x={x_m:.2f} m，y={y_m:.2f} m，yaw={yaw_rad:.2f} rad"
+                f"期望目标：x={x_m:.2f} m，y={y_m:.2f} m，朝向={yaw_deg:.1f}°"
             )
             self.statusBar().showMessage(
-                f"已选择目标 ({x_m:.2f}, {y_m:.2f}), 朝向 {yaw_rad:.2f} rad",
+                f"已选择目标 ({x_m:.2f}, {y_m:.2f}), 朝向 {yaw_deg:.1f}°",
                 5000,
             )
 
@@ -763,13 +766,15 @@ if QApplication is not None:
 
         def _send_selected_map_goal(self) -> None:
             self._send_expected_goal(
-                self.goal_x.value(), self.goal_y.value(), self.goal_yaw.value()
+                self.goal_x.value(),
+                self.goal_y.value(),
+                math.radians(self.goal_yaw.value()),
             )
 
         def _send_coordinate_goal(self) -> None:
             x_m = self.goal_x.value()
             y_m = self.goal_y.value()
-            yaw_rad = self.goal_yaw.value()
+            yaw_rad = math.radians(self.goal_yaw.value())
             if self._map_snapshot is not None:
                 self.map_view.set_goal(x_m, y_m, yaw_rad)
             self._send_expected_goal(x_m, y_m, yaw_rad)
@@ -783,7 +788,8 @@ if QApplication is not None:
                 return
             self.map_navigate.setEnabled(True)
             self.selected_goal_status.setText(
-                f"期望目标发送中：x={x_m:.2f} m，y={y_m:.2f} m，yaw={yaw_rad:.2f} rad"
+                f"期望目标发送中：x={x_m:.2f} m，y={y_m:.2f} m，"
+                f"朝向={math.degrees(yaw_rad):.1f}°"
             )
             self.navigation_requested.emit(x_m, y_m, yaw_rad)
 

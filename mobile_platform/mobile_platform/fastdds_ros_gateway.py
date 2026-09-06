@@ -35,7 +35,7 @@ from robot320_interfaces.messages import (
 try:
     import rclpy
     from action_msgs.msg import GoalStatus
-    from geometry_msgs.msg import Twist, TwistStamped
+    from geometry_msgs.msg import PoseWithCovarianceStamped, Twist, TwistStamped
     from nav_msgs.msg import OccupancyGrid, Odometry
     from nav2_msgs.action import NavigateToPose
     from nav2_msgs.srv import LoadMap
@@ -49,7 +49,8 @@ try:
 except ImportError as exc:  # pragma: no cover - evaluated on the NUC.
     rclpy = None
     Node = object
-    GoalStatus = Twist = TwistStamped = OccupancyGrid = Odometry = None
+    GoalStatus = PoseWithCovarianceStamped = Twist = TwistStamped = None
+    OccupancyGrid = Odometry = None
     NavigateToPose = ActionClient = QoSProfile = None
     Parameter = AsyncParameterClient = None
     DurabilityPolicy = ReliabilityPolicy = SetBool = Trigger = LoadMap = None
@@ -159,6 +160,7 @@ class Robot320FastDDSRosGateway(Node):
         map_publish_period_s: float = 1.0,
         odometry_topic: str = "",
         odometry_pose_frame: str = "map",
+        localization_pose_topic: str = "/pose",
         telemetry_period_s: float = 0.2,
         heartbeat_period_s: float = 1.0,
         max_command_age_s: float = 2.0,
@@ -184,6 +186,8 @@ class Robot320FastDDSRosGateway(Node):
         self._latest_map: RemoteMap | None = None
         self._simulation_telemetry: RobotTelemetry | None = None
         self._last_odometry_received = 0.0
+        self._latest_localization_pose: Pose2D | None = None
+        self._last_localization_pose_received = 0.0
         self.odometry_pose_frame = odometry_pose_frame or "map"
         self._exploration_enabled = False
         self._map_operation_command: RobotCommand | None = None
@@ -215,6 +219,13 @@ class Robot320FastDDSRosGateway(Node):
         self.create_subscription(OccupancyGrid, map_topic, self._on_map, map_qos)
         if odometry_topic:
             self.create_subscription(Odometry, odometry_topic, self._on_odometry, 10)
+        if localization_pose_topic:
+            self.create_subscription(
+                PoseWithCovarianceStamped,
+                localization_pose_topic,
+                self._on_localization_pose,
+                10,
+            )
         self.create_subscription(
             Bool,
             exploration_status_topic,
@@ -528,24 +539,16 @@ class Robot320FastDDSRosGateway(Node):
 
     def _on_odometry(self, msg: Odometry) -> None:
         """Provide simulation telemetry when the physical chassis bridge is absent."""
-        pose = msg.pose.pose
-        orientation = pose.orientation
-        yaw = math.atan2(
-            2.0
-            * (
-                orientation.w * orientation.z
-                + orientation.x * orientation.y
-            ),
-            1.0
-            - 2.0
-            * (
-                orientation.y * orientation.y
-                + orientation.z * orientation.z
-            ),
+        odometry_pose = _pose2d_from_ros_pose(
+            msg.pose.pose,
+            msg.header,
+            self.odometry_pose_frame,
         )
         speed_mps = math.hypot(msg.twist.twist.linear.x, msg.twist.twist.linear.y)
-        stamp = msg.header.stamp
-        stamp_seconds = float(stamp.sec) + float(stamp.nanosec) / 1_000_000_000.0
+        localized_pose = getattr(self, "_latest_localization_pose", None)
+        localization_age = time.monotonic() - getattr(
+            self, "_last_localization_pose_received", 0.0
+        )
         self._simulation_telemetry = RobotTelemetry(
             robot_id=self.robot_id,
             online=True,
@@ -554,15 +557,21 @@ class Robot320FastDDSRosGateway(Node):
                 enabled=True,
                 speed_kmh=speed_mps * 3.6,
             ),
-            pose=Pose2D(
-                x_m=float(pose.position.x),
-                y_m=float(pose.position.y),
-                yaw_rad=yaw,
-                frame_id=self.odometry_pose_frame,
-                stamp=stamp_seconds or time.time(),
+            pose=(
+                localized_pose
+                if localized_pose is not None and localization_age < 2.0
+                else odometry_pose
             ),
         )
         self._last_odometry_received = time.monotonic()
+
+    def _on_localization_pose(self, msg: PoseWithCovarianceStamped) -> None:
+        """Keep the GUI marker in the map frame instead of relabeling odometry."""
+        pose = _pose2d_from_ros_pose(msg.pose.pose, msg.header, "map")
+        self._latest_localization_pose = pose
+        self._last_localization_pose_received = time.monotonic()
+        if self._simulation_telemetry is not None:
+            self._simulation_telemetry.pose = pose
 
     def _on_exploration_status(self, msg: Bool) -> None:
         self._exploration_enabled = bool(msg.data)
@@ -875,8 +884,9 @@ class Robot320FastDDSRosGateway(Node):
             or RobotTelemetry(robot_id=self.robot_id)
         )
         telemetry.robot_id = self.robot_id
-        source_received = (
-            self._last_telemetry_received if using_chassis else self._last_odometry_received
+        source_received = self._last_telemetry_received if using_chassis else max(
+            self._last_odometry_received,
+            getattr(self, "_last_localization_pose_received", 0.0),
         )
         telemetry.online = source_received > 0 and time.monotonic() - source_received < 2.0
         telemetry.lift = self._lift_status
@@ -980,6 +990,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="simulation-only odometry fallback, for example /odom",
     )
     parser.add_argument("--odometry-pose-frame", default="map")
+    parser.add_argument(
+        "--localization-pose-topic",
+        default="/pose",
+        help="map-frame pose for the GUI marker; empty disables localization input",
+    )
     parser.add_argument("--telemetry-period", type=float, default=0.2)
     parser.add_argument("--heartbeat-period", type=float, default=1.0)
     parser.add_argument("--max-command-age", type=float, default=2.0)
@@ -1011,6 +1026,7 @@ def main(argv: list[str] | None = None) -> int:
         map_publish_period_s=args.map_publish_period,
         odometry_topic=args.odometry_topic,
         odometry_pose_frame=args.odometry_pose_frame,
+        localization_pose_topic=args.localization_pose_topic,
         telemetry_period_s=args.telemetry_period,
         heartbeat_period_s=args.heartbeat_period,
         max_command_age_s=args.max_command_age,
@@ -1023,6 +1039,24 @@ def main(argv: list[str] | None = None) -> int:
     finally:
         node.destroy_node()
         rclpy.shutdown()
+
+
+def _pose2d_from_ros_pose(pose, header, fallback_frame: str) -> Pose2D:
+    orientation = pose.orientation
+    yaw = math.atan2(
+        2.0
+        * (orientation.w * orientation.z + orientation.x * orientation.y),
+        1.0 - 2.0 * (orientation.y * orientation.y + orientation.z * orientation.z),
+    )
+    stamp = header.stamp
+    stamp_seconds = float(stamp.sec) + float(stamp.nanosec) / 1_000_000_000.0
+    return Pose2D(
+        x_m=float(pose.position.x),
+        y_m=float(pose.position.y),
+        yaw_rad=yaw,
+        frame_id=getattr(header, "frame_id", "") or fallback_frame,
+        stamp=stamp_seconds or time.time(),
+    )
 
 
 def _remote_map_from_occupancy_grid(message) -> RemoteMap:

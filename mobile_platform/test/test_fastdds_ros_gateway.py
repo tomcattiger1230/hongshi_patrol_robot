@@ -11,6 +11,7 @@ from mobile_platform.fastdds_ros_gateway import (
 )
 from robot320_interfaces.messages import (
     NavigationStatus,
+    Pose2D,
     RobotCommand,
     RobotTelemetry,
     remote_map,
@@ -254,3 +255,46 @@ def test_simulation_odometry_provides_online_pose_and_speed():
     assert telemetry.pose.frame_id == "map"
     assert telemetry.chassis.speed_kmh == 1.8
     assert gateway._last_odometry_received > 0.0
+
+
+def test_simulation_odometry_prefers_fresh_map_localization_pose():
+    class Value:
+        pass
+
+    gateway = Robot320FastDDSRosGateway.__new__(Robot320FastDDSRosGateway)
+    gateway.robot_id = "robot-test"
+    gateway.odometry_pose_frame = "odom"
+    gateway._latest_localization_pose = Pose2D(
+        x_m=8.0,
+        y_m=4.0,
+        yaw_rad=0.5,
+        frame_id="map",
+    )
+    gateway._last_localization_pose_received = time.monotonic()
+    message = Value()
+    message.header = Value()
+    message.header.frame_id = "odom"
+    message.header.stamp = Value()
+    message.header.stamp.sec = 3
+    message.header.stamp.nanosec = 0
+    message.pose = Value()
+    message.pose.pose = Value()
+    message.pose.pose.position = Value()
+    message.pose.pose.position.x = 1.25
+    message.pose.pose.position.y = -0.5
+    message.pose.pose.orientation = Value()
+    message.pose.pose.orientation.x = 0.0
+    message.pose.pose.orientation.y = 0.0
+    message.pose.pose.orientation.z = 0.0
+    message.pose.pose.orientation.w = 1.0
+    message.twist = Value()
+    message.twist.twist = Value()
+    message.twist.twist.linear = Value()
+    message.twist.twist.linear.x = 0.5
+    message.twist.twist.linear.y = 0.0
+
+    gateway._on_odometry(message)
+
+    assert gateway._simulation_telemetry.pose == gateway._latest_localization_pose
+    assert gateway._simulation_telemetry.pose.frame_id == "map"
+    assert gateway._simulation_telemetry.chassis.speed_kmh == 1.8

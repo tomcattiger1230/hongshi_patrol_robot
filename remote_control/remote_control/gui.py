@@ -215,6 +215,7 @@ if QApplication is not None:
             self.client_id = client_id
             self.backend = backend
             self._last_telemetry_at = 0.0
+            self._last_map_revision: str | None = None
             self._motion: tuple[float, float] | None = None
             self._closing = False
 
@@ -335,6 +336,7 @@ if QApplication is not None:
             tabs.addTab(self._build_navigation_tab(), "导航")
             tabs.addTab(self._build_map_tab(), "地图扫图与导航")
             tabs.addTab(self._build_lift_tab(), "升降杆")
+            tabs.setCurrentIndex(2)
             return tabs
 
         def _build_manual_tab(self) -> QWidget:
@@ -536,6 +538,8 @@ if QApplication is not None:
 
         @Slot(object)
         def _on_map(self, remote_map) -> None:
+            if remote_map.revision == self._last_map_revision:
+                return
             try:
                 snapshot = map_snapshot(
                     width=remote_map.width,
@@ -551,6 +555,7 @@ if QApplication is not None:
                 self._on_error(f"地图数据无效：{exc}")
                 return
             self.map_view.set_map(snapshot)
+            self._last_map_revision = remote_map.revision
             self.map_status.setText(
                 f"地图 {remote_map.width}×{remote_map.height} · "
                 f"{remote_map.resolution:.3f} m/cell · {remote_map.revision[:8]}"

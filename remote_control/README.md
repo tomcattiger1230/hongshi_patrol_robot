@@ -379,9 +379,40 @@ finally:
 
 | 现象 | 检查项 |
 |---|---|
-| Ubuntu 启动后端失败 | `source /opt/ros/jazzy/setup.bash` 后能否导入 `rclpy`、`std_msgs` |
+| Ubuntu 启动后端失败 | source 当前发行版（如 `/opt/ros/lyrical/setup.bash`）后能否导入 `rclpy`、`std_msgs` |
 | `FastDDSUnavailable` | Windows/macOS 确认 `import fastdds, Robot320String` 在同一个 uv Python 中成功 |
-| GUI 启动但无遥测 | `ROS_DOMAIN_ID`/domain ID、同网段、防火墙、NUC gateway、多网卡路由 |
+| GUI 启动但无遥测 | `ROS_DOMAIN_ID`/domain ID、同网段、防火墙、NUC gateway、多网卡路由；网关刚重启时等待 DDS 重新发现 |
+| GUI 曾在线后提示遥测超时 | 先用下方 `watch` 验证新建 reader；若可连续收包，重启 GUI 以重建 DDS participant |
+| 地图上的机器人像是穿过障碍物 | 比较 `/pose` 与 `/odom`；地图标记必须使用 `/pose` 的 `map` frame，不能把 `/odom` 直接标成 `map` |
 | Windows 找不到 DLL | 是否在同一终端调用 Fast DDS `setup.bat` |
 | macOS 找不到 dylib | Fast DDS prefix 是否已 source，架构是否与 Python 一致 |
 | 生成类型导入失败 | 重新用当前 uv Python 运行 Fast DDS-Gen 和 CMake |
+
+macOS 上独立检查 DDS 遥测，不发送运动指令：
+
+```bash
+cd ~/Develop/github_ws/hongshi_patrol_robot
+source ./scripts/source_dds_lan.sh 192.168.0.218
+./scripts/uv_run.sh desktop robot320_remote_fastdds \
+  --domain-id 20 watch --seconds 10
+```
+
+Ubuntu 上确认地图位姿 topic、QoS 和网关订阅：
+
+```bash
+source /opt/ros/lyrical/setup.bash
+source ~/Develop/ROS_ws/patrol_robot/install/setup.bash
+export ROS_DOMAIN_ID=20
+export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+
+ros2 topic info -v /pose
+ros2 topic echo /pose geometry_msgs/msg/PoseWithCovarianceStamped --once
+ros2 topic echo /odom nav_msgs/msg/Odometry --once
+ros2 topic info -v /robot320/state
+```
+
+`/pose` 应为 `map` frame，发布端和网关订阅端均应显示 `RELIABLE`、
+`TRANSIENT_LOCAL`。`/robot320/state` 出现名为 `_CREATED_BY_BARE_DDS_APP_` 的订阅端，
+表示 standalone Fast DDS GUI 已与 ROS 2 网关匹配。网关重启后短暂出现
+`Failed to parse type hash` 属于当前 Cyclone DDS/Fast DDS String 互通的已知警告；应以
+`watch` 是否持续收到 `online=True` 数据判断链路，而不是只根据该警告判断失败。

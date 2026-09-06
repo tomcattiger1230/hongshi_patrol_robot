@@ -34,6 +34,46 @@ Ubuntu GUI -------> rclpy -------+                              ROS/Nav2/CAN
 Mac 与 Ubuntu 在同一局域网通过 DDS 直连的固定方案、网卡选择和调试步骤见
 [`DDS_LAN_SETUP.md`](./DDS_LAN_SETUP.md)。
 
+## 2026-09-06 macOS 远程建图与导航联调结果
+
+已在 macOS 上运行 standalone Fast DDS 综合 GUI，通过局域网连接
+`arnold@192.168.0.218` 上的 ROS 2 Lyrical、Gazebo、SLAM Toolbox 和 Nav2，完成以下
+闭环验证：
+
+- 新增 Lyrical 原生依赖、Nav2 源码 overlay、macOS Fast DDS 及工作区初始化脚本；依赖清单
+  固定在 `dependencies/*.repos`，换机时从仓库脚本重新构建，不提交或复用其他 ROS 发行版
+  的 `build/`、`install/` 和虚拟环境。
+- GUI 可接收压缩后的实时 `/map`，在“导航与地图”页拖拽选择位置和车头方向，并通过
+  DDS 请求 Ubuntu 上的 Nav2 执行目标；也可以输入 map 坐标直接发送。
+- GUI 朝向输入和所有面向操作者的显示统一使用度，范围为 `-180°～180°`；DDS JSON、
+  ROS 消息和 Nav2 内部继续使用弧度，发送时自动转换。
+- GUI 可启动和停止 frontier 自由探索。人工运动、单点导航、刹车、急停和显式停止探索
+  都会取消探索控制权；停止探索时网关还会发送零速度。
+- 命令序列按 `client_id + session_id` 隔离，GUI 重启后不会因旧进程序号较大而被网关判为
+  `duplicate or out-of-order sequence`。
+- 地图既可在机器人端持久化，也可从任意支持 GUI 和 SSH 的桌面平台导出 YAML/PGM、
+  下载完整 SLAM 会话，或上传并载入已有地图。文件使用 SSH 公钥传输，控制和结果使用
+  DDS 传输。
+- 左侧机器人状态改为可滚动的分组卡片，分别显示连接、底盘、位姿、导航、探索、举升、
+  电池和故障，窄窗口不再挤压主要地图区域。
+- Gazebo 远程遥测同时使用 `/odom` 的速度与 SLAM Toolbox `/pose` 的 map-frame 位姿。
+  `/pose` 订阅采用 `RELIABLE + TRANSIENT_LOCAL`，网关重启或机器人静止时仍能取得最近的
+  地图位姿，避免把 odom 坐标误标为 map 后在 GUI 中产生“机器人穿墙”的假象。
+- Ubuntu 网关固定默认使用 `rmw_cyclonedds_cpp`。macOS 使用 standalone Fast DDS 时，
+  Cyclone DDS 可能输出 type-hash 兼容警告，但实测 ROS 2 String 数据可以双向传输。
+  Fast DDS RMW 不作为当前大地图网关的默认运行时，以避免历史测试中出现的大量内存占用。
+- 发送指令前会等待 command writer 和 reply reader 双向匹配，减少只发现单向 DDS 路径时
+  出现“已发送但无应答”的误判。
+
+本次 Gazebo 联调中，原始 `/odom` 位姿约为 `(7.66, 6.84)`，SLAM 的 `/pose` 位姿约为
+`(8.95, 4.92)`，两者相差约 2.3 m。GUI 修正后通过 DDS 收到后者。模型碰撞体以及 Nav2
+footprint、inflation layer 和 collision monitor 均已配置；如果 Gazebo 中机器人实体而非
+GUI 标记实际穿过障碍物，应继续检查 Gazebo contact、物理步长和碰撞 mask，不能仅根据
+二维地图标记判断物理碰撞失效。
+
+完整 GUI 启动、地图操作和故障排查步骤见
+[`remote_control/README.md`](./remote_control/README.md)。
+
 ## 仓库组成
 
 | 目录 | 用途 |

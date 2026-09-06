@@ -14,10 +14,12 @@ import time
 from dataclasses import fields
 
 from robot320_interfaces.messages import (
+    ChassisStatus,
     CommandReply,
     Heartbeat,
     LiftStatus,
     NavigationStatus,
+    Pose2D,
     RemoteMap,
     RobotCommand,
     RobotTelemetry,
@@ -32,7 +34,7 @@ try:
     import rclpy
     from action_msgs.msg import GoalStatus
     from geometry_msgs.msg import Twist, TwistStamped
-    from nav_msgs.msg import OccupancyGrid
+    from nav_msgs.msg import OccupancyGrid, Odometry
     from nav2_msgs.action import NavigateToPose
     from rclpy.action import ActionClient
     from rclpy.node import Node
@@ -42,7 +44,7 @@ try:
 except ImportError as exc:  # pragma: no cover - evaluated on the NUC.
     rclpy = None
     Node = object
-    GoalStatus = Twist = TwistStamped = OccupancyGrid = None
+    GoalStatus = Twist = TwistStamped = OccupancyGrid = Odometry = None
     NavigateToPose = ActionClient = QoSProfile = None
     DurabilityPolicy = ReliabilityPolicy = Trigger = None
     Bool = String = None
@@ -141,6 +143,8 @@ class Robot320FastDDSRosGateway(Node):
         map_save_service: str = "/robot320/save_persistent_map",
         cartographer_state_file: str = "~/robot320_maps/patrol_current.pbstream",
         map_publish_period_s: float = 1.0,
+        odometry_topic: str = "",
+        odometry_pose_frame: str = "map",
         telemetry_period_s: float = 0.2,
         heartbeat_period_s: float = 1.0,
         max_command_age_s: float = 2.0,
@@ -164,6 +168,9 @@ class Robot320FastDDSRosGateway(Node):
         self._nav_velocity_enabled = False
         self._initial_goal_distance: float | None = None
         self._latest_map: RemoteMap | None = None
+        self._simulation_telemetry: RobotTelemetry | None = None
+        self._last_odometry_received = 0.0
+        self.odometry_pose_frame = odometry_pose_frame or "map"
 
         self.cmd_vel_pub = self.create_publisher(Twist, f"{self.topic_prefix}/cmd_vel", 10)
         self.brake_pub = self.create_publisher(Bool, f"{self.topic_prefix}/brake", 10)
@@ -187,6 +194,8 @@ class Robot320FastDDSRosGateway(Node):
         map_qos.reliability = ReliabilityPolicy.RELIABLE
         map_qos.durability = DurabilityPolicy.TRANSIENT_LOCAL
         self.create_subscription(OccupancyGrid, map_topic, self._on_map, map_qos)
+        if odometry_topic:
+            self.create_subscription(Odometry, odometry_topic, self._on_odometry, 10)
         self.nav_client = ActionClient(self, NavigateToPose, nav_action)
         self.map_save_client = self.create_client(Trigger, map_save_service)
         self.cartographer_state_file = os.path.abspath(
@@ -459,6 +468,44 @@ class Robot320FastDDSRosGateway(Node):
         except (TypeError, ValueError) as exc:
             self.get_logger().warning(f"invalid occupancy grid ignored: {exc}")
 
+    def _on_odometry(self, msg: Odometry) -> None:
+        """Provide simulation telemetry when the physical chassis bridge is absent."""
+        pose = msg.pose.pose
+        orientation = pose.orientation
+        yaw = math.atan2(
+            2.0
+            * (
+                orientation.w * orientation.z
+                + orientation.x * orientation.y
+            ),
+            1.0
+            - 2.0
+            * (
+                orientation.y * orientation.y
+                + orientation.z * orientation.z
+            ),
+        )
+        speed_mps = math.hypot(msg.twist.twist.linear.x, msg.twist.twist.linear.y)
+        stamp = msg.header.stamp
+        stamp_seconds = float(stamp.sec) + float(stamp.nanosec) / 1_000_000_000.0
+        self._simulation_telemetry = RobotTelemetry(
+            robot_id=self.robot_id,
+            online=True,
+            chassis=ChassisStatus(
+                connected=True,
+                enabled=True,
+                speed_kmh=speed_mps * 3.6,
+            ),
+            pose=Pose2D(
+                x_m=float(pose.position.x),
+                y_m=float(pose.position.y),
+                yaw_rad=yaw,
+                frame_id=self.odometry_pose_frame,
+                stamp=stamp_seconds or time.time(),
+            ),
+        )
+        self._last_odometry_received = time.monotonic()
+
     def _publish_map(self) -> None:
         if self._latest_map is not None:
             self.transport.publish_map(self._latest_map)
@@ -521,12 +568,17 @@ class Robot320FastDDSRosGateway(Node):
             self._reply(command, "failed", message or f"Cartographer status {code}")
 
     def _publish_state(self) -> None:
-        telemetry = self._latest_telemetry or RobotTelemetry(robot_id=self.robot_id)
-        telemetry.robot_id = self.robot_id
-        telemetry.online = (
-            self._last_telemetry_received > 0
-            and time.monotonic() - self._last_telemetry_received < 2.0
+        using_chassis = self._latest_telemetry is not None
+        telemetry = (
+            self._latest_telemetry
+            or self._simulation_telemetry
+            or RobotTelemetry(robot_id=self.robot_id)
         )
+        telemetry.robot_id = self.robot_id
+        source_received = (
+            self._last_telemetry_received if using_chassis else self._last_odometry_received
+        )
+        telemetry.online = source_received > 0 and time.monotonic() - source_received < 2.0
         telemetry.lift = self._lift_status
         telemetry.navigation = self._navigation
         telemetry.map_revision = (
@@ -596,6 +648,12 @@ def build_parser() -> argparse.ArgumentParser:
         default="~/robot320_maps/patrol_current.pbstream",
     )
     parser.add_argument("--map-publish-period", type=float, default=1.0)
+    parser.add_argument(
+        "--odometry-topic",
+        default="",
+        help="simulation-only odometry fallback, for example /odom",
+    )
+    parser.add_argument("--odometry-pose-frame", default="map")
     parser.add_argument("--telemetry-period", type=float, default=0.2)
     parser.add_argument("--heartbeat-period", type=float, default=1.0)
     parser.add_argument("--max-command-age", type=float, default=2.0)
@@ -618,6 +676,8 @@ def main(argv: list[str] | None = None) -> int:
         map_save_service=args.map_save_service,
         cartographer_state_file=args.cartographer_state_file,
         map_publish_period_s=args.map_publish_period,
+        odometry_topic=args.odometry_topic,
+        odometry_pose_frame=args.odometry_pose_frame,
         telemetry_period_s=args.telemetry_period,
         heartbeat_period_s=args.heartbeat_period,
         max_command_age_s=args.max_command_age,

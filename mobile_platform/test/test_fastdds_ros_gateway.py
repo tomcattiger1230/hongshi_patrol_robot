@@ -156,3 +156,41 @@ def test_occupancy_grid_is_compressed_for_remote_transport():
     assert snapshot.frame_id == "map"
     assert snapshot.stamp == 12.5
     assert snapshot.occupancy_data() == tuple(message.data)
+
+
+def test_simulation_odometry_provides_online_pose_and_speed():
+    class Value:
+        pass
+
+    gateway = Robot320FastDDSRosGateway.__new__(Robot320FastDDSRosGateway)
+    gateway.robot_id = "robot-test"
+    gateway.odometry_pose_frame = "map"
+    message = Value()
+    message.header = Value()
+    message.header.stamp = Value()
+    message.header.stamp.sec = 3
+    message.header.stamp.nanosec = 0
+    message.pose = Value()
+    message.pose.pose = Value()
+    message.pose.pose.position = Value()
+    message.pose.pose.position.x = 1.25
+    message.pose.pose.position.y = -0.5
+    message.pose.pose.orientation = Value()
+    message.pose.pose.orientation.x = 0.0
+    message.pose.pose.orientation.y = 0.0
+    message.pose.pose.orientation.z = 0.0
+    message.pose.pose.orientation.w = 1.0
+    message.twist = Value()
+    message.twist.twist = Value()
+    message.twist.twist.linear = Value()
+    message.twist.twist.linear.x = 0.5
+    message.twist.twist.linear.y = 0.0
+
+    gateway._on_odometry(message)
+
+    telemetry = gateway._simulation_telemetry
+    assert telemetry is not None and telemetry.pose is not None
+    assert telemetry.pose.x_m == 1.25
+    assert telemetry.pose.frame_id == "map"
+    assert telemetry.chassis.speed_kmh == 1.8
+    assert gateway._last_odometry_received > 0.0

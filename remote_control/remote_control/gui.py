@@ -23,6 +23,7 @@ try:
         QDoubleSpinBox,
         QFileDialog,
         QFormLayout,
+        QFrame,
         QGridLayout,
         QGroupBox,
         QHBoxLayout,
@@ -32,6 +33,7 @@ try:
         QPlainTextEdit,
         QProgressBar,
         QPushButton,
+        QScrollArea,
         QSplitter,
         QTabWidget,
         QVBoxLayout,
@@ -282,7 +284,7 @@ if QApplication is not None:
 
             title_suffix = " [离线演示]" if backend == "demo" else ""
             self.setWindowTitle(f"Robot320 远程控制台{title_suffix}")
-            self.resize(1280, 820)
+            self.resize(1440, 900)
             self._build_ui()
             self._apply_style()
 
@@ -357,7 +359,9 @@ if QApplication is not None:
             splitter = QSplitter(Qt.Orientation.Horizontal)
             splitter.addWidget(self._build_status_panel())
             splitter.addWidget(self._build_control_tabs())
-            splitter.setSizes([480, 620])
+            splitter.setStretchFactor(0, 0)
+            splitter.setStretchFactor(1, 1)
+            splitter.setSizes([440, 820])
             root.addWidget(splitter, 1)
 
             log_group = QGroupBox("指令与应答")
@@ -370,33 +374,110 @@ if QApplication is not None:
             self.setCentralWidget(central)
 
         def _build_status_panel(self) -> QWidget:
-            panel = QGroupBox("机器人状态")
-            layout = QFormLayout(panel)
-            layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+            content = QWidget()
+            content.setObjectName("statusPanel")
+            layout = QVBoxLayout(content)
+            layout.setContentsMargins(8, 4, 12, 8)
+            layout.setSpacing(12)
+
+            heading = QLabel("机器人状态")
+            heading.setObjectName("sectionTitle")
+            layout.addWidget(heading)
+
             self.robot_value = QLabel("--")
             self.chassis_value = QLabel("等待遥测")
             self.speed_value = QLabel("--")
             self.pose_value = QLabel("不可用")
             self.navigation_value = QLabel("idle")
-            self.navigation_value.setWordWrap(True)
             self.exploration_value = QLabel("已停止")
             self.nav_progress = QProgressBar()
             self.nav_progress.setRange(0, 100)
+            self.nav_progress.setTextVisible(True)
             self.lift_value = QLabel("不可用")
             self.battery_value = QLabel("不可用")
             self.faults_value = QLabel("无")
-            self.faults_value.setWordWrap(True)
-            layout.addRow("机器人", self.robot_value)
-            layout.addRow("底盘", self.chassis_value)
-            layout.addRow("速度", self.speed_value)
-            layout.addRow("SLAM 位姿", self.pose_value)
-            layout.addRow("导航", self.navigation_value)
-            layout.addRow("自由探索", self.exploration_value)
-            layout.addRow("导航进度", self.nav_progress)
-            layout.addRow("升降杆", self.lift_value)
-            layout.addRow("电池", self.battery_value)
-            layout.addRow("故障", self.faults_value)
-            return panel
+            for value in (
+                self.robot_value,
+                self.chassis_value,
+                self.speed_value,
+                self.pose_value,
+                self.navigation_value,
+                self.exploration_value,
+                self.lift_value,
+                self.battery_value,
+                self.faults_value,
+            ):
+                value.setObjectName("statusValue")
+                value.setWordWrap(True)
+                value.setTextInteractionFlags(
+                    Qt.TextInteractionFlag.TextSelectableByMouse
+                )
+
+            overview = QGridLayout()
+            overview.setHorizontalSpacing(10)
+            overview.setVerticalSpacing(10)
+            overview.addWidget(self._status_card("机器人", self.robot_value), 0, 0)
+            overview.addWidget(self._status_card("当前速度", self.speed_value), 0, 1)
+            overview.addWidget(
+                self._status_card("SLAM 位姿", self.pose_value), 1, 0, 1, 2
+            )
+            layout.addLayout(overview)
+
+            navigation = QGroupBox("导航任务")
+            navigation_layout = QVBoxLayout(navigation)
+            navigation_layout.setSpacing(10)
+            navigation_layout.addWidget(self.navigation_value)
+            progress_caption = QLabel("执行进度")
+            progress_caption.setObjectName("statusCaption")
+            navigation_layout.addWidget(progress_caption)
+            navigation_layout.addWidget(self.nav_progress)
+            exploration_row = QHBoxLayout()
+            exploration_caption = QLabel("自由探索")
+            exploration_caption.setObjectName("statusCaption")
+            exploration_row.addWidget(exploration_caption)
+            exploration_row.addStretch()
+            exploration_row.addWidget(self.exploration_value)
+            navigation_layout.addLayout(exploration_row)
+            layout.addWidget(navigation)
+
+            devices = QGroupBox("设备与能源")
+            devices_layout = QGridLayout(devices)
+            devices_layout.setHorizontalSpacing(10)
+            devices_layout.setVerticalSpacing(10)
+            devices_layout.addWidget(
+                self._status_card("底盘", self.chassis_value), 0, 0, 1, 2
+            )
+            devices_layout.addWidget(self._status_card("升降杆", self.lift_value), 1, 0)
+            devices_layout.addWidget(self._status_card("电池", self.battery_value), 1, 1)
+            layout.addWidget(devices)
+
+            faults = QGroupBox("故障与告警")
+            faults.setObjectName("faultGroup")
+            faults_layout = QVBoxLayout(faults)
+            faults_layout.addWidget(self.faults_value)
+            layout.addWidget(faults)
+            layout.addStretch()
+
+            scroll = QScrollArea()
+            scroll.setObjectName("statusScroll")
+            scroll.setFrameShape(QFrame.Shape.NoFrame)
+            scroll.setWidgetResizable(True)
+            scroll.setMinimumWidth(400)
+            scroll.setWidget(content)
+            return scroll
+
+        @staticmethod
+        def _status_card(title: str, value: QWidget) -> QFrame:
+            card = QFrame()
+            card.setObjectName("statusCard")
+            card_layout = QVBoxLayout(card)
+            card_layout.setContentsMargins(12, 9, 12, 10)
+            card_layout.setSpacing(4)
+            caption = QLabel(title)
+            caption.setObjectName("statusCaption")
+            card_layout.addWidget(caption)
+            card_layout.addWidget(value)
+            return card
 
         def _build_control_tabs(self) -> QWidget:
             tabs = QTabWidget()
@@ -951,6 +1032,17 @@ if QApplication is not None:
                 QPushButton:pressed { background: #bdd6ee; }
                 QPushButton#emergency { background: #c62828; color: white; font-weight: bold; }
                 QLabel#title { font-size: 22px; font-weight: bold; }
+                QLabel#sectionTitle { font-size: 18px; font-weight: bold; color: #263746;
+                                      padding: 4px 2px 2px 2px; }
+                QLabel#statusCaption { color: #66788a; font-size: 11px;
+                                       background: transparent; }
+                QLabel#statusValue { font-size: 14px; font-weight: 600; color: #1f2933;
+                                     background: transparent; }
+                QFrame#statusCard { background: #f8fafc; border: 1px solid #dce4eb;
+                                    border-radius: 8px; }
+                QGroupBox#faultGroup { border-color: #e6c9c9; }
+                QScrollArea#statusScroll, QWidget#statusPanel { background: transparent;
+                                                                border: none; }
                 QLabel#connectionOnline { color: #16803c; font-weight: bold; }
                 QLabel#connectionOffline { color: #c62828; font-weight: bold; }
                 QLabel#connectionPending { color: #9a6700; font-weight: bold; }

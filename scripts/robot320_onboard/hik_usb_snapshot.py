@@ -6,11 +6,15 @@ import fcntl
 import json
 import os
 import sys
+import time
 from ctypes import POINTER, byref, c_ubyte, cast, memset, sizeof
 
 os.environ.setdefault("MVCAM_COMMON_RUNENV", "/opt/MVS/lib")
 sys.path.insert(0, "/opt/MVS/Samples/64/Python/MvImport")
 from MvCameraControl_class import *  # noqa: E402,F403
+
+
+CAMERA_SERIALS = ("DB0168357", "DB0168290")  # right, left
 
 
 def decode(value):
@@ -32,13 +36,15 @@ def devices():
 
 def capture(index, quality):
     items = devices()
-    if index < 0 or index >= len(items):
-        raise RuntimeError(f"camera {index + 1} unavailable; detected {len(items)}")
+    serial = CAMERA_SERIALS[index]
+    matches = [item for item in items if item[2] == serial]
+    if not matches:
+        raise RuntimeError(f"camera {index + 1} ({serial}) unavailable; detected {len(items)}")
     cam = MvCamera()
     frame = MV_FRAME_OUT()
     created = opened = grabbing = False
     try:
-        code = cam.MV_CC_CreateHandle(items[index][1])
+        code = cam.MV_CC_CreateHandle(matches[0][1])
         if code != MV_OK:
             raise RuntimeError(f"create handle failed: 0x{code:x}")
         created = True
@@ -60,13 +66,19 @@ def capture(index, quality):
             raise RuntimeError(f"start capture failed: 0x{code:x}")
         grabbing = True
         memset(byref(frame), 0, sizeof(frame))
-        for attempt in range(12):
+        warmup_started = time.monotonic()
+        for attempt in range(50):
             code = cam.MV_CC_GetImageBuffer(frame, 8000)
             if code != MV_OK or not frame.pBufAddr:
                 raise RuntimeError(f"frame timeout: 0x{code:x}")
-            if attempt < 11:
+            # A fixed 12-frame warm-up was too short after a cold open: the
+            # first still could be almost black while an immediate retry was
+            # correctly exposed. Wait for continuous auto exposure to settle.
+            if time.monotonic() - warmup_started < 5.0 and attempt < 49:
                 cam.MV_CC_FreeImageBuffer(frame)
                 memset(byref(frame), 0, sizeof(frame))
+                continue
+            break
         output_size = max(frame.stFrameInfo.nWidth * frame.stFrameInfo.nHeight * 3 + 4096, 1024 * 1024)
         output = (c_ubyte * output_size)()
         params = MV_SAVE_IMAGE_PARAM_EX3()

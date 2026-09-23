@@ -168,6 +168,26 @@ rosdep install --from-paths . --ignore-src -r -y
 `nuc` profile 固定使用 `/usr/bin/python3` 并允许 system site packages，使 uv 环境能读取
 apt 安装的 `rclpy`。`uv_run.sh nuc` 会加载 ROS 2 和仓库的 `install/setup.bash`。
 
+### NUC 本机 GUI
+
+NUC 本机版复用远程 GUI 的页面，但空间数据和任务控制使用本机 ROS 2/DDS，升降与两台
+工业相机直接调用 NUC 上的固定程序，不建立云端 SSH。首次安装带 GUI 的 NUC 环境后运行：
+
+```bash
+./scripts/uv_setup.sh nuc
+./scripts/start_nuc_gui.sh
+```
+
+也可以直接运行 `robot320_nuc_gui`。专用入口会在 GUI 生命周期内同时使用
+`gnome-session-inhibit --inhibit idle:suspend` 和
+`systemd-inhibit --what=idle:sleep --mode=block`；因此自动锁屏、屏幕空闲和系统休眠会被
+抑制，退出 GUI 后自动恢复原来的桌面电源策略，不永久修改 GNOME 配置。若现场维护需要
+验证未加抑制器的行为，可显式使用 `robot320_nuc_gui --no-inhibit`。
+
+监控/PTZ 页面连接 NUC 自己的 `http://127.0.0.1:8081` 视频桥接。若该桥接未运行，其他
+本机页面仍可使用，但视频页会显示不可达。通过纯 SSH 登录时通常没有 `DISPLAY` 或
+Wayland 会话，不能直接显示 GUI；应在 NUC 已登录的图形桌面中启动，或配置桌面自动启动项。
+
 ## Gazebo 仿真
 
 当前 Lyrical 平台的推荐启动方式是从空白 Gazebo 专用地图开始，同时启动

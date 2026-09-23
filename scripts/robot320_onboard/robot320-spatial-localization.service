@@ -1,0 +1,14 @@
+[Unit]
+Description=Robot320 static-map AMCL localization
+After=robot320-spatial-sensors.service
+Requires=robot320-spatial-sensors.service
+Conflicts=robot320-spatial-mapping.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/bash %h/robot320_remote_spatial/start_spatial_localization.sh
+KillMode=control-group
+TimeoutStopSec=20
+
+[Install]
+WantedBy=default.target

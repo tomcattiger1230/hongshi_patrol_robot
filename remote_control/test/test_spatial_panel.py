@@ -71,7 +71,7 @@ def test_received_map_can_be_saved_on_gui_host_and_reopened(tmp_path):
 
 def test_mapping_management_uses_only_its_dedicated_writer():
     QApplication.instance() or QApplication([])
-    panel = SpatialPanel(auto_connect=False)
+    panel = SpatialPanel(auto_connect=False, transport='dds')
     sent = []
 
     class Participant:
@@ -84,8 +84,88 @@ def test_mapping_management_uses_only_its_dedicated_writer():
     panel.participant = Participant()
     panel.mapping_writer = 'mapping-only-writer'
     panel.mapping_control('stop')
+    panel.mapping_control('initial_pose', {'pose': [1.0, -2.0, 0.5]})
     panel.mapping_control('drive')
-    assert len(sent) == 1
+    assert len(sent) == 2
     assert sent[0][0] == 'mapping-only-writer'
     assert sent[0][1]['action'] == 'stop'
+    assert sent[0][1]['request_id']
+    assert sent[1][1]['action'] == 'initial_pose'
+    assert sent[1][1]['pose'] == [1.0, -2.0, 0.5]
     panel.shutdown()
+
+
+def test_nuc_spatial_mode_uses_local_dds_without_ssh_tunnel():
+    QApplication.instance() or QApplication([])
+    panel = SpatialPanel(auto_connect=False, transport='local')
+    assert panel.transport == 'local'
+    assert panel.data_source == 'NUC 本机 DDS'
+    assert panel.tunnel.state() == panel.tunnel.ProcessState.NotRunning
+    assert 'NUC 本机' in panel.connect_button.text()
+    panel.shutdown()
+    panel.close()
+
+
+def test_wan_stream_accepts_only_versioned_allowlisted_envelopes():
+    app = QApplication.instance() or QApplication([])
+    panel = SpatialPanel(auto_connect=False, transport='wan')
+    panel._handle_wan_line(b'{"ready":true,"protocol":1}')
+    assert not panel.connect_button.isEnabled()
+    panel._handle_wan_line(b'{"kind":"scan","data":{"frame":"map","points":[[1,2]]}}')
+    app.processEvents()
+    assert panel.canvas.scan['points'] == [[1, 2]]
+    panel._handle_wan_line(b'{"kind":"arbitrary","data":{"frame":"map"}}')
+    panel._handle_wan_line(b'not-json')
+    assert panel.canvas.scan['points'] == [[1, 2]]
+    panel.shutdown()
+    panel.close()
+
+
+def test_local_follow_view_and_scan_counter_can_switch_to_full_map():
+    app = QApplication.instance() or QApplication([])
+    panel = SpatialPanel(auto_connect=False, transport='wan')
+    geometry = MapGeometry(100, 100, .5, -25, -25, 0)
+    panel.update_data('map', {'frame': 'map', 'geometry': geometry,
+                              'decoded_cells': bytes([1] * 10_000)})
+    panel.update_data('pose', {'frame': 'map', 'pose': [4, -3, 0]})
+    panel.update_data('scan', {'frame': 'map', 'points': [[4, -3], [5, -2]]})
+    panel.resize(900, 700)
+    panel.show()
+    app.processEvents()
+    panel.canvas.grab()
+    assert not panel.canvas.show_full_map
+    assert panel.canvas._view[1:] == (4, -3)
+    assert '实时雷达 #1' in panel.status.text()
+    panel.view_button.click()
+    app.processEvents()
+    panel.canvas.grab()
+    assert panel.canvas.show_full_map
+    assert panel.canvas._view[1:] == (0, 0)
+    assert panel.view_button.text() == '跟随机器人'
+    panel.shutdown()
+    panel.close()
+
+
+def test_mapping_status_does_not_replace_pending_request_with_stale_status():
+    QApplication.instance() or QApplication([])
+    panel = SpatialPanel(auto_connect=False, transport='wan')
+    panel.pending_mapping_request = 'new-request'
+    panel.update_data('mapping_status', {
+        'available': True, 'state': 'inactive', 'message': 'old inactive',
+        'stamp': 10.0, 'sequence': 1,
+    })
+    assert panel.pending_mapping_request == 'new-request'
+    assert panel.map_operation.text() != 'old inactive'
+    panel.update_data('mapping_status', {
+        'available': True, 'state': 'active', 'message': 'confirmed active',
+        'stamp': 11.0, 'sequence': 2, 'request_id': 'new-request',
+    })
+    assert panel.pending_mapping_request is None
+    assert panel.map_operation.text() == 'confirmed active'
+    panel.update_data('mapping_status', {
+        'available': True, 'state': 'inactive', 'message': 'late inactive',
+        'stamp': 9.0, 'sequence': 0,
+    })
+    assert panel.map_operation.text() == 'confirmed active'
+    panel.shutdown()
+    panel.close()

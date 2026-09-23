@@ -14,6 +14,8 @@ desktop = [
 ]
 nuc = [
   "mobile-platform",
+  "PySide6>=6.5",
+  "remote-control",
   "robot320-localization-bringup",
 ]
 

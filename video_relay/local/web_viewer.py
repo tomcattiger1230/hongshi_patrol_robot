@@ -6,6 +6,8 @@ from __future__ import annotations
 import atexit
 import json
 import os
+import socket
+import subprocess
 import sys
 import threading
 import time
@@ -13,7 +15,7 @@ from pathlib import Path
 from typing import Any, Iterator
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit, urlunsplit
-from urllib.request import Request, urlopen
+from urllib.request import ProxyHandler, Request, build_opener
 
 try:
     import cv2
@@ -169,40 +171,145 @@ checkPtz(); setInterval(checkPtz, 5000);
 </script></body></html>"""
 
 
+def available_loopback_port() -> int:
+    with socket.socket() as candidate:
+        candidate.bind(("127.0.0.1", 0))
+        return candidate.getsockname()[1]
+
+
+def ptz_tunnel_commands(ssh_port: int, ptz_port: int) -> tuple[list[str], list[str]]:
+    cloud_host = os.getenv("ROBOT_CLOUD_SSH_HOST", "hsjc_ecs")
+    reverse_port = int(os.getenv("ROBOT_CLOUD_REVERSE_PORT", "12220"))
+    host_key_alias = os.getenv("ROBOT_SSH_HOST_KEY_ALIAS", "192.168.88.108")
+    agent_port = int(os.getenv("PTZ_AGENT_PORT", "8090"))
+    common = [
+        "-N", "-T", "-o", "BatchMode=yes", "-o", "ExitOnForwardFailure=yes",
+        "-o", "ServerAliveInterval=20", "-o", "ServerAliveCountMax=3",
+    ]
+    cloud = [
+        "ssh", *common, "-L", f"127.0.0.1:{ssh_port}:127.0.0.1:{reverse_port}", cloud_host,
+    ]
+    onboard = [
+        "ssh", *common, "-p", str(ssh_port), "-o", f"HostKeyAlias={host_key_alias}",
+        "-o", "StrictHostKeyChecking=yes",
+        "-L", f"127.0.0.1:{ptz_port}:127.0.0.1:{agent_port}", "hs@127.0.0.1",
+    ]
+    return cloud, onboard
+
+
+class PtzCloudTunnel:
+    """Maintain a local PTZ forward through the Wi-Fi/SIM cloud selector."""
+
+    def __init__(self) -> None:
+        self.ssh_port = available_loopback_port()
+        self.ptz_port = available_loopback_port()
+        self.stop_event = threading.Event()
+        self.processes: list[subprocess.Popen[bytes]] = []
+        self.thread = threading.Thread(target=self._run, daemon=True, name="ptz-cloud-tunnel")
+
+    @property
+    def url(self) -> str:
+        return f"http://127.0.0.1:{self.ptz_port}"
+
+    def start(self) -> None:
+        self.thread.start()
+
+    def _terminate(self) -> None:
+        for process in reversed(self.processes):
+            if process.poll() is None:
+                process.terminate()
+        for process in reversed(self.processes):
+            try:
+                process.wait(timeout=1)
+            except subprocess.TimeoutExpired:
+                process.kill()
+        self.processes.clear()
+
+    def _run(self) -> None:
+        cloud, onboard = ptz_tunnel_commands(self.ssh_port, self.ptz_port)
+        while not self.stop_event.is_set():
+            try:
+                self.processes = [subprocess.Popen(cloud, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)]
+                if self.stop_event.wait(0.5) or self.processes[0].poll() is not None:
+                    self._terminate()
+                    self.stop_event.wait(2)
+                    continue
+                self.processes.append(
+                    subprocess.Popen(onboard, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                )
+                while not self.stop_event.wait(1):
+                    if any(process.poll() is not None for process in self.processes):
+                        break
+            except OSError:
+                pass
+            self._terminate()
+            self.stop_event.wait(2)
+
+    def stop(self) -> None:
+        self.stop_event.set()
+        self._terminate()
+        if self.thread.is_alive():
+            self.thread.join(timeout=2)
+
+
 class PtzProxy:
-    def __init__(self, base_url: str, token: str, timeout: float = 4.0) -> None:
-        parts = urlsplit(base_url)
-        if parts.scheme not in {"http", "https"} or not parts.hostname:
-            raise ValueError("PTZ_AGENT_URL 必须是有效的 http:// 或 https:// 地址")
-        self.base_url = base_url.rstrip("/")
+    def __init__(self, base_url: str, token: str, timeout: float = 4.0,
+                 cloud_url: str | None = None) -> None:
+        endpoints = [("局域网", base_url, min(timeout, 1.5))]
+        if cloud_url:
+            endpoints.append(("公网", cloud_url, timeout))
+        for _label, url, _timeout in endpoints:
+            parts = urlsplit(url)
+            if parts.scheme not in {"http", "https"} or not parts.hostname:
+                raise ValueError("PTZ Agent 地址必须是有效的 http:// 或 https:// 地址")
+        self.endpoints = [(label, url.rstrip("/"), endpoint_timeout)
+                          for label, url, endpoint_timeout in endpoints]
+        self.active_endpoint = 0
+        self.endpoint_lock = threading.Lock()
         self.token = token
-        self.timeout = timeout
+        # PTZ_AGENT_URL addresses the onboard NUC directly. macOS may have an
+        # HTTP(S) proxy configured globally; sending a .local request through
+        # that proxy produces a misleading 502 instead of reaching the robot.
+        self.opener = build_opener(ProxyHandler({}))
 
     def request(self, path: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
         data = json.dumps(payload).encode() if payload is not None else None
-        request_object = Request(
-            self.base_url + path,
-            data=data,
-            headers={
-                "Authorization": f"Bearer {self.token}",
-                "Content-Type": "application/json",
-            },
-            method="POST" if payload is not None else "GET",
-        )
-        try:
-            with urlopen(request_object, timeout=self.timeout) as response:
-                result = json.loads(response.read())
-                if not isinstance(result, dict):
-                    raise RuntimeError("PTZ Agent 返回了无效数据")
-                return result
-        except HTTPError as exc:
+        with self.endpoint_lock:
+            active = self.active_endpoint
+        order = list(range(len(self.endpoints))) if path == "/health" else [
+            active, *[index for index in range(len(self.endpoints)) if index != active]
+        ]
+        last_error: Exception | None = None
+        for index in order:
+            label, base_url, endpoint_timeout = self.endpoints[index]
+            request_object = Request(
+                base_url + path,
+                data=data,
+                headers={
+                    "Authorization": f"Bearer {self.token}",
+                    "Content-Type": "application/json",
+                },
+                method="POST" if payload is not None else "GET",
+            )
             try:
-                message = json.loads(exc.read()).get("message", f"HTTP {exc.code}")
-            except (json.JSONDecodeError, AttributeError):
-                message = f"HTTP {exc.code}"
-            raise RuntimeError(f"PTZ Agent：{message}") from exc
-        except (TimeoutError, URLError) as exc:
-            raise RuntimeError("无法连接 NUC PTZ Agent") from exc
+                with self.opener.open(request_object, timeout=endpoint_timeout) as response:
+                    result = json.loads(response.read())
+                    if not isinstance(result, dict):
+                        raise RuntimeError("PTZ Agent 返回了无效数据")
+                    with self.endpoint_lock:
+                        self.active_endpoint = index
+                    if isinstance(result.get("message"), str):
+                        result["message"] += f"（{label}）"
+                    return result
+            except HTTPError as exc:
+                try:
+                    message = json.loads(exc.read()).get("message", f"HTTP {exc.code}")
+                except (json.JSONDecodeError, AttributeError):
+                    message = f"HTTP {exc.code}"
+                raise RuntimeError(f"PTZ Agent：{message}") from exc
+            except (TimeoutError, URLError, OSError) as exc:
+                last_error = exc
+        raise RuntimeError("局域网和公网均无法连接 NUC PTZ Agent") from last_error
 
 
 class RtspReader:
@@ -476,13 +583,19 @@ def create_app(reader: RtspReader, ptz: PtzProxy | None = None, second_reader: R
 
 def main() -> int:
     load_env_file(Path(__file__).with_name(".env"))
+    ptz_tunnel = None
     try:
         sources = stream_urls()
         quality = min(100, max(20, int(os.getenv("JPEG_QUALITY", "80"))))
         port = int(os.getenv("WEB_PORT", "8081"))
         ptz_url = os.getenv("PTZ_AGENT_URL", "").strip()
         ptz_token = os.getenv("PTZ_TOKEN", "").strip()
-        ptz = PtzProxy(ptz_url, ptz_token) if ptz_url and ptz_token else None
+        if ptz_url and ptz_token:
+            ptz_tunnel = PtzCloudTunnel()
+            ptz_tunnel.start()
+            ptz = PtzProxy(ptz_url, ptz_token, cloud_url=ptz_tunnel.url)
+        else:
+            ptz = None
     except ValueError as exc:
         print(f"配置错误：{exc}", file=sys.stderr)
         return 2
@@ -491,6 +604,8 @@ def main() -> int:
     reader = RtspReader(sources, quality)
     reader.start()
     atexit.register(reader.stop)
+    if ptz_tunnel is not None:
+        atexit.register(ptz_tunnel.stop)
     second_sources = []
     for label, url in sources:
         key = "SECOND_LOCAL_STREAM_PATH" if label == "局域网" else "SECOND_CLOUD_STREAM_PATH"

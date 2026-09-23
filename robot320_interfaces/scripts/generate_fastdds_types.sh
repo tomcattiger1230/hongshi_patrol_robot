@@ -49,6 +49,7 @@ run_fastddsgen -python -replace "${IDL_FILE}"
 cmake -S . -B build \
   -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_PREFIX_PATH="${cmake_prefix_path}" \
+  -DSWIG_DIR="$(swig -swiglib)" \
   -DPython3_EXECUTABLE="${PYTHON_BIN}"
 cmake --build build --parallel
 

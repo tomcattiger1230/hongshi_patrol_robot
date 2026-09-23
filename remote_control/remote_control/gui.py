@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 import time
 from typing import Callable
@@ -190,19 +191,25 @@ if QApplication is not None:
         cancel_navigation_requested = Signal()
         lift_requested = Signal(str, object)
 
-        def __init__(self, domain_id: int, client_id: str, backend: str = "auto", camera_url: str = ""):
+        def __init__(
+            self, domain_id: int, client_id: str, backend: str = "auto",
+            camera_url: str = "", deployment: str = "remote",
+        ):
             super().__init__()
             self.domain_id = domain_id
             self.client_id = client_id
             self.backend = backend
             self.camera_url = camera_url
+            self.deployment = deployment
+            self.local_mode = deployment == "nuc"
             self.camera_panel = None
             self._last_telemetry_at = 0.0
             self._motion: tuple[float, float] | None = None
             self._closing = False
 
             title_suffix = " [离线演示]" if backend == "demo" else ""
-            self.setWindowTitle(f"Robot320 远程控制台{title_suffix}")
+            console_name = "NUC 本机控制台" if self.local_mode else "远程控制台"
+            self.setWindowTitle(f"Robot320 {console_name}{title_suffix}")
             self.resize(1120, 760)
             self._build_ui()
             self._apply_style()
@@ -245,7 +252,7 @@ if QApplication is not None:
             root.setSpacing(12)
 
             header = QHBoxLayout()
-            title = QLabel("Robot320 远程控制")
+            title = QLabel("Robot320 NUC 本机控制" if self.local_mode else "Robot320 远程控制")
             title.setObjectName("title")
             header.addWidget(title)
             header.addStretch()
@@ -258,6 +265,16 @@ if QApplication is not None:
             self.connection_label.setObjectName("connectionPending")
             header.addWidget(self.connection_label)
             root.addLayout(header)
+
+            if self.local_mode:
+                inhibitor = os.getenv("ROBOT320_INHIBITOR_ACTIVE", "none")
+                message = (
+                    f"NUC 本机模式 · ROS 2/DDS 与硬件均走本机链路 · 自动锁屏/休眠抑制：{inhibitor}"
+                )
+                local_banner = QLabel(message)
+                local_banner.setObjectName("localBanner" if inhibitor != "none" else "demoBanner")
+                local_banner.setWordWrap(True)
+                root.addWidget(local_banner)
 
             if self.backend == "demo":
                 demo_banner = QLabel(
@@ -316,16 +333,20 @@ if QApplication is not None:
             tabs.addTab(self._build_manual_tab(), "手动与安全")
             tabs.addTab(self._build_navigation_tab(), "导航")
             from .lift_panel import LiftPanel
-            self.lift_panel = LiftPanel()
+            self.lift_panel = LiftPanel(transport="local" if self.local_mode else "wan")
             tabs.addTab(self.lift_panel, "升降杆")
             from .camera_panel import CameraPanel
             self.camera_panel = CameraPanel(self.camera_url)
             tabs.addTab(self.camera_panel, "海康摄像头")
             from .industrial_camera_panel import IndustrialCameraPanel
-            self.industrial_camera_panel = IndustrialCameraPanel()
+            self.industrial_camera_panel = IndustrialCameraPanel(
+                transport="local" if self.local_mode else "remote"
+            )
             tabs.addTab(self.industrial_camera_panel, "海康工业相机")
             from .spatial_panel import SpatialPanel
-            self.spatial_panel = SpatialPanel(self.domain_id)
+            self.spatial_panel = SpatialPanel(
+                self.domain_id, transport="local" if self.local_mode else None
+            )
             tabs.addTab(self.spatial_panel, "雷达与地图")
             return tabs
 
@@ -527,6 +548,9 @@ if QApplication is not None:
                 QLabel#demoBanner { background: #fff4ce; color: #7a4d00;
                                     border: 1px solid #e5c365; border-radius: 6px;
                                     padding: 8px; font-weight: bold; }
+                QLabel#localBanner { background: #e8f5e9; color: #1b5e20;
+                                     border: 1px solid #81c784; border-radius: 6px;
+                                     padding: 8px; font-weight: bold; }
                 QPlainTextEdit, QDoubleSpinBox { background: white; }
                 QLabel#liftNotice {
                     background: #fff7e6;
@@ -567,6 +591,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Robot320 Qt control panel")
     parser.add_argument("--domain-id", type=int, default=20)
     parser.add_argument("--client-id", default="remote_control_gui")
+    parser.add_argument("--deployment", choices=["remote", "nuc"], default="remote")
     parser.add_argument(
         "--backend", choices=["auto", "ros2", "fastdds", "demo"], default="auto"
     )
@@ -582,6 +607,8 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 2
+    if args.deployment == "nuc" and not args.camera_url:
+        args.camera_url = "http://127.0.0.1:8081"
     if args.camera_url:
         from .camera_panel import camera_bridge_url
         try:
@@ -590,8 +617,10 @@ def main(argv: list[str] | None = None) -> int:
             print("无效的 --camera-url：必须是本机 loopback HTTP 地址，不含凭据或路径。", file=sys.stderr)
             return 2
     app = QApplication(sys.argv[:1])
-    app.setApplicationName("Robot320 Remote Control")
-    window = RemoteControlWindow(args.domain_id, args.client_id, args.backend, args.camera_url)
+    app.setApplicationName("Robot320 NUC Control" if args.deployment == "nuc" else "Robot320 Remote Control")
+    window = RemoteControlWindow(
+        args.domain_id, args.client_id, args.backend, args.camera_url, args.deployment,
+    )
     window.show()
     return app.exec()
 

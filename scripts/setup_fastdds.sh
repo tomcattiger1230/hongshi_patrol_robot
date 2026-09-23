@@ -11,6 +11,7 @@ readonly VENV_PATH="${venv_path}"
 readonly FASTDDS_PREFIX="${FASTDDS_PREFIX:-${REPOSITORY_ROOT}/../Fast-DDS/install}"
 readonly FASTDDS_PYTHON_SOURCE="${FASTDDS_PYTHON_SOURCE:-${REPOSITORY_ROOT}/../Fast-DDS-python/fastdds_python}"
 readonly BUILD_DIR="${FASTDDS_PYTHON_BUILD_DIR:-${REPOSITORY_ROOT}/build/fastdds_python}"
+readonly STRING_TYPES_BUILD="${REPOSITORY_ROOT}/robot320_interfaces/generated/Robot320String/build"
 
 if [[ ! -x "${VENV_PATH}/bin/python" ]]; then
   echo "error: uv environment is missing at ${VENV_PATH}; run ./scripts/uv_setup.sh desktop first" >&2
@@ -61,10 +62,18 @@ else
   echo "Fast-DDS-python is already available in ${VENV_PATH}"
 fi
 
-env FASTDDS_PREFIX="${FASTDDS_PREFIX}" \
-  PYTHON_BIN="${VENV_PATH}/bin/python" \
-  "${REPOSITORY_ROOT}/robot320_interfaces/scripts/generate_fastdds_types.sh"
+site_packages="$(${VENV_PATH}/bin/python -c 'import sysconfig; print(sysconfig.get_path("purelib"))')"
+mkdir -p "${site_packages}"
+printf '%s\n' "${STRING_TYPES_BUILD}" > "${site_packages}/robot320_fastdds_types.pth"
 
-PYTHONPATH="${REPOSITORY_ROOT}/robot320_interfaces/generated/Robot320String/build${PYTHONPATH:+:${PYTHONPATH}}" \
-  "${VENV_PATH}/bin/python" -c \
-  'import Robot320String, fastdds; print("Fast DDS ready:", fastdds.__file__)'
+if [[ "${FASTDDS_FORCE_TYPES_BUILD:-0}" == "1" ]] || \
+   ! "${VENV_PATH}/bin/python" -c 'import Robot320String' >/dev/null 2>&1; then
+  env FASTDDS_PREFIX="${FASTDDS_PREFIX}" \
+    PYTHON_BIN="${VENV_PATH}/bin/python" \
+    "${REPOSITORY_ROOT}/robot320_interfaces/scripts/generate_fastdds_types.sh"
+else
+  echo "ROS 2 String type support is already available in ${VENV_PATH}"
+fi
+
+"${VENV_PATH}/bin/python" -c \
+  'import Robot320String, fastdds; print("Fast DDS ready:", fastdds.__file__, Robot320String.__file__)'

@@ -63,6 +63,8 @@ Nav2 /cmd_vel_nav
 | `sim_policy_route.sh` | `/usr/local/sbin/robot320-sim-policy-route` |
 | `robot320-network-failover.service` | `/etc/systemd/system/` |
 | `robot320-sim-policy-route.service` | `/etc/systemd/system/` |
+| `spatial_stream.py`, `start_spatial_stream.sh` | `/home/hs/robot320_remote_spatial/` |
+| `hik_usb_snapshot.py`, `hik_usb_record.py` | `/home/hs/robot320_remote_spatial/` |
 
 点云源码没有在本目录保留重复副本。远端新增的车体过滤逻辑已合并到仓库的
 `mid360_preprocess/src/mid360_preprocess_node.cpp`，同时保留了本地已有的话题、输出坐标系、
@@ -192,6 +194,30 @@ ss -ntp | grep '8.163.54.201:8554'
 
 正常结果应为两条从 `192.168.1.50` 到 `8.163.54.201:8554` 的 `ESTAB` 连接。
 Wi-Fi 健康时对应源地址为当前 `wlo1` DHCP 地址。
+
+## 异网雷达、轨迹和地图预览
+
+静态地图定位服务为 `robot320-spatial-localization.service`，固定读取
+`/home/hs/robot320_remote_spatial/maps/active.yaml`。它启动 map_server、AMCL、
+PointCloud2→LaserScan、查询型 B9 反馈、wheel odom 和 IMU/EKF；与独立 Cartographer
+建图服务互斥。B9 节点只发送扩展查询帧 `0x020110B9`，不发送任何车辆控制帧。
+
+GUI 上传地图后使用 `localize` 请求重启服务，再用 `relocalize` 调用
+`/reinitialize_global_localization` 和多次 `/request_nomotion_update`。只有 AMCL 协方差
+收敛且雷达点与墙面吻合后，才可把位姿用于后续导航。
+
+手动快速校正使用受限的 `initial_pose` 请求：只接受有限的 `[x, y, yaw]`，由车端发布
+带协方差的 `/initialpose` 并触发五次无运动扫描更新；该路径不包含任何车辆控制帧。
+
+macOS/Windows GUI 默认不再依赖跨公网 DDS discovery。“雷达与地图”页先通过云服务器
+loopback `12220` 选择器进入 NUC，再运行固定的 `start_spatial_stream.sh`。NUC 只转发
+`/robot320/spatial_scan`、`spatial_pose`、`spatial_map` 和 `mapping_status` 四类受限 JSON
+消息；建图控制输入只接受 `start/stop`，不接受 shell 或底盘命令。
+
+原始三维点云不会上传公网。车端桥接以约 5 Hz 把点云限制在每帧最多 1200 个二维点；地图
+使用 zlib 压缩，并在超过 1,000,000 栅格时按块保守降采样，保留每块最高占用概率而不是
+直接丢弃。GUI 对单条消息另有 8 MiB 上限，断线后会显示超时并自动重连。由于它复用双
+反向隧道，Wi-Fi 健康时数据经 Wi-Fi，故障时由 SIM 隧道接管。
 
 ## 下一步
 

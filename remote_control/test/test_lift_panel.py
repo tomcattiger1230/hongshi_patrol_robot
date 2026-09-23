@@ -27,3 +27,17 @@ def test_lift_control_command_is_fixed_and_allowlisted():
         panel.send("arbitrary-shell-text")
     panel.shutdown()
     panel.close()
+
+
+def test_nuc_lift_mode_uses_local_fixed_program_without_tunnel(monkeypatch):
+    _app = QApplication.instance() or QApplication([])
+    monkeypatch.setenv("ROBOT_LIFT_LOCAL_COMMAND", "/tmp/fixed-lift-control.py")
+    panel = LiftPanel(auto_tunnel=False, transport="local")
+    panel._start_control()
+    assert panel.control.program() == "/usr/bin/python3"
+    assert panel.control.arguments() == ["/tmp/fixed-lift-control.py", "--stream"]
+    assert panel.tunnel.state() == panel.tunnel.ProcessState.NotRunning
+    panel.control.kill()
+    panel.control.waitForFinished(1000)
+    panel.shutdown()
+    panel.close()

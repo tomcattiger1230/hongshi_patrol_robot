@@ -13,8 +13,11 @@ from PySide6.QtWidgets import QGridLayout, QLabel, QPushButton, QVBoxLayout, QWi
 class LiftPanel(QWidget):
     availability_changed = Signal(bool)
 
-    def __init__(self, parent=None, auto_tunnel: bool = True):
+    def __init__(self, parent=None, auto_tunnel: bool = True, transport: str = "wan"):
         super().__init__(parent)
+        if transport not in {"wan", "local"}:
+            raise ValueError("lift transport must be wan or local")
+        self.transport = transport
         self.cloud_host = os.getenv("ROBOT_CLOUD_SSH_HOST", "hsjc_ecs")
         self.local_port = int(os.getenv("ROBOT_LIFT_WAN_SSH_PORT", "12224"))
         self.cloud_reverse_port = int(os.getenv("ROBOT_CLOUD_REVERSE_PORT", "12220"))
@@ -33,7 +36,10 @@ class LiftPanel(QWidget):
         notice.setObjectName("liftNotice")
         notice.setWordWrap(True)
         layout.addWidget(notice)
-        self.status = QLabel("正在建立升降平台公网安全通道……")
+        self.status = QLabel(
+            "正在连接 NUC 本机升降控制……" if transport == "local"
+            else "正在建立升降平台公网安全通道……"
+        )
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
 
@@ -63,11 +69,17 @@ class LiftPanel(QWidget):
         self.control.errorOccurred.connect(lambda _error: self._failed("升降控制连接失败，正在重连……"))
         self.control.finished.connect(self._control_finished)
         if auto_tunnel:
-            self.start_tunnel()
+            if self.transport == "local":
+                QTimer.singleShot(0, self._start_control)
+            else:
+                self.start_tunnel()
         else:
             self.status.setText("测试模式：未建立网络连接")
 
     def start_tunnel(self) -> None:
+        if self.transport == "local":
+            self._start_control()
+            return
         if self._shutting_down or self.tunnel.state() != QProcess.ProcessState.NotRunning:
             return
         self.tunnel.setProgram("ssh")
@@ -81,15 +93,19 @@ class LiftPanel(QWidget):
         self.tunnel.start()
 
     def _start_control(self) -> None:
-        if (
-            self._shutting_down
-            or self.tunnel.state() != QProcess.ProcessState.Running
-            or self.control.state() != QProcess.ProcessState.NotRunning
-        ):
+        if self._shutting_down or self.control.state() != QProcess.ProcessState.NotRunning:
             return
-        self.control.setProgram("ssh")
-        self.control.setArguments(
-            [
+        if self.transport == "local":
+            self.control.setProgram("/usr/bin/python3")
+            self.control.setArguments([
+                os.getenv("ROBOT_LIFT_LOCAL_COMMAND", "/home/hs/robot320_lift/lift_control.py"),
+                "--stream",
+            ])
+        else:
+            if self.tunnel.state() != QProcess.ProcessState.Running:
+                return
+            self.control.setProgram("ssh")
+            self.control.setArguments([
                 "-p", str(self.local_port),
                 "-o", f"HostKeyAlias={self.host_key_alias}",
                 "-o", "StrictHostKeyChecking=yes",
@@ -97,8 +113,7 @@ class LiftPanel(QWidget):
                 "-o", "ConnectTimeout=8",
                 "hs@127.0.0.1",
                 "/home/hs/robot320_lift/lift_control.py", "--stream",
-            ]
-        )
+            ])
         self.control.start()
 
     def _tunnel_finished(self, *_args) -> None:
@@ -107,7 +122,8 @@ class LiftPanel(QWidget):
             QTimer.singleShot(2000, self.start_tunnel)
 
     def _control_finished(self, *_args) -> None:
-        self._failed("升降控制连接已断开，正在重连……")
+        source = "本机升降控制" if self.transport == "local" else "升降控制连接"
+        self._failed(f"{source}已断开，正在重连……")
         if not self._shutting_down:
             QTimer.singleShot(1000, self._start_control)
 

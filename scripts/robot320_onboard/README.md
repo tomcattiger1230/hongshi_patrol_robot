@@ -57,6 +57,12 @@ Nav2 /cmd_vel_nav
 | `config/mid360_2d.lua` | `/home/hs/cartographer_config/mid360_2d.lua` |
 | `start_robot320_full_ekf.sh` | `/home/hs/script/` |
 | `stop_robot320_full.sh` | `/home/hs/script/` |
+| `lift_serial_bridge.py` | `/home/hs/robot320_lift/` |
+| `robot320-lift-serial.service` | `/home/hs/.config/systemd/user/` |
+| `network_failover.py` | `/usr/local/lib/robot320/` |
+| `sim_policy_route.sh` | `/usr/local/sbin/robot320-sim-policy-route` |
+| `robot320-network-failover.service` | `/etc/systemd/system/` |
+| `robot320-sim-policy-route.service` | `/etc/systemd/system/` |
 
 点云源码没有在本目录保留重复副本。远端新增的车体过滤逻辑已合并到仓库的
 `mid360_preprocess/src/mid360_preprocess_node.cpp`，同时保留了本地已有的话题、输出坐标系、
@@ -125,6 +131,67 @@ bash /home/hs/script/stop_robot320_full.sh
 `0x6FA` 仅保留诊断用途，不能再解释为可靠车速。当前没有验证通过的真实转角反馈，
 因此 wheel odom 中只有纵向速度 `vx` 可视为实测量；转向角、wheel yaw 和转弯半径不能当作
 反馈结果。
+
+## 升降平台 RS-485
+
+升降平台通过 FTDI `/dev/ttyUSB0`、9600 8N1 控制。现场确认有效的是单机地址 `01`：
+
+| GUI 动作 | 串口帧 |
+|---|---|
+| 上升 | `AA 01 03 00` |
+| 下降 | `AA 01 0C 00` |
+| 停止 | `AA 01 0A 00` |
+
+`robot320-lift-serial.service` 常驻打开串口并订阅 `/robot320/lift/command`。每收到一条
+`raise`、`lower` 或 `stop` 消息只写一帧，不合并重复命令，也不自动定时停止。GUI 每次
+点击都会生成一个新命令，因此链路不稳定时可以重复点击。上升或下降后平台会持续运动，
+必须由用户点击停止或由机械限位终止；服务退出时会额外发送一次安全停止。
+
+异网 GUI 不依赖 DDS 发现：服务同时创建权限 `0600` 的
+`/run/user/1000/robot320-lift.sock`，`lift_control.py --stream` 只接受
+`raise/lower/stop` 三个动作。Mac GUI 通过 NUC→云反向 SSH 的持久控制流调用该入口，
+保持点击顺序并避免每次重新登录的延迟。返回 `ok` 只代表指令写入 FTDI 串口成功，不代表
+平台已经产生机械动作；当前设备没有接入位置或限位反馈。
+
+```bash
+systemctl --user status robot320-lift-serial.service
+journalctl --user -u robot320-lift-serial.service -f
+```
+
+## 有人 G809 有线 / SIM 网络
+
+NUC 有线口 `enp85s0` 使用静态地址 `192.168.1.50/24`，有人 USR-G809 的 LAN 地址和
+默认网关为 `192.168.1.1`。持久配置对应仓库中的 `config/99-static-ip.yaml`，部署到
+`/etc/netplan/99-static-ip.yaml`：
+
+- Wi-Fi 健康时使用 metric 100，作为首选公网出口；
+- 有线 / SIM 默认路由固定为 metric 600，作为热备用；
+- Wi-Fi 连续 3 次探测失败后改为 metric 900，使有线 / SIM 接管；连续 3 次恢复后自动
+  回到 metric 100；探测周期为 5 秒；
+- 有线 DNS 首选 G809 `192.168.1.1`，备用 `223.5.5.5`。
+
+`robot320-sim-policy-route.service` 为源地址 `192.168.1.50` 安装独立路由表 102。这样即使
+系统默认出口仍是 Wi-Fi，绑定 SIM 地址的备用反向隧道也能同时在线。两个出站隧道分别在
+云主机 loopback 创建 `12222`（Wi-Fi）和 `12226`（SIM）；云端选择器监听 `12220`，先
+验证并选用 Wi-Fi 的真实 SSH banner，Wi-Fi 不可用时自动回退到 SIM。三个端口均不对公网
+监听。
+
+2026-09-23 已完成完整断网验证：临时断开 `HSJC` 后，默认路由自动切到
+`192.168.1.50 -> 192.168.1.1`；Mac 经云选择器发送升降“停止”、两台工业相机单帧抓图
+均成功，两路监控视频也从 SIM 地址重新发布到云端。Wi-Fi 恢复并连续通过 3 次探测后，
+默认路由和两路视频自动回到 Wi-Fi；SIM 隧道保持在线待命。
+
+网络出口切换会使绑定旧源地址的长连接失效。故障切换服务会自动重启两路 FFmpeg 推流；
+两个独立反向 SSH 隧道不依赖切换时临时重建。检查命令：
+
+```bash
+systemctl --user restart hikvision-video-relay-second.service
+sudo systemctl restart hikvision-video-relay@hs.service
+ss -ntp | grep '8.163.54.201:8554'
+```
+
+正常结果应为两条从 `192.168.1.50` 到 `8.163.54.201:8554` 的 `ESTAB` 连接。
+Wi-Fi 健康时对应源地址为当前 `wlo1` DHCP 地址。
 
 ## 下一步
 

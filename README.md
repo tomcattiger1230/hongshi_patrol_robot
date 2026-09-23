@@ -1,5 +1,8 @@
 # Hongshi Patrol Robot
 
+2026-09-23 的实车 GUI 整合、双视频、工业相机、升降平台及 Wi-Fi/SIM 自动切换开发记录见
+[`DEVELOPMENT_2026-09-23.md`](./DEVELOPMENT_2026-09-23.md)。
+
 Robot320 巡检机器人项目。当前主要开发平台为 Ubuntu 26.04 + ROS 2 Lyrical，
 Ubuntu 24.04 + ROS 2 Jazzy 保留为稳定基线和 Isaac Sim 6 Bridge 环境。项目包含自行车
 模型底盘、MID-360s、SLAM Toolbox、Nav2 和 PySide6 地图导航 GUI。Ubuntu 上位机

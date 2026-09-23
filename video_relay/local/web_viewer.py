@@ -12,7 +12,7 @@ import time
 from pathlib import Path
 from typing import Any, Iterator
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, urlunsplit
 from urllib.request import Request, urlopen
 
 try:
@@ -210,6 +210,8 @@ class RtspReader:
         if not sources:
             raise ValueError("至少需要一个 RTSP 视频源")
         self.sources = sources
+        self.configured_sources = list(sources)
+        self.link_mode = "auto"
         self.jpeg_quality = jpeg_quality
         self.condition = threading.Condition()
         self.stop_event = threading.Event()
@@ -245,7 +247,7 @@ class RtspReader:
             cv2.CAP_PROP_OPEN_TIMEOUT_MSEC,
             int(os.getenv("RTSP_OPEN_TIMEOUT_MS", "5000")),
             cv2.CAP_PROP_READ_TIMEOUT_MSEC,
-            20000,
+            3000,
         ]
         capture = cv2.VideoCapture(url, cv2.CAP_FFMPEG, params)
         capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)
@@ -328,19 +330,92 @@ class RtspReader:
                 "source": self.source,
                 "frame_age_seconds": round(age, 2),
                 "frames_received": self.sequence,
+                "link_mode": self.link_mode,
+                "available_modes": ["auto", "off"] + [
+                    mode for label, mode in [("局域网", "lan"), ("公网", "cloud")]
+                    if any(name == label for name, _ in self.configured_sources)
+                ],
             }
 
     def snapshot(self) -> bytes | None:
         with self.condition:
+            if not self.last_frame_at or time.monotonic() - self.last_frame_at > 2.0:
+                return None
             return self.frame
 
 
-def create_app(reader: RtspReader, ptz: PtzProxy | None = None) -> Flask:
+
+def create_app(reader: RtspReader, ptz: PtzProxy | None = None, second_reader: RtspReader | None = None) -> Flask:
     app = Flask(__name__)
+    link_lock = threading.Lock()
+
+    @app.post("/api/link")
+    def select_link():
+        nonlocal reader, second_reader
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            return jsonify({"message": "无效的 JSON 请求"}), 400
+        channel = payload.get("channel")
+        mode = payload.get("mode")
+        if type(channel) is not int or channel not in {1, 2} or not isinstance(mode, str) or mode not in {"auto", "lan", "cloud", "off"}:
+            return jsonify({"message": "无效的通道或链路模式"}), 400
+        with link_lock:
+            current = reader if channel == 1 else second_reader
+            if current is None:
+                return jsonify({"message": "此通道尚未配置"}), 400
+            sources = current.configured_sources
+            label = {"lan": "局域网", "cloud": "公网"}.get(mode)
+            selected = [source for source in sources if label is None or source[0] == label]
+            if not selected:
+                return jsonify({"message": "此通道没有配置所选链路"}), 400
+            if mode == current.link_mode:
+                return jsonify(current.status())
+            replacement = RtspReader(selected, current.jpeg_quality)
+            replacement.configured_sources = list(sources)
+            replacement.link_mode = mode
+            if mode == "off":
+                replacement.state = "disabled"
+                replacement.message = "视频读取已关闭（不关闭车上摄像头或推流）"
+            current.stop()
+            if channel == 1:
+                reader = replacement
+            else:
+                second_reader = replacement
+            if mode != "off":
+                replacement.start()
+            atexit.register(replacement.stop)
+            return jsonify(replacement.status())
 
     @app.get("/")
     def index() -> Response:
-        return Response(INDEX_HTML, content_type="text/html; charset=utf-8")
+        html = INDEX_HTML
+        if second_reader is not None:
+            html = html.replace(
+                '<img id="video" src="/video" alt="机器人视频流">',
+                '<div><h2>通道 1</h2><img id="video" src="/video" alt="第一路">'
+                '<h2>通道 2</h2><img style="width:100%;background:#050607" '
+                'src="/video2" alt="第二路"></div>',
+            )
+        return Response(html, content_type="text/html; charset=utf-8")
+
+    @app.get("/video2")
+    def second_video() -> Response:
+        if second_reader is None:
+            return Response("第二路尚未配置", status=503)
+        return Response(second_reader.frames(), mimetype="multipart/x-mixed-replace; boundary=frame")
+
+    @app.get("/snapshot2.jpg")
+    def second_snapshot() -> Response:
+        frame = second_reader.snapshot() if second_reader is not None else None
+        if frame is None:
+            return Response("尚未收到第二路视频帧", status=503)
+        return Response(frame, mimetype="image/jpeg", headers={"Cache-Control": "no-store"})
+
+    @app.get("/api/status2")
+    def second_status() -> Response:
+        if second_reader is None:
+            return jsonify({"state": "disabled", "message": "第二路尚未配置"})
+        return jsonify(second_reader.status())
 
     @app.get("/video")
     def video() -> Response:
@@ -416,10 +491,21 @@ def main() -> int:
     reader = RtspReader(sources, quality)
     reader.start()
     atexit.register(reader.stop)
+    second_sources = []
+    for label, url in sources:
+        key = "SECOND_LOCAL_STREAM_PATH" if label == "局域网" else "SECOND_CLOUD_STREAM_PATH"
+        path = os.getenv(key, "").strip("/")
+        if path:
+            parts = urlsplit(url)
+            second_sources.append((label, urlunsplit(parts._replace(path="/" + path))))
+    second_reader = RtspReader(second_sources, quality) if second_sources else None
+    if second_reader is not None:
+        second_reader.start()
+        atexit.register(second_reader.stop)
     print(f"本地视频页面：http://{host}:{port}", flush=True)
     if host not in {"127.0.0.1", "localhost", "::1"}:
         print("警告：Web 页面没有登录认证，请勿直接暴露到公网。", file=sys.stderr)
-    create_app(reader, ptz).run(host=host, port=port, threaded=True, use_reloader=False)
+    create_app(reader, ptz, second_reader).run(host=host, port=port, threaded=True, use_reloader=False)
     return 0
 
 

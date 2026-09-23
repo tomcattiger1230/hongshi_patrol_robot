@@ -1,0 +1,14 @@
+[Unit]
+Description=Robot320 persistent lift RS-485 bridge
+After=default.target
+
+[Service]
+Type=simple
+Environment=ROS_DOMAIN_ID=20
+Environment=RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+ExecStart=/usr/bin/bash -lc 'source /opt/ros/jazzy/setup.bash && exec /usr/bin/python3 %h/robot320_lift/lift_serial_bridge.py --port /dev/ttyUSB0'
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=default.target

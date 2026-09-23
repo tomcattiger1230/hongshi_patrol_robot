@@ -303,6 +303,41 @@ PTZ_TOKEN=替换为同一个Token
 
 公网链路统一强制 RTSP over TCP，防火墙配置简单，并避免 UDP 在 NAT 环境下丢包。端到端带宽约等于摄像头码率；例如 2.5 Mbit/s 连续运行约产生 810 GB/月的服务器入站流量，每增加一个观看端还会产生约 810 GB/月出站流量。
 
+## 第二路独立云端视频
+
+第二路使用 `/robot2`，第一路继续使用 `/robot`。服务器配置为两个地址分别授予 publish/read 权限；部署更新后执行 `docker compose up -d mediamtx`，视频容器重建时已有视频会短暂断开并自动重连。
+
+在 NUC 的 `robot/.env` 设置 `CAMERA_SECOND_RTSP_URL`（现场使用 `/Streaming/Channels/202`）及 `SECOND_STREAM_PATH=robot2`，复用既有推流账号。第二路服务通过 `VIDEO_CHANNEL=2` 选择独立输入和输出，不修改第一路配置。以 `hs` 用户安装：
+
+```bash
+mkdir -p ~/.config/systemd/user
+cp video_relay/robot/hikvision-video-relay-second.service ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now hikvision-video-relay-second.service
+loginctl enable-linger hs
+```
+
+服务模板使用现有 NUC 路径 `~/Develop/github_ws/hongshi_patrol_robot`；其他安装路径需调整 WorkingDirectory/ExecStart。linger 使用户服务在退出 SSH 或重启后继续运行。
+
+Mac 的 `local/.env` 增加 `SECOND_CLOUD_STREAM_PATH=robot2`，重启本地 Web bridge 后，GUI 第二路可选“云端”。2026-09-18 已实测强制云端模式收到 640×360 视频和有效快照，第一路保持正常；没有发送车辆或 PTZ 运动指令。
+
+### 现场云端压缩配置（2026-09-18）
+
+局域网继续通过 go2rtc 读取 `/101`、`/201` 的 2560×1440 原始画面；两个云端服务在 NUC 转码后上传，不修改相机参数：
+
+```dotenv
+VIDEO_MODE=transcode
+VIDEO_ENCODER=libx264
+VIDEO_WIDTH=960
+VIDEO_HEIGHT=540
+VIDEO_FPS=12
+VIDEO_BITRATE=600k
+```
+
+宽高必须同时为正偶数，或同时为 0（不缩放）；保持原始比例并补边。
+每路目标/编码器 maxrate 为 600 kbps，两路合计约 1.2 Mbps 视频预算（不含协议开销；maxrate 不是网络硬限速）。
+现场第二路 H.265 直通云端在 OpenCV 解码中出现灰屏，而独立 FFmpeg 和 LAN 正常；云端改 H.264 后 GUI 已恢复正常。
+
 ## 安全和故障排查
 
 当前基线使用 RTSP Basic 认证，账号有读写权限隔离，但普通 RTSP **不加密视频和密码**。生产环境建议让机器人和本地电脑通过 WireGuard/Tailscale 接入服务器私网，并只允许 VPN 网段访问 8554；或进一步配置 MediaMTX 的 RTSPS 和可信 TLS 证书。

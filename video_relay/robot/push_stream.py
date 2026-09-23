@@ -51,14 +51,15 @@ def required(name: str) -> str:
 
 
 def build_command() -> list[str]:
+    second = os.getenv("VIDEO_CHANNEL", "1") == "2"
     camera_url = add_credentials(
-        required("CAMERA_RTSP_URL"),
+        required("CAMERA_SECOND_RTSP_URL" if second else "CAMERA_RTSP_URL"),
         os.getenv("CAMERA_USER", ""),
         os.getenv("CAMERA_PASSWORD", ""),
     )
     server_host = required("SERVER_HOST")
     server_port = os.getenv("SERVER_PORT", "8554")
-    stream_path = os.getenv("STREAM_PATH", "robot").strip("/")
+    stream_path = os.getenv("SECOND_STREAM_PATH", "robot2").strip("/") if second else os.getenv("STREAM_PATH", "robot").strip("/")
     publish_url = add_credentials(
         f"rtsp://{server_host}:{server_port}/{stream_path}",
         required("PUBLISH_USER"),
@@ -95,13 +96,20 @@ def build_command() -> list[str]:
     else:
         fps = os.getenv("VIDEO_FPS", "25")
         bitrate = os.getenv("VIDEO_BITRATE", "2500k")
+        width = int(os.getenv("VIDEO_WIDTH", "0"))
+        height = int(os.getenv("VIDEO_HEIGHT", "0"))
+        if width < 0 or height < 0 or bool(width) != bool(height) or width % 2 or height % 2:
+            raise ValueError("VIDEO_WIDTH/HEIGHT 必须同时为正偶数，或同时为 0（不缩放）")
+        filters = [f"scale={width}:{height}:force_original_aspect_ratio=decrease", f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2"] if width else []
+        filters.append("format=yuv420p" if encoder == "libx264" else "format=nv12")
+        command += ["-vf", ",".join(filters)]
         if encoder == "libx264":
             command += [
                 "-c:v", "libx264", "-preset", "veryfast",
                 "-tune", "zerolatency", "-pix_fmt", "yuv420p",
             ]
         else:
-            command += ["-vf", "format=nv12", "-c:v", "h264_qsv", "-preset", "veryfast"]
+            command += ["-c:v", "h264_qsv", "-preset", "veryfast"]
         command += [
             "-r",
             fps,

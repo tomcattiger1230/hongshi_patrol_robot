@@ -21,9 +21,15 @@ def build_config() -> dict[str, object]:
         os.getenv("CAMERA_PASSWORD", ""),
     )
     port = int(os.getenv("LOCAL_RTSP_PORT", "8554"))
+    streams = {os.getenv("STREAM_PATH", "robot").strip("/"): camera_url}
+    second_url = os.getenv("CAMERA_SECOND_RTSP_URL", "").strip()
+    if second_url:
+        streams[os.getenv("SECOND_STREAM_PATH", "robot2").strip("/")] = add_credentials(
+            second_url, os.getenv("CAMERA_USER", ""), os.getenv("CAMERA_PASSWORD", "")
+        )
     return {
         "app": {"modules": ["api", "rtsp"]},
-        "streams": {os.getenv("STREAM_PATH", "robot").strip("/"): camera_url},
+        "streams": streams,
         "api": {"listen": "127.0.0.1:1984"},
         "rtsp": {
             "listen": f":{port}",

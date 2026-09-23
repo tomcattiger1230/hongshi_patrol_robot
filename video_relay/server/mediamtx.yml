@@ -11,12 +11,16 @@ authInternalUsers:
     permissions:
       - action: publish
         path: robot
+      - action: publish
+        path: robot2
   - user: reader-placeholder
     pass: reader-placeholder
     ips: []
     permissions:
       - action: read
         path: robot
+      - action: read
+        path: robot2
 
 rtsp: true
 rtspTransports: [tcp]
@@ -33,6 +37,9 @@ pprof: false
 playback: false
 
 paths:
+  robot2:
+    source: publisher
+    overridePublisher: true
   robot:
     source: publisher
     overridePublisher: true

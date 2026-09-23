@@ -1,0 +1,13 @@
+[Unit]
+Description=Robot320 independent LiDAR-only Cartographer mapping
+After=robot320-spatial-sensors.service
+Requires=robot320-spatial-sensors.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/bash %h/robot320_remote_spatial/start_spatial_mapping.sh
+KillMode=control-group
+TimeoutStopSec=20
+
+[Install]
+WantedBy=default.target

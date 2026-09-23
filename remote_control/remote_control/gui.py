@@ -16,7 +16,6 @@ try:
     from PySide6.QtGui import QCloseEvent, QFont
     from PySide6.QtWidgets import (
         QApplication,
-        QComboBox,
         QDoubleSpinBox,
         QFormLayout,
         QGridLayout,
@@ -191,11 +190,13 @@ if QApplication is not None:
         cancel_navigation_requested = Signal()
         lift_requested = Signal(str, object)
 
-        def __init__(self, domain_id: int, client_id: str, backend: str = "auto"):
+        def __init__(self, domain_id: int, client_id: str, backend: str = "auto", camera_url: str = ""):
             super().__init__()
             self.domain_id = domain_id
             self.client_id = client_id
             self.backend = backend
+            self.camera_url = camera_url
+            self.camera_panel = None
             self._last_telemetry_at = 0.0
             self._motion: tuple[float, float] | None = None
             self._closing = False
@@ -260,7 +261,9 @@ if QApplication is not None:
 
             if self.backend == "demo":
                 demo_banner = QLabel(
-                    "离线演示模式：所有状态和指令仅在本机内存中模拟，不会发送 DDS/ROS 2 消息。"
+                    "底盘离线演示：车辆指令仅在本机模拟，不发送 DDS/ROS 2 消息。"
+                    + (" 摄像头已单独启用：云台按钮会控制真实摄像头。" if self.camera_url else "")
+                    + " 升降页通过公网安全通道控制真实升降设备。"
                 )
                 demo_banner.setObjectName("demoBanner")
                 demo_banner.setWordWrap(True)
@@ -312,7 +315,18 @@ if QApplication is not None:
             tabs = QTabWidget()
             tabs.addTab(self._build_manual_tab(), "手动与安全")
             tabs.addTab(self._build_navigation_tab(), "导航")
-            tabs.addTab(self._build_lift_tab(), "升降杆")
+            from .lift_panel import LiftPanel
+            self.lift_panel = LiftPanel()
+            tabs.addTab(self.lift_panel, "升降杆")
+            from .camera_panel import CameraPanel
+            self.camera_panel = CameraPanel(self.camera_url)
+            tabs.addTab(self.camera_panel, "海康摄像头")
+            from .industrial_camera_panel import IndustrialCameraPanel
+            self.industrial_camera_panel = IndustrialCameraPanel()
+            tabs.addTab(self.industrial_camera_panel, "海康工业相机")
+            from .spatial_panel import SpatialPanel
+            self.spatial_panel = SpatialPanel(self.domain_id)
+            tabs.addTab(self.spatial_panel, "雷达与地图")
             return tabs
 
         def _build_manual_tab(self) -> QWidget:
@@ -396,26 +410,6 @@ if QApplication is not None:
             layout.addStretch()
             return page
 
-        def _build_lift_tab(self) -> QWidget:
-            page = QWidget()
-            layout = QVBoxLayout(page)
-            form = QFormLayout()
-            self.lift_action = QComboBox()
-            self.lift_action.addItem("升起", "raise")
-            self.lift_action.addItem("下降", "lower")
-            self.lift_action.addItem("移动到高度", "move_to")
-            self.lift_action.addItem("停止", "stop")
-            self.lift_height = self._spin(0.0, 10.0, 0.05, 0.0, " m")
-            form.addRow("动作", self.lift_action)
-            form.addRow("目标高度", self.lift_height)
-            layout.addLayout(form)
-            send = QPushButton("发送升降杆指令")
-            send.setMinimumHeight(52)
-            send.clicked.connect(self._send_lift)
-            layout.addWidget(send)
-            layout.addStretch()
-            return page
-
         @staticmethod
         def _spin(
             minimum: float,
@@ -453,11 +447,6 @@ if QApplication is not None:
             self.motion_timer.stop()
             self._motion = None
             self.estop_requested.emit()
-
-        def _send_lift(self) -> None:
-            action = self.lift_action.currentData()
-            target = self.lift_height.value() if action == "move_to" else None
-            self.lift_requested.emit(action, target)
 
         @Slot(object)
         def _on_telemetry(self, telemetry) -> None:
@@ -538,7 +527,17 @@ if QApplication is not None:
                 QLabel#demoBanner { background: #fff4ce; color: #7a4d00;
                                     border: 1px solid #e5c365; border-radius: 6px;
                                     padding: 8px; font-weight: bold; }
-                QPlainTextEdit, QDoubleSpinBox, QComboBox { background: white; }
+                QPlainTextEdit, QDoubleSpinBox { background: white; }
+                QLabel#liftNotice {
+                    background: #fff7e6;
+                    border: 1px solid #ffd591;
+                    border-radius: 8px;
+                    color: #874d00;
+                    padding: 12px;
+                }
+                QPushButton#liftUp { background: #237804; color: white; font-size: 18px; }
+                QPushButton#liftDown { background: #0958d9; color: white; font-size: 18px; }
+                QPushButton#liftStop { background: #cf1322; color: white; font-size: 18px; }
                 """
             )
 
@@ -548,6 +547,11 @@ if QApplication is not None:
                 return
             self._closing = True
             self.motion_timer.stop()
+            if self.camera_panel is not None:
+                self.camera_panel.shutdown()
+            self.lift_panel.shutdown()
+            self.industrial_camera_panel.shutdown()
+            self.spatial_panel.shutdown()
             if self.worker_thread.isRunning():
                 QMetaObject.invokeMethod(
                     self.worker,
@@ -566,6 +570,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--backend", choices=["auto", "ros2", "fastdds", "demo"], default="auto"
     )
+    parser.add_argument("--camera-url", default="", help="本地视频桥接地址，例如 http://127.0.0.1:8081；默认不连接摄像头")
     return parser
 
 
@@ -577,9 +582,16 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 2
+    if args.camera_url:
+        from .camera_panel import camera_bridge_url
+        try:
+            camera_bridge_url(args.camera_url)
+        except ValueError:
+            print("无效的 --camera-url：必须是本机 loopback HTTP 地址，不含凭据或路径。", file=sys.stderr)
+            return 2
     app = QApplication(sys.argv[:1])
     app.setApplicationName("Robot320 Remote Control")
-    window = RemoteControlWindow(args.domain_id, args.client_id, args.backend)
+    window = RemoteControlWindow(args.domain_id, args.client_id, args.backend, args.camera_url)
     window.show()
     return app.exec()
 

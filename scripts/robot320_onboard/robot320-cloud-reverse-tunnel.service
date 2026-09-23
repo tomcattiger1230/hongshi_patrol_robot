@@ -1,0 +1,13 @@
+[Unit]
+Description=Robot320 Wi-Fi reverse SSH tunnel for WAN-safe GUI access
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/ssh -N -T -B wlo1 -i %h/.ssh/robot320_cloud_tunnel -o BatchMode=yes -o ExitOnForwardFailure=yes -o ServerAliveInterval=10 -o ServerAliveCountMax=2 -R 127.0.0.1:12222:127.0.0.1:22 ecs-user@8.163.54.201
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

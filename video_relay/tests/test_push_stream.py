@@ -11,6 +11,20 @@ from video_relay.robot.push_stream import (
 
 
 class PushStreamTests(unittest.TestCase):
+    @patch.dict(os.environ, {
+        "VIDEO_CHANNEL": "2",
+        "CAMERA_RTSP_URL": "rtsp://camera/first",
+        "CAMERA_SECOND_RTSP_URL": "rtsp://camera/second",
+        "SERVER_HOST": "relay.example.com",
+        "PUBLISH_USER": "publisher",
+        "PUBLISH_PASSWORD": "secret",
+    }, clear=True)
+    def test_second_channel_has_independent_input_and_output(self) -> None:
+        command = build_command()
+        self.assertEqual(command[command.index("-i") + 1], "rtsp://camera/second")
+        self.assertTrue(command[-1].endswith("/robot2"))
+        self.assertNotIn("rtsp://camera/first", command)
+
     def test_add_credentials_encodes_reserved_characters(self) -> None:
         actual = add_credentials("rtsp://192.168.1.64:554/live", "admin", "p@ss:word")
         self.assertEqual(actual, "rtsp://admin:p%40ss%3Aword@192.168.1.64:554/live")
@@ -42,6 +56,8 @@ class PushStreamTests(unittest.TestCase):
         self.assertIn("+genpts", command)
         self.assertIn("-use_wallclock_as_timestamps", command)
         self.assertEqual(command.count("-rtsp_transport"), 2)
+        self.assertNotIn("-rw_timeout", command)
+        self.assertEqual(command[command.index("-timeout") + 1], "15000000")
         safe_log = redact_command(command)
         self.assertNotIn("camera-secret", safe_log)
         self.assertNotIn("server-secret", safe_log)
@@ -63,6 +79,22 @@ class PushStreamTests(unittest.TestCase):
         self.assertIn("h264_qsv", command)
         self.assertIn("format=nv12", command)
         self.assertNotIn("libx264", command)
+
+    @patch.dict(os.environ, {
+        "CAMERA_RTSP_URL": "rtsp://camera/first",
+        "SERVER_HOST": "relay.example.com",
+        "PUBLISH_USER": "publisher", "PUBLISH_PASSWORD": "secret",
+        "VIDEO_MODE": "transcode", "VIDEO_WIDTH": "960", "VIDEO_HEIGHT": "540",
+        "VIDEO_FPS": "12", "VIDEO_BITRATE": "600k",
+    }, clear=True)
+    def test_cloud_scaling_and_bitrate(self) -> None:
+        command = build_command()
+        self.assertIn("scale=960:540", command[command.index("-vf") + 1])
+        self.assertEqual(command[command.index("-maxrate") + 1], "600k")
+        self.assertEqual(command[command.index("-r") + 1], "12")
+        with patch.dict(os.environ, {"VIDEO_WIDTH": "961"}):
+            with self.assertRaises(ValueError):
+                build_command()
 
 
 if __name__ == "__main__":

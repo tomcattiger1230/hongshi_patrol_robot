@@ -25,6 +25,25 @@ class FakePtz:
 
 
 class WebViewerPtzTests(unittest.TestCase):
+    def test_second_camera_routes_are_independent(self) -> None:
+        class ImageReader(FakeReader):
+            def __init__(self, frame: bytes) -> None:
+                self.frame = frame
+
+            def snapshot(self) -> bytes:
+                return self.frame
+
+        client = create_app(ImageReader(b'first'), second_reader=ImageReader(b'second')).test_client()
+        self.assertEqual(client.get('/snapshot.jpg').data, b'first')
+        self.assertEqual(client.get('/snapshot2.jpg').data, b'second')
+        self.assertEqual(client.get('/api/status2').status_code, 200)
+        self.assertIn('/video2', client.get('/').get_data(as_text=True))
+
+    def test_unconfigured_second_camera_is_not_replaced_with_first(self) -> None:
+        client = create_app(FakeReader()).test_client()
+        self.assertEqual(client.get('/snapshot2.jpg').status_code, 503)
+        self.assertEqual(client.get('/api/status2').get_json()['state'], 'disabled')
+
     def test_offline_ptz_is_reported_without_affecting_page(self) -> None:
         client = create_app(FakeReader()).test_client()  # type: ignore[arg-type]
         self.assertEqual(client.get("/").status_code, 200)

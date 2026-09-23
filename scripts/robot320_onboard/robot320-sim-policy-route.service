@@ -1,0 +1,14 @@
+[Unit]
+Description=Robot320 SIM uplink source policy route
+Wants=network-online.target
+After=network-online.target NetworkManager.service
+Before=robot320-network-failover.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/robot320-sim-policy-route start
+ExecStop=/usr/local/sbin/robot320-sim-policy-route stop
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

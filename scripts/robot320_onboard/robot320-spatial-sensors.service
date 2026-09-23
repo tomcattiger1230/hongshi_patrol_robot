@@ -1,0 +1,14 @@
+[Unit]
+Description=Robot320 read-only LiDAR acquisition and DDS spatial preview
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/bash %h/robot320_remote_spatial/start_spatial_sensors.sh
+Restart=on-failure
+RestartSec=5
+KillMode=control-group
+
+[Install]
+WantedBy=default.target

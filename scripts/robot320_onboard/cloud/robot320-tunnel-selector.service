@@ -1,0 +1,12 @@
+[Unit]
+Description=Robot320 verified Wi-Fi/SIM reverse tunnel selector
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 %h/robot320_tunnel/reverse_tunnel_selector.py
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=default.target

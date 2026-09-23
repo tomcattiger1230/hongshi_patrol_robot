@@ -1,0 +1,13 @@
+[Unit]
+Description=Robot320 Wi-Fi preferred uplink health and wired SIM failover
+After=NetworkManager.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /usr/local/lib/robot320/network_failover.py --wifi-connection HSJC --wifi-interface wlo1 --probe-host 8.163.54.201 --threshold 3 --interval 5
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

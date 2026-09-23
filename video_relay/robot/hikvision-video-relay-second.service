@@ -1,0 +1,16 @@
+[Unit]
+Description=Hikvision second camera public RTSP relay
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+Environment=VIDEO_CHANNEL=2
+WorkingDirectory=%h/Develop/github_ws/hongshi_patrol_robot/video_relay/robot
+ExecStart=/usr/bin/python3 %h/Develop/github_ws/hongshi_patrol_robot/video_relay/robot/push_stream.py
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target
